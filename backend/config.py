@@ -19,6 +19,7 @@ def _clean(value):
 
 
 class Config:
+
     # 1. PostgreSQL Database with pgvector enabled
     DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/guardian_db")
 
@@ -36,9 +37,9 @@ class Config:
 
     # 3. DeepFace Model Configuration
     # Options: "Facenet" (128-dim), "Facenet512" (512-dim), "ArcFace" (512-dim), "VGG-Face"
-    FACE_MODEL = "Facenet"
+    FACE_MODEL = "Facenet512"
     # Cosine distance match threshold for Facenet (lower = stricter match)
-    MATCH_THRESHOLD = 0.40
+    MATCH_THRESHOLD = 0.60
 
     # 4. Claims / hot-spot data
     # Azure Cosmos DB is the source of truth: it's writable, so claims submitted
@@ -51,6 +52,8 @@ class Config:
     # partitioned by /role. Created on first use by users_service.
     COSMOS_USERS_CONTAINER = _clean(os.getenv("COSMOS_USERS_CONTAINER", "users"))
     USERS_CACHE_TTL_SECONDS = float(os.getenv("USERS_CACHE_TTL_SECONDS", "30"))
+
+    
 
     # "cosmos" | "csv" | "auto". "auto" prefers Cosmos and falls back to the CSV
     # if the account is unreachable — the demo still runs on a dead network.
