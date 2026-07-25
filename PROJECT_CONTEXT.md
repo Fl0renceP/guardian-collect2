@@ -93,15 +93,19 @@ Use the `face_recognition` Python library (dlib-based) for face detection + 128-
 |---|---|
 | Backend | Python, Flask (app factory pattern), SQLAlchemy |
 | Face recognition | `face_recognition` (dlib) for hackathon speed; embeddings stored as vectors |
-| Database | PostgreSQL (Azure Database for PostgreSQL), PostGIS for geospatial, pgvector for embedding similarity search |
+| Claims database | **Azure Cosmos DB** (`guardian-db` / `insurance-data`) — source of truth for claims and the hot-spot map |
+| Face/vector database | PostgreSQL (Azure Database for PostgreSQL), PostGIS for geospatial, pgvector for embedding similarity search |
 | Image storage | Azure Blob Storage (store image files; keep DB rows lean) |
 | Claims OCR / plates | Azure AI Vision Read/OCR API |
-| Maps / hotspots / routing | Azure Maps (geocoding, route optimization, map rendering) |
+| Maps / hotspots | **Leaflet + leaflet.heat**, OpenStreetMap (CARTO) tiles for rendering; **Nominatim** for one-time suburb geocoding — no API key, see note below |
+| Routing | Azure Maps Route API (still the plan for Phase 4 patrol routes) |
 | Alerts | Azure Functions (trigger logic) + Firebase Cloud Messaging (push delivery) |
 | AI-generated briefings | Azure AI Foundry (agent/prompt flow) |
 | Frontend | React 18 + Vite |
 | Hosting | Azure App Service (backend), Azure Static Web Apps or App Service (frontend) |
 | CI/CD | GitHub Actions → Azure (OIDC auth) |
+
+**Why the map isn't Azure Maps:** the hot-spot map was built against Leaflet + OpenStreetMap because no Azure Maps subscription key exists in the project, and the map is a first-screen feature that couldn't wait on provisioning. Nothing about the choice is load-bearing — the frontend reads `GET /api/hotspots`, which returns plain `{suburb, lat, lng, count, ...}` records. Swapping in the Azure Maps control later means rewriting the render layer in `backend/static/index.html` only; the API contract and the geocode cache stay as they are.
 
 ## 7. Repo structure
 
@@ -115,10 +119,19 @@ backend/
     face.py         # Face model (identity registry)
     detection.py    # Detection model (event log)
   routes/
-    face_routes.py  # /api/faces, /api/detect endpoints
+    face_routes.py     # /api/faces, /api/detect endpoints
+    hotspot_routes.py  # /api/hotspots, /api/filters
     health_routes.py
   services/
-    face_service.py # detection + embedding + matching + alert logic
+    face_service.py    # detection + embedding + matching + alert logic
+    claims_service.py  # claims CSV load + hot-spot aggregation
+    geocode_service.py # read access to the suburb geocode cache
+  scripts/
+    geocode_suburbs.py # one-time (resumable) Nominatim geocoder
+  static/
+    index.html      # hot-spot heatmap — the app's landing screen
+  data/
+    suburb_geocache.json  # suburb -> lat/lng, committed so nobody re-runs geocoding
   seed_data.py       # populate 3 test faces (offender, suspect, verified)
   requirements.txt
   .env.example
@@ -145,7 +158,10 @@ See `docs/DATA_SCHEMA.md` for full column-level detail on:
 - Backend: Flask app factory pattern, blueprints per feature area, no business logic in route handlers — put it in `services/`.
 - Never commit real API keys or connection strings — use `.env` (gitignored), reference `.env.example` for required variables.
 - Don't reintroduce the "auto-verify unknown faces" pattern described in Section 5 — it's a known rejected design.
-- Claims data fields should be treated as read from the CSV format described above; don't assume extra columns exist (e.g. there's no lat/long — suburb names need geocoding via Azure Maps before any spatial work).
+- Claims are read from **Cosmos DB**, not the CSV — `services/claims_service.py` is the only place that touches either. The CSV remains as an offline fallback; don't add a second reader for it.
+- Claims documents still carry no lat/long, so suburb names are resolved through the committed geocode cache (`backend/data/suburb_geocache.json`); don't add per-request geocoding.
+- **A claim with a `status` field only counts toward hot-spots once approved.** Absence of `status` means "historical, already part of the dataset". If you add claim submission, write `status: "pending"` and flip it on approval — that's what keeps unverified member submissions off the map.
+- After any claim write, call `claims_service.invalidate_cache()` so the map reflects it instead of waiting out the snapshot TTL.
 - Keep commit messages descriptive; open a PR against `main` rather than pushing directly once more than one person is working in the repo.
 
 ## 10. Open questions (raised by the team, still unresolved)

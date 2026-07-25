@@ -1,1 +1,5 @@
 Flask>=3.0.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+azure-cosmos>=4.5.1
+gunicorn>=21.2.0
