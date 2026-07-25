@@ -127,9 +127,12 @@ backend/
     claims_service.py  # claims load, hot-spot aggregation, submission + review
     geocode_service.py # read access to the suburb geocode cache
     storage_service.py # claim media -> private Blob container, SAS read URLs
-    members_service.py # demo identities — NOT auth, see §9
+    users_service.py   # Cosmos `users` container: members/employees/units + opt-in location
+    members_service.py # compatibility shim over users_service — prefer users_service
     risk_service.py    # H3 travel-risk surface (where x when)
     routing_service.py # Valhalla routing + risk-avoiding alternative
+    alerts_service.py  # alert feed + offender/suspect audience routing
+    patrol_service.py  # CPU patrol loops (coverage/allocation, not shortest path)
   scripts/
     geocode_suburbs.py # one-time (resumable) Nominatim geocoder
   static/
@@ -151,9 +154,12 @@ frontend/            # React 18 + Vite (owner: Tadiwa; claims flows: Keziah)
       StatusPill.jsx
     views/
       HotspotMap.jsx   # heatmap (Leaflet driven imperatively via refs)
+      SafeRoute.jsx    # member: fastest vs risk-avoiding route
       SubmitClaim.jsx  # member: report an incident
       MyClaims.jsx     # member: status + decline reasons
       ReviewQueue.jsx  # employee: approve / decline
+      AlertsFeed.jsx   # CPU: alerts in the unit's operating area
+      PatrolPlan.jsx   # CPU: per-vehicle patrol loops
 docs/
   PROJECT_CONTEXT.md   # this file
   DEV_ROADMAP.md
@@ -179,13 +185,17 @@ See `docs/DATA_SCHEMA.md` for full column-level detail on:
 - Claims documents still carry no lat/long, so suburb names are resolved through the committed geocode cache (`backend/data/suburb_geocache.json`); don't add per-request geocoding.
 - **A claim with a `status` field only counts toward hot-spots once approved.** Absence of `status` means "historical, already part of the dataset". If you add claim submission, write `status: "pending"` and flip it on approval — that's what keeps unverified member submissions off the map.
 - After any claim write, call `claims_service.apply_to_snapshot(doc)` **and** `invalidate_cache()` — the first makes the very next read correct, the second lets a background refresh reconcile. Invalidating alone is not enough: stale-while-revalidate would keep serving the pre-write snapshot.
-- **There is no authentication.** `services/members_service.py` and `frontend/src/session.jsx` supply a demo identity that the API trusts. Don't build anything that assumes `member_id`/`employee_id` is verified — swapping in a real auth provider is a known outstanding task (see `DEV_ROADMAP.md` Phase 5).
+- **A member's home location is optional and opt-in.** Always read it through `users_service.member_home()` — that function is the single place `share_location` is enforced. Never read `home_lat` off a profile directly, and never treat stored coordinates as permission to use them. Turning sharing off must delete the coordinates, not just hide them.
+- **There is no authentication.** `services/users_service.py` and `frontend/src/session.jsx` supply a demo identity that the API trusts. The `auth` block on each user document is a placeholder and is stripped before any response. Don't build anything that assumes `member_id`/`employee_id` is verified — swapping in a real auth provider is a known outstanding task (see `DEV_ROADMAP.md` Phase 5).
 - Claim media lives in a **private** Blob container and is served through short-lived per-request SAS URLs (`services/storage_service.py`). Never make the container public or persist a signed URL on the claim document.
 - Door-camera consent is opt-in, per-incident, and timestamped. Don't default it to true, don't infer it, and don't reuse one incident's consent for another.
 - **Never present the travel-risk surface as street-level.** Claims are located to suburb centroids, so risk is binned to ~5 km² H3 cells. "This area has more evening hijack claims" is supported; "avoid this road" is not.
 - The risk surface separates *where* (smoothed spatial density) from *when* (a single pooled hour/day profile) because claims are far too sparse per suburb to estimate both together. Don't refactor it into per-cell-per-hour counts — that's noise, not signal.
 - Risk scores normalise against a **fixed** reference peak, not the current moment's peak. Normalising per query cancels the time multiplier out algebraically and makes every hour look identical.
 - **Don't loosen `ROUTE_MIN_RISK_REDUCTION` to make demos look better.** Suggesting detours on noise is how this feature turns into an app that tells people to avoid particular neighbourhoods — a real redlining risk in the South African context.
+- **All alerts go through `alerts_service.audience_for`.** Members see `offender` only; Crime Prevention Units see `offender` and `suspect`. Don't bypass it when adding a new alert source, and don't widen the member set — that rule is the whole reason members don't get false-alarm fatigue.
+- **Don't stub the unwired alert feeds with fake data.** `_detection_alerts` and `_predicted_alerts` return empty on purpose until Phase 1 and Azure Functions exist. An alerts panel that invents offender sightings is worse than an empty one, and the UI already labels which feeds are live.
+- CPU patrol planning is a **coverage/allocation** problem, not shortest-path. Don't refactor it to reuse `routing_service.compare_routes` — they answer different questions.
 - Keep commit messages descriptive; open a PR against `main` rather than pushing directly once more than one person is working in the repo.
 
 ## 10. Open questions (raised by the team, still unresolved)

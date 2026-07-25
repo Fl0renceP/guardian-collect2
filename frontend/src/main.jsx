@@ -7,8 +7,11 @@ import 'leaflet/dist/leaflet.css'
 
 import Layout from './components/Layout'
 import { SessionProvider } from './session'
+import AlertsFeed from './views/AlertsFeed'
 import HotspotMap from './views/HotspotMap'
+import MemberProfile from './views/MemberProfile'
 import MyClaims from './views/MyClaims'
+import PatrolPlan from './views/PatrolPlan'
 import ReviewQueue from './views/ReviewQueue'
 import SafeRoute from './views/SafeRoute'
 import SubmitClaim from './views/SubmitClaim'
@@ -23,7 +26,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <Route path="route" element={<SafeRoute />} />
             <Route path="report" element={<SubmitClaim />} />
             <Route path="my-claims" element={<MyClaims />} />
+            <Route path="profile" element={<MemberProfile />} />
             <Route path="review" element={<ReviewQueue />} />
+            <Route path="alerts" element={<AlertsFeed />} />
+            <Route path="patrol" element={<PatrolPlan />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

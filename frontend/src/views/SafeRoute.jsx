@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import { api, num } from '../api'
+import { useSession } from '../session'
 
 /* Safer-route planning.
 
@@ -50,6 +51,7 @@ function useThemeName() {
 
 export default function SafeRoute() {
   const theme = useThemeName()
+  const { member } = useSession()
   const now = useMemo(() => new Date(), [])
 
   const containerRef = useRef(null)
@@ -70,6 +72,15 @@ export default function SafeRoute() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [showRisk, setShowRisk] = useState(true)
+  const [usedHome, setUsedHome] = useState(false)
+
+  // Start from home when the member has opted in — that's the trip they're most
+  // likely planning. Only once, so it never fights a manually placed pin.
+  useEffect(() => {
+    if (usedHome || !member?.share_location || member.home_lat == null) return
+    setOrigin({ lat: member.home_lat, lng: member.home_lng, label: 'Home' })
+    setUsedHome(true)
+  }, [member, usedHome])
 
   /* ---------- map ---------- */
   useEffect(() => {
@@ -134,7 +145,13 @@ export default function SafeRoute() {
 
   useEffect(loadRisk, [loadRisk])
 
+  // Two routing calls per comparison, so dragging the hour slider leaves
+  // several requests in flight. Without this token a slower earlier response
+  // can land last and show a route for the wrong departure time.
+  const requestRef = useRef(0)
+
   const compare = useCallback(() => {
+    const token = ++requestRef.current
     setLoading(true)
     setError(null)
     api
@@ -145,12 +162,18 @@ export default function SafeRoute() {
         hour,
         weekday,
       })
-      .then(setResult)
+      .then((data) => {
+        if (token !== requestRef.current) return
+        setResult(data)
+      })
       .catch((err) => {
+        if (token !== requestRef.current) return
         setError(err.message)
         setResult(null)
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (token === requestRef.current) setLoading(false)
+      })
   }, [origin, destination, mode, hour, weekday])
 
   useEffect(compare, [compare])

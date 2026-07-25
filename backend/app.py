@@ -6,9 +6,11 @@ from flask import Flask, send_from_directory
 
 from config import Config
 from routes.claim_routes import claim_bp
+from routes.cpu_routes import cpu_bp
 from routes.health_routes import health_bp
 from routes.hotspot_routes import hotspot_bp
 from routes.route_routes import route_bp
+from routes.user_routes import user_bp
 from services.claims_service import warm_cache
 
 
@@ -26,6 +28,8 @@ def create_app(config_object=Config):
     app.register_blueprint(hotspot_bp)
     app.register_blueprint(claim_bp)
     app.register_blueprint(route_bp)
+    app.register_blueprint(cpu_bp)
+    app.register_blueprint(user_bp)
 
     # Pull the claims collection on boot (off-thread) so the first visitor
     # doesn't pay the cold-load cost.

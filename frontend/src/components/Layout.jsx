@@ -1,19 +1,27 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { useSession } from '../session'
+import { ROLES, useSession } from '../session'
 import { api } from '../api'
 
-const MEMBER_NAV = [
-  { to: '/', label: 'Hot-spots', end: true },
-  { to: '/route', label: 'Plan a route' },
-  { to: '/report', label: 'Report an incident' },
-  { to: '/my-claims', label: 'My claims' },
-]
-
-const EMPLOYEE_NAV = [
-  { to: '/', label: 'Hot-spots', end: true },
-  { to: '/review', label: 'Review queue', badge: 'pending' },
-]
+const NAV_BY_ROLE = {
+  member: [
+    { to: '/', label: 'Hot-spots', end: true },
+    { to: '/alerts', label: 'Alerts' },
+    { to: '/route', label: 'Plan a route' },
+    { to: '/report', label: 'Report an incident' },
+    { to: '/my-claims', label: 'My claims' },
+    { to: '/profile', label: 'My profile' },
+  ],
+  employee: [
+    { to: '/', label: 'Hot-spots', end: true },
+    { to: '/review', label: 'Review queue', badge: 'pending' },
+  ],
+  cpu: [
+    { to: '/', label: 'Hot-spots', end: true },
+    { to: '/alerts', label: 'Alerts', badge: 'alerts' },
+    { to: '/patrol', label: 'Patrol planning' },
+  ],
+}
 
 function currentTheme() {
   const stamped = document.documentElement.getAttribute('data-theme')
@@ -22,10 +30,21 @@ function currentTheme() {
 }
 
 export default function Layout() {
-  const { role, setRole, directory, memberId, setMemberId, employeeId, setEmployeeId } =
-    useSession()
+  const {
+    role,
+    setRole,
+    directory,
+    memberId,
+    setMemberId,
+    employeeId,
+    setEmployeeId,
+    unitId,
+    setUnitId,
+  } = useSession()
+
   const [theme, setTheme] = useState(currentTheme)
   const [pending, setPending] = useState(null)
+  const [alertCount, setAlertCount] = useState(null)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -48,7 +67,25 @@ export default function Layout() {
     }
   }, [role])
 
-  const nav = role === 'member' ? MEMBER_NAV : EMPLOYEE_NAV
+  // Same for a unit's alert count.
+  useEffect(() => {
+    if (role !== 'cpu' || !unitId) return undefined
+    let alive = true
+    const load = () =>
+      api
+        .alerts({ audience: 'cpu', unit_id: unitId, limit: 200 })
+        .then((data) => alive && setAlertCount(data.summary.total))
+        .catch(() => {})
+    load()
+    const timer = setInterval(load, 20000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [role, unitId])
+
+  const nav = NAV_BY_ROLE[role] || NAV_BY_ROLE.member
+  const badgeValue = { pending, alerts: alertCount }
 
   return (
     <>
@@ -65,8 +102,8 @@ export default function Layout() {
                 className={({ isActive }) => (isActive ? 'active' : undefined)}
               >
                 {item.label}
-                {item.badge === 'pending' && pending ? (
-                  <span className="badge">{pending}</span>
+                {item.badge && badgeValue[item.badge] ? (
+                  <span className="badge">{badgeValue[item.badge]}</span>
                 ) : null}
               </NavLink>
             ))}
@@ -84,8 +121,11 @@ export default function Layout() {
             onChange={(e) => setRole(e.target.value)}
             style={{ width: 'auto' }}
           >
-            <option value="member">Insurance member</option>
-            <option value="employee">Discovery employee</option>
+            {ROLES.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label}
+              </option>
+            ))}
           </select>
 
           {role === 'member' ? (
@@ -101,7 +141,9 @@ export default function Layout() {
                 </option>
               ))}
             </select>
-          ) : (
+          ) : null}
+
+          {role === 'employee' ? (
             <select
               aria-label="Select employee"
               value={employeeId || ''}
@@ -114,7 +156,22 @@ export default function Layout() {
                 </option>
               ))}
             </select>
-          )}
+          ) : null}
+
+          {role === 'cpu' ? (
+            <select
+              aria-label="Select unit"
+              value={unitId || ''}
+              onChange={(e) => setUnitId(e.target.value)}
+              style={{ width: 'auto' }}
+            >
+              {directory.units.map((u) => (
+                <option key={u.unit_id} value={u.unit_id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
 
           <button
             type="button"

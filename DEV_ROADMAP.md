@@ -40,11 +40,19 @@ Goal: file upload of an image → detect face → compare against 3 seeded faces
 
 ## Phase 4 — Alerts + route optimization
 - [ ] Replace the Phase 1 `send_alert()` stub with real delivery: Azure Function trigger → Firebase Cloud Messaging
-- [ ] Alert routing logic: members only get `offender` alerts; Crime Prevention Units get `offender` and `suspect` alerts
+- [x] Alert routing logic: members only get `offender` alerts; Crime Prevention Units get `offender` and `suspect` alerts — implemented in `alerts_service.audience_for`; every alert source passes through it, so wiring `/api/detect` in needs no changes to the rule
 - [x] **Member route optimisation** — `GET /api/risk` + `POST /api/routes/compare`, and the "Plan a route" view: fastest vs risk-avoiding route by travel mode and departure time, via Valhalla `exclude_polygons` (not Azure Maps — no key; see PROJECT_CONTEXT §6)
-- [ ] **Crime Prevention Unit patrol routing** — a different problem class to the member side: coverage/allocation (max-coverage or team-orienteering over the risk surface for N vehicles), not shortest-path. Feed the `/api/risk` cells into VROOM or OR-Tools; success metric is share of predicted risk covered per km driven
+- [x] **Crime Prevention Unit patrol routing** — `POST /api/patrol/plan` + the "Patrol planning" view: risk cells in the unit's area, split across vehicles by k-means, ordered into loops (nearest-neighbour + 2-opt), real road paths from Valhalla. Headline metric is risk covered per km driven
+- [ ] Upgrade patrol planning from the heuristic to a real VRP solve (VROOM or OR-Tools) once shift lengths, time windows or vehicle capabilities matter
+- [x] **Crime Prevention Unit alerts** — `GET /api/alerts` + the "Alerts" view, with the offender/suspect audience split enforced in `alerts_service.audience_for` so it's already correct when detections arrive
 - [ ] **Live motion alerts** — `watchPosition` in the browser, evaluate the current H3 cell client-side (h3-js) so no location trail leaves the device, alert on entering an elevated cell
 - [ ] Wire live/predicted alerts from Azure Functions into the risk surface alongside historical claims
+
+## Phase 2b — User directory
+- [x] Cosmos `users` container (partition key `/role`) holding all three stakeholder types; seeded with 10 members, 10 Discovery employees, 5 Crime Prevention companies via `scripts/seed_users.py`
+- [x] Optional, opt-in member home location — scopes the alerts feed and seeds the route planner's origin; withdrawing consent deletes the coordinates
+- [ ] **Authentication** — the `auth` block on each user document is a placeholder; nothing verifies identity yet. Biggest outstanding gap
+- [ ] Containers still to add for a full audit trail: `claim_events` (`/incident_id`), `alerts` (`/recipient_id`), `patrol_runs` (`/unit_id`)
 
 ## Phase 5 — Integration, polish, demo prep
 - [x] React 18 + Vite app in `frontend/` — hot-spot map, member claim submission, member claims status, employee review queue. Vite proxies `/api` to Flask (no CORS setup).

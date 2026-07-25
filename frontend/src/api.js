@@ -49,7 +49,25 @@ export const api = {
 
   // --- directory (demo identities, not auth) ---
   members: () => request('/api/members'),
+  units: () => request('/api/units'),
+  users: (role) => request(`/api/users${qs({ role })}`),
+  user: (id) => request(`/api/users/${encodeURIComponent(id)}`),
+  updateLocation: (id, payload) =>
+    request(`/api/users/${encodeURIComponent(id)}/location`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
   suburbs: (q) => request(`/api/suburbs${qs({ q })}`),
+
+  // --- crime prevention units ---
+  alerts: (params) => request(`/api/alerts${qs(params)}`),
+  patrolPlan: (payload) =>
+    request('/api/patrol/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
 
   // --- travel risk + routing ---
   risk: (params) => request(`/api/risk${qs(params)}`),

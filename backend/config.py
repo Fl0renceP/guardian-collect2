@@ -47,6 +47,10 @@ class Config:
     COSMOS_KEY = _clean(os.getenv("COSMOS_KEY"))
     COSMOS_DATABASE = _clean(os.getenv("COSMOS_DATABASE", "guardian-db"))
     COSMOS_CONTAINER = _clean(os.getenv("COSMOS_CONTAINER", "insurance-data"))
+    # User directory: members, Discovery employees and Crime Prevention Units,
+    # partitioned by /role. Created on first use by users_service.
+    COSMOS_USERS_CONTAINER = _clean(os.getenv("COSMOS_USERS_CONTAINER", "users"))
+    USERS_CACHE_TTL_SECONDS = float(os.getenv("USERS_CACHE_TTL_SECONDS", "30"))
 
     # "cosmos" | "csv" | "auto". "auto" prefers Cosmos and falls back to the CSV
     # if the account is unreachable — the demo still runs on a dead network.
