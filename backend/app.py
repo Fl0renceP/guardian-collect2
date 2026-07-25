@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from config import Config
 from routes.health_routes import health_bp
 from routes.hotspot_routes import hotspot_bp
+from services.alerts_service import build_hotspot_alert
 from services.claims_service import warm_cache
 from services.recognition import process_incoming_face_image
 
@@ -51,6 +52,10 @@ def scan_face():
         return jsonify({"error": "No selected file"}), 400
 
     image_bytes = file.read()
+    location = request.form.get("location") or request.form.get("suburb") or None
+    location_payload = None
+    if location:
+        location_payload = {"suburb": location}
 
     conn = get_db_connection()
     try:
@@ -66,7 +71,10 @@ def scan_face():
         if isinstance(result, tuple):
             return jsonify(result[0]), result[1]
 
-        return jsonify(result), 200
+        alert_payload = build_hotspot_alert(result, location=location_payload)
+        response_payload = dict(result)
+        response_payload["alert_context"] = alert_payload
+        return jsonify(response_payload), 200
 
     except Exception as e:
         logger.error(f"Error processing facial scan: {e}")
@@ -74,6 +82,12 @@ def scan_face():
 
     finally:
         conn.close()
+
+
+@app.route("/api/v1/alerts", methods=["GET"])
+def list_alerts():
+    """Return the latest alert payloads generated for Discovery members."""
+    return jsonify({"alerts": [], "message": "Alert feed ready for integration with a persistence layer."}), 200
 
 
 if __name__ == "__main__":
