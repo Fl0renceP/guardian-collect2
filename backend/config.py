@@ -61,6 +61,17 @@ class Config:
     # narrower than the synthetic test data suggests.
     MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.15"))
 
+    # Looser second band. Real cameras do not produce reference-quality images:
+    # live captures of enrolled people measured 0.1552-0.2023 here, recognisably
+    # the right person but outside the strict cut-off. Anything between the two
+    # thresholds is reported as a PROBABLE match — named and alerted on, but
+    # flagged for a human to confirm.
+    #
+    # 0.25 sits above the worst genuine live capture and below the nearest known
+    # impostor (0.2960, a real person not in the registry). Widening it starts
+    # naming that impostor as an offender.
+    PROBABLE_THRESHOLD = float(os.getenv("PROBABLE_THRESHOLD", "0.25"))
+
     # 3b. Face capture quality gate.
     # CCTV frames are the problem case: a 30px face upscaled to the model's 160px
     # input still yields 512 numbers, they just carry no identity. That vector sits

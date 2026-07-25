@@ -348,7 +348,9 @@
       ctx.strokeStyle = colour;
       ctx.strokeRect(b.x, b.y, b.w, b.h);
 
-      const label = faceName(f) + (f.match_distance != null ? `  ${f.match_distance}` : "");
+      const prefix = f.confidence === "probable" ? "? " : "";
+      const label = prefix + faceName(f)
+                  + (f.match_distance != null ? `  ${f.match_distance}` : "");
       const pad = 5 * scale;
       const tw = ctx.measureText(label).width + pad * 2;
       const th = Math.max(19, 22 * scale);
@@ -388,7 +390,9 @@
 
     const names = faces.map(f => {
       const tag = f.alert ? ` (${f.status})` : f.is_known_user ? " (verified)" : "";
-      return esc(faceName(f)) + tag;
+      // A probable match is named, but never presented as a certainty.
+      const maybe = f.confidence === "probable" ? "likely " : "";
+      return maybe + esc(faceName(f)) + tag;
     }).join(" · ");
 
     banner.className = "show " + cls;
@@ -404,12 +408,15 @@
       if (lastSeen.has(key) && now - lastSeen.get(key) < REANNOUNCE_MS) return;
       lastSeen.set(key, now);
       const meta = [
+        f.confidence === "probable" ? "PROBABLE — needs review" : null,
         f.match_distance != null ? "distance " + f.match_distance : null,
         f.margin_to_next_person != null ? "margin " + f.margin_to_next_person : null,
         f.capture_quality ? "quality " + f.capture_quality.quality_score : null,
       ].filter(Boolean).join("  ·  ");
-      const label = f.alert ? (f.status || "").toUpperCase() + " DETECTED"
-                  : f.is_known_user ? "RECOGNISED" : "UNKNOWN FACE";
+      const label = f.alert
+                  ? (f.confidence === "probable" ? "LIKELY " : "") + (f.status || "").toUpperCase() + (f.confidence === "probable" ? "" : " DETECTED")
+                  : f.is_known_user ? (f.confidence === "probable" ? "PROBABLY RECOGNISED" : "RECOGNISED")
+                  : "UNKNOWN FACE";
       addToFeed(faceClass(f), label, faceName(f), meta);
     });
   }

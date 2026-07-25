@@ -6,6 +6,7 @@ import numpy as np
 from deepface import DeepFace
 
 from services.face_quality import assess as assess_quality
+from services import face_geometry
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -84,10 +85,52 @@ FACE_ALIGN = os.getenv("FACE_ALIGN", "false").strip().lower() in ("1", "true", "
 # If you change the operator in the query below, change this to match.
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.15"))
 
+# Second, looser band. Real cameras do not produce reference-quality images, and
+# a system that only recognises people under ideal conditions is not much use on
+# CCTV. Measured on this gallery, live captures of enrolled people came back at
+# 0.1552, 0.1774 and 0.2023 — recognisably the right person, but outside the
+# strict cut-off, so they were reported as strangers.
+#
+# So a match below MATCH_THRESHOLD is reported as "confirmed", and one between
+# that and PROBABLE_THRESHOLD as "probable": named, alerted on, but explicitly
+# marked as needing a human to verify.
+#
+# 0.25 is not arbitrary. It sits above the worst genuine live capture (0.2023)
+# and below the nearest known impostor (0.2960) — a real person NOT in the
+# registry. Widen it and that impostor starts being named as an offender.
+# Everything above the band is still reported as unknown, with the distance, so
+# nothing is hidden either way.
+PROBABLE_THRESHOLD = float(os.getenv("PROBABLE_THRESHOLD", "0.25"))
+
 # Each face costs its own ~590ms embedding, so a crowd scene is priced per head.
 # Faces are processed largest-first, so this cap drops the most distant and least
 # identifiable people rather than an arbitrary subset.
 MAX_FACES_PER_FRAME = int(os.getenv("MAX_FACES_PER_FRAME", "10"))
+
+# Which per-identity template drives the decision: "min", "centroid" or "both"
+# (both = whichever is closer). All are computed and reported regardless; this
+# only chooses what the match is judged on.
+TEMPLATE_STRATEGY = os.getenv("TEMPLATE_STRATEGY", "min").strip().lower()
+
+# Proper 5-point similarity alignment before embedding, via services.face_geometry.
+#
+# Not the same thing as DeepFace's align=, which rotates on two eye points and
+# measurably hurt this gallery. This maps five landmarks onto the ArcFace
+# canonical template, normalising rotation, scale and translation together.
+#
+# Measured: on unrotated degradations it costs a little (worst genuine 0.0204 ->
+# 0.0311, resampling noise on faces that were already upright), but on a ROTATED
+# probe — the case a live camera actually produces — it gained 39% (0.0928 ->
+# 0.0565). Live captures here are re-photographed prints at an angle, so the
+# rotated case is the representative one. Settle it properly with
+# calibrate_threshold.py against real camera data.
+#
+# Changing this changes the embeddings: re-run reembed_references.py after.
+USE_5POINT_ALIGN = os.getenv("USE_5POINT_ALIGN", "true").strip().lower() in ("1", "true", "yes")
+
+# Refuse to identify a face the system cannot actually read, rather than naming
+# somebody from an unreadable image. See services.face_geometry.assess_probe.
+ENFORCE_PROBE_QUALITY = os.getenv("ENFORCE_PROBE_QUALITY", "true").strip().lower() in ("1", "true", "yes")
 
 # Which face leads the response when several are present. An offender in the
 # background matters more than a verified member in the foreground.
@@ -98,6 +141,15 @@ def _face_area(face):
     """Pixel area of a detected face — proxy for how close they are to the camera."""
     area = face.get("facial_area") or {}
     return area.get("w", 0) * area.get("h", 0)
+
+
+def _plain_crop(image, bbox, size=160):
+    """Bounding-box crop with no alignment, for USE_5POINT_ALIGN=false."""
+    x, y, w, h = bbox
+    crop = image[y:y + h, x:x + w]
+    if crop.size == 0:
+        return None
+    return cv2.resize(crop, (size, size), interpolation=cv2.INTER_LINEAR)
 
 
 # Collapsing to one row per PERSON (not per capture) matters: the runner-up has
@@ -111,23 +163,50 @@ def _face_area(face):
 #
 # use_for_matching excludes captures kept purely as case evidence: a blurry 40px
 # CCTV grab is real evidence and a terrible reference.
+# Both per-identity templates are computed every time, because they answer
+# different questions and each is cheap once the rows are already scanned:
+#
+#   min      distance to the person's CLOSEST enrolled capture. Robust to a bad
+#            enrolment — one poor photo cannot hide a good one — but a single
+#            unlucky reference can also drag an impostor in.
+#   centroid distance to the AVERAGE of their captures. Smooths per-photo noise
+#            and is the more stable template as enrolments accumulate, but one
+#            bad enrolment pollutes it permanently and it drifts if a person's
+#            appearance genuinely changes.
+#
+# TEMPLATE_STRATEGY decides which drives the decision; both are always reported,
+# so the calibration script can compare them without re-running anything.
 _GALLERY_QUERY = """
-    WITH candidates AS (
+    WITH per_capture AS (
         SELECT p.id, p.full_name, p.status,
-               (pf.embedding <=> %(vec)s::vector) AS distance,
-               pf.image_url
+               min(pf.embedding <=> %(vec)s::vector) AS min_distance,
+               count(*) AS capture_count
         FROM persons p
         JOIN person_faces pf ON pf.person_id = p.id
         WHERE pf.embedding IS NOT NULL
           AND pf.use_for_matching
+        GROUP BY p.id, p.full_name, p.status
     ),
-    best_per_person AS (
-        SELECT DISTINCT ON (id) id, full_name, status, distance, image_url
-        FROM candidates
-        ORDER BY id, distance ASC
+    centroids AS (
+        SELECT p.id,
+               (avg(pf.embedding)::vector <=> %(vec)s::vector) AS centroid_distance
+        FROM persons p
+        JOIN person_faces pf ON pf.person_id = p.id
+        WHERE pf.embedding IS NOT NULL
+          AND pf.use_for_matching
+        GROUP BY p.id
     )
-    SELECT id, full_name, status, distance, image_url
-    FROM best_per_person
+    SELECT c.id, c.full_name, c.status,
+           CASE %(strategy)s
+               WHEN 'centroid' THEN t.centroid_distance
+               WHEN 'both'     THEN least(c.min_distance, t.centroid_distance)
+               ELSE c.min_distance
+           END AS distance,
+           c.min_distance,
+           t.centroid_distance,
+           c.capture_count
+    FROM per_capture c
+    JOIN centroids t ON t.id = c.id
     ORDER BY distance ASC
     LIMIT 2;
 """
@@ -143,15 +222,69 @@ _SUPPORTING_QUERY = """
 """
 
 
-def _match_face(cursor, vector_str, threshold):
+def embed_image(image, model_name=None):
+    """Detect, align and embed the largest face — the single shared entry point.
+
+    Enrolment, re-embedding and scanning all go through this, because a reference
+    embedded by a different route than the probe is a reference that no longer
+    lines up. Every previous accuracy problem in this project traced back to two
+    code paths disagreeing about detection, alignment or threshold units.
+
+    Returns (embedding, face, quality) or (None, None, None) when no face is found.
+    """
+    from config import Config as _Config  # local: avoids a circular import at module load
+
+    faces = face_geometry.detect_faces(image)
+    if not faces:
+        return None, None, None
+
+    face = faces[0]
+    aligned = (face_geometry.align(image, face.landmarks, 160)
+               if USE_5POINT_ALIGN else _plain_crop(image, face.bbox))
+    if aligned is None:
+        return None, None, None
+
+    quality = face_geometry.assess_probe(image, face, aligned)
+    embedded = DeepFace.represent(
+        img_path=aligned, model_name=model_name or _Config.FACE_MODEL,
+        detector_backend="skip", enforce_detection=False, align=False,
+    )
+    return embedded[0]["embedding"], face, quality
+
+
+def _match_message(full_name, status, is_flagged, confirmed):
+    """Wording that does not overstate a probable match as a certainty."""
+    if is_flagged:
+        if confirmed:
+            return f"ALERT: {status.upper()} DETECTED!"
+        return f"LIKELY {status.upper()}: {full_name} — verify before acting."
+    if confirmed:
+        return f"Member '{full_name}' is verified."
+    return f"Probably '{full_name}' (verified member) — low-confidence match."
+
+
+def _match_face(cursor, vector_str, threshold, probable_threshold=None):
     """Identify a single face embedding against the gallery.
 
     Returns the per-face verdict. Never raises for "no match" — an unknown face
     is a normal, expected outcome, not an error.
+
+    Two bands: under `threshold` is a confirmed identification, between that and
+    `probable_threshold` is a probable one that a human should confirm.
     """
-    cursor.execute(_GALLERY_QUERY, {"vec": vector_str})
+    if probable_threshold is None:
+        probable_threshold = max(threshold, PROBABLE_THRESHOLD)
+    cursor.execute(_GALLERY_QUERY, {"vec": vector_str, "strategy": TEMPLATE_STRATEGY})
     ranked = cursor.fetchall()
     best = ranked[0] if ranked else None
+    templates = None
+    if best:
+        templates = {
+            "strategy": TEMPLATE_STRATEGY,
+            "min_distance": round(float(best[4]), 4),
+            "centroid_distance": round(float(best[5]), 4),
+            "enrolled_captures": int(best[6]),
+        }
 
     # Distance to the nearest DIFFERENT person. A tiny margin means the face sat
     # almost equally close to two people — worth surfacing even when the winner
@@ -163,9 +296,11 @@ def _match_face(cursor, vector_str, threshold):
         next_person = {"full_name": ranked[1][1], "status": ranked[1][2],
                        "distance": round(float(ranked[1][3]), 4)}
 
-    if best and best[3] < threshold:
-        person_id, full_name, status, distance, image_url = best
+    if best and best[3] < probable_threshold:
+        person_id, full_name, status, distance = best[0], best[1], best[2], best[3]
         is_flagged = status in ("offender", "suspect")
+        confirmed = distance < threshold
+        confidence = "confirmed" if confirmed else "probable"
 
         # The answer is one person, but a security decision needs the evidence:
         # which stored sightings agreed, from which camera, and how strongly.
@@ -188,13 +323,21 @@ def _match_face(cursor, vector_str, threshold):
         return {
             "is_known_user": True,
             "alert": is_flagged,
+            # A probable match still raises the alert — on a watchlist, a likely
+            # offender is worth a look — but it is labelled so nobody mistakes it
+            # for a certainty.
+            "confidence": confidence,
+            "needs_review": not confirmed,
             "status": status,
             "person": {
                 "id": str(person_id),
                 "full_name": full_name,
                 "status": status,
-                "image_url": image_url,
+                # The capture that actually produced the winning distance, so the
+                # UI shows the reference the decision rested on.
+                "image_url": captures[0]["image_url"] if captures else None,
             },
+            "templates": templates,
             "match_distance": round(float(distance), 4),
             "matched_against_photos": len(captures),
             "agreeing_captures": sum(1 for c in captures if c["agrees"]),
@@ -202,8 +345,7 @@ def _match_face(cursor, vector_str, threshold):
             "next_closest_person": next_person,
             "supporting_captures": captures,
             "nearest_person": None,
-            "message": (f"ALERT: {status.upper()} DETECTED!" if is_flagged
-                        else f"Member '{full_name}' is verified."),
+            "message": _match_message(full_name, status, is_flagged, confirmed),
         }
 
     # No match. Nothing is written to the registry — auto-labelling strangers as
@@ -213,6 +355,8 @@ def _match_face(cursor, vector_str, threshold):
     return {
         "is_known_user": False,
         "alert": False,
+        "confidence": "none",
+        "needs_review": False,
         "status": None,
         "person": None,
         "match_distance": round(float(best[3]), 4) if best else None,
@@ -222,9 +366,11 @@ def _match_face(cursor, vector_str, threshold):
         "next_closest_person": next_person,
         "supporting_captures": [],
         "nearest_person": ({"full_name": best[1], "status": best[2]} if best else None),
+        "templates": templates,
         "registered": False,
         "message": ("Unknown face — not in the registry. Not added; "
                     "enrolment is a separate admin action."),
+        "nearest_distance": round(float(best[3]), 4) if best else None,
     }
 
 
@@ -237,7 +383,9 @@ def _frame_message(faces):
 
     alerting = [f for f in faces if f["alert"]]
     verified = [f for f in faces if f["is_known_user"] and not f["alert"]]
-    unknown = [f for f in faces if not f["is_known_user"]]
+    undecided = [f for f in faces if f.get("confidence") == "no_decision"]
+    unknown = [f for f in faces if not f["is_known_user"]
+               and f.get("confidence") != "no_decision"]
 
     parts = []
     if alerting:
@@ -247,6 +395,8 @@ def _frame_message(faces):
         parts.append(f"{len(verified)} verified")
     if unknown:
         parts.append(f"{len(unknown)} unknown")
+    if undecided:
+        parts.append(f"{len(undecided)} unreadable")
     return f"{len(faces)} faces — " + "; ".join(parts)
 
 
@@ -268,7 +418,8 @@ def _pick_primary(faces):
 
 
 def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
-                                threshold=MATCH_THRESHOLD, include_embeddings=False):
+                                threshold=MATCH_THRESHOLD, include_embeddings=False,
+                                probable_threshold=None):
     """
     Identify EVERY face in the image, not just the most prominent one.
 
@@ -293,43 +444,26 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
     and it quietly builds a biometric record of every passer-by. Enrolment belongs
     in a separate, deliberate admin action.
     """
-    # DeepFace wants a path, so the upload goes to a temp file.
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-        tmp.write(image_bytes)
-        tmp_path = tmp.name
+    probe_image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if probe_image is None:
+        return {"success": False, "error": "Image could not be decoded.",
+                "faces_detected": 0, "faces": []}
 
-    try:
-        detected = DeepFace.represent(
-            img_path=tmp_path,
-            model_name=model_name,
-            detector_backend=FACE_DETECTOR,
-            enforce_detection=True,  # Fails cleanly if no face is detected
-            align=FACE_ALIGN,        # off — see the note above, it drops faces
-        )
-    except Exception as e:
-        os.remove(tmp_path)
+    # Detection now comes from services.face_geometry rather than DeepFace, because
+    # it returns the five landmarks that alignment and the quality gate both need.
+    # DeepFace is used for embedding only.
+    detected = face_geometry.detect_faces(probe_image)
+    if not detected:
         return {
             "success": False,
             "error": "No face detected in the image.",
-            "details": str(e),
             "faces_detected": 0,
             "faces": [],
         }
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
 
-    # Largest first, so the cap below drops the most distant faces.
-    detected.sort(key=_face_area, reverse=True)
-    total_detected = len(detected)
+    total_detected = len(detected)          # already sorted largest first
     truncated = max(0, total_detected - MAX_FACES_PER_FRAME)
     detected = detected[:MAX_FACES_PER_FRAME]
-
-    # Quality is advisory here and a scan is NEVER refused for it. You always want
-    # to try to identify whoever is in front of the camera, however poor the
-    # frame. Whether an image is fit to become a stored reference is a different
-    # question, and that gate lives in enrolment.
-    probe_image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
 
     conn = db_conn or psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
@@ -337,23 +471,79 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
     try:
         faces = []
         for index, face in enumerate(detected):
-            box = face.get("facial_area") or {}
-            verdict = _match_face(cursor, str(face["embedding"]), threshold)
-            verdict.update({
+            box = face.as_dict()
+            aligned = (face_geometry.align(probe_image, face.landmarks, 160)
+                       if USE_5POINT_ALIGN else _plain_crop(probe_image, face.bbox))
+            quality = face_geometry.assess_probe(probe_image, face, aligned)
+
+            base = {
                 "index": index,
-                "bbox": {
-                    "x": int(box.get("x", 0)), "y": int(box.get("y", 0)),
-                    "w": int(box.get("w", 0)), "h": int(box.get("h", 0)),
-                },
-                "face_confidence": face.get("face_confidence"),
-                "capture_quality": (
-                    assess_quality(probe_image, box, face.get("face_confidence"))
-                    if probe_image is not None else None
-                ),
-                "_area": _face_area(face),
-            })
+                "bbox": {k: box[k] for k in ("x", "y", "w", "h")},
+                "face_confidence": box["detector_score"],
+                "quality": quality,
+                "aligned": bool(USE_5POINT_ALIGN),
+                "_area": face.area,
+            }
+
+            # A probe the system cannot read gets NO DECISION, not a guess.
+            # Returning the closest name from an unreadable image produces an
+            # answer indistinguishable from a real identification, which is the
+            # worst possible failure mode for a watchlist.
+            if ENFORCE_PROBE_QUALITY and not quality["decidable"]:
+                base.update({
+                    "is_known_user": False,
+                    "alert": False,
+                    "confidence": "no_decision",
+                    "needs_review": True,
+                    "status": None,
+                    "person": None,
+                    "match_distance": None,
+                    "matched_against_photos": 0,
+                    "agreeing_captures": 0,
+                    "margin_to_next_person": None,
+                    "next_closest_person": None,
+                    "supporting_captures": [],
+                    "nearest_person": None,
+                    "templates": None,
+                    "message": "NO DECISION — " + "; ".join(quality["reasons"]),
+                })
+                faces.append(base)
+                continue
+
+            if aligned is None:
+                base.update({
+                    "is_known_user": False, "alert": False, "confidence": "no_decision",
+                    "needs_review": True, "status": None, "person": None,
+                    "match_distance": None, "matched_against_photos": 0,
+                    "agreeing_captures": 0, "margin_to_next_person": None,
+                    "next_closest_person": None, "supporting_captures": [],
+                    "nearest_person": None, "templates": None,
+                    "message": "NO DECISION — the face could not be cropped for embedding.",
+                })
+                faces.append(base)
+                continue
+
+            # detector_backend="skip": the crop IS the face, already aligned.
+            embedded = DeepFace.represent(
+                img_path=aligned, model_name=model_name,
+                detector_backend="skip", enforce_detection=False, align=False,
+            )
+            vector = embedded[0]["embedding"]
+
+            verdict = _match_face(cursor, str(vector), threshold, probable_threshold)
+            verdict.update(base)
+            # Kept for callers written against the old field name.
+            verdict["capture_quality"] = {
+                "quality_score": round(min(quality["sharpness"] / 150.0, 1.0), 3),
+                "face_pixels": min(box["w"], box["h"]),
+                "blur_variance": quality["sharpness"],
+                "blur_directional_ratio": quality["balance"],
+                "det_confidence": quality["detector_score"],
+                "passes": quality["decidable"],
+                "reasons": quality["reasons"],
+            }
             if include_embeddings:
-                verdict["embedding"] = [float(v) for v in face["embedding"]]
+                verdict["embedding"] = [float(v) for v in vector]
             faces.append(verdict)
 
         summary = {
@@ -361,6 +551,10 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
             "known": sum(1 for f in faces if f["is_known_user"]),
             "unknown": sum(1 for f in faces if not f["is_known_user"]),
             "alerts": sum(1 for f in faces if f["alert"]),
+            "confirmed": sum(1 for f in faces if f.get("confidence") == "confirmed"),
+            "probable": sum(1 for f in faces if f.get("confidence") == "probable"),
+            "no_decision": sum(1 for f in faces if f.get("confidence") == "no_decision"),
+            "needs_review": sum(1 for f in faces if f.get("needs_review")),
             "truncated": truncated,
         }
 
@@ -382,7 +576,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
                     "matched_against_photos", "agreeing_captures",
                     "margin_to_next_person", "next_closest_person",
                     "supporting_captures", "nearest_person", "capture_quality",
-                    "face_confidence"):
+                    "face_confidence", "confidence", "needs_review"):
             response[key] = primary.get(key)
         response["registered"] = False
         response["primary_face_index"] = primary["index"]

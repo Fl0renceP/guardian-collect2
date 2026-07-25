@@ -22,9 +22,9 @@ alone — they never take part in matching, so their vectors do not matter.
 import argparse
 
 import psycopg2
-from deepface import DeepFace
 
 from config import Config
+from services import recognition
 from services.blob_storage import BlobStorageService
 
 
@@ -46,7 +46,8 @@ def reembed(confirm):
     blob = BlobStorageService()
     container = blob.container_client.container_name
 
-    print(f"detector: {Config.FACE_DETECTOR}    model: {Config.FACE_MODEL}")
+    print(f"detector: yunet (5-point)  align: {recognition.USE_5POINT_ALIGN}  "
+          f"model: {Config.FACE_MODEL}")
     print(f"container: {container}\n")
 
     try:
@@ -78,31 +79,25 @@ def reembed(confirm):
                 failed += 1
                 continue
 
-            # Write to a temp file rather than passing bytes — keeps this on the
-            # exact same code path DeepFace uses during a live scan.
-            import os
-            import tempfile
+            # Exactly the same call a live scan makes — detect, 5-point align,
+            # embed. A reference produced by any other route stops lining up with
+            # the probes it is compared against.
+            import cv2
+            import numpy as np
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-                tmp.write(image_bytes)
-                tmp_path = tmp.name
-            try:
-                objs = DeepFace.represent(
-                    img_path=tmp_path,
-                    model_name=Config.FACE_MODEL,
-                    detector_backend=Config.FACE_DETECTOR,
-                    enforce_detection=True,
-                    align=Config.FACE_ALIGN,
-                )
-            except Exception as exc:
-                print(f"  FAIL  {full_name}: no face found by {Config.FACE_DETECTOR}: "
-                      f"{str(exc)[:70]}")
+            image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if image is None:
+                print(f"  FAIL  {full_name}: {blob_name} is not a decodable image")
                 failed += 1
                 continue
-            finally:
-                os.remove(tmp_path)
 
-            new_vector = str(largest(objs)["embedding"])
+            embedding, _, _ = recognition.embed_image(image)
+            if embedding is None:
+                print(f"  FAIL  {full_name}: no face found in {blob_name}")
+                failed += 1
+                continue
+
+            new_vector = str(embedding)
 
             # How far the reference moved. A large shift means the two detectors
             # disagreed considerably about where this face is.

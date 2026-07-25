@@ -13,6 +13,7 @@ from services import detection_log
 from services import camera_poller
 from services import media_analysis
 from services import plate_ocr
+from services import face_tracker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -97,11 +98,32 @@ def scan_face():
             db_conn=conn,
             model_name=Config.FACE_MODEL,
             threshold=Config.MATCH_THRESHOLD,
+            probable_threshold=Config.PROBABLE_THRESHOLD,
+            # Needed to associate faces across frames; stripped before responding.
+            include_embeddings=True,
         )
 
         # Handle tuple responses from service (e.g. ({'error': 'No face'}, 400))
         if isinstance(result, tuple):
             return jsonify(result[0]), result[1]
+
+        # Track-level decisioning. Frames from one camera arrive as separate
+        # requests, so the tracker holds state per camera_id between them.
+        # A per-frame answer is still returned — this adds the aggregated view
+        # rather than replacing it, so a caller sending unrelated stills is
+        # unaffected.
+        try:
+            result["track_decisions"] = face_tracker.registry.update(
+                camera_id, result.get("faces") or [],
+                Config.MATCH_THRESHOLD, Config.PROBABLE_THRESHOLD,
+            )
+        except Exception as e:
+            logger.warning(f"Tracking failed (per-frame result unaffected): {e}")
+            result["track_decisions"] = []
+
+        # 512 floats per face is ~8KB of JSON no client needs.
+        for face in result.get("faces") or []:
+            face.pop("embedding", None)
 
         # Every check is logged, matched or not — that is the point of the
         # detections table. record() swallows its own failures, so a logging

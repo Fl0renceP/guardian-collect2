@@ -106,6 +106,7 @@ class CameraPoller:
                 db_conn=conn,
                 model_name=Config.FACE_MODEL,
                 threshold=Config.MATCH_THRESHOLD,
+                probable_threshold=Config.PROBABLE_THRESHOLD,
             )
             if isinstance(result, tuple):
                 result = result[0]
@@ -149,6 +150,8 @@ class CameraPoller:
                                     "index": f.get("index"),
                                     "is_known_user": f.get("is_known_user"),
                                     "alert": f.get("alert"),
+                                    "confidence": f.get("confidence"),
+                                    "needs_review": f.get("needs_review"),
                                     "status": f.get("status"),
                                     "full_name": (f.get("person") or {}).get("full_name"),
                                     "match_distance": f.get("match_distance"),
