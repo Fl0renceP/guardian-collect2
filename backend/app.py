@@ -29,7 +29,7 @@ app.register_blueprint(hotspot_bp)
 
 
 def get_db_connection():
-    """Establishes and returns a database connection using application config."""
+    #Establishes and returns a database connection using application config.
     return psycopg2.connect(Config.DATABASE_URL)
 
 
@@ -179,6 +179,26 @@ def scan_plate():
 
     finally:
         conn.close()
+
+def extract_text_from_bytes(image_bytes: bytes) -> str:
+    #Sends image bytes to Azure AI Vision Read OCR and returns extracted text.
+    try:
+        result = client.analyze(
+            image_data=image_bytes,
+            visual_features=[VisualFeatures.READ]  # Correct Enum
+        )
+
+        extracted_words = []
+        if result.read is not None:  # Correct Property
+            for block in result.read.blocks:
+                for line in block.lines:
+                    extracted_words.append(line.text)
+
+        return " ".join(extracted_words)
+
+    except Exception as e:
+        logger.error(f"Azure OCR Error: {e}")
+        return ""
 
 @app.route("/api/v1/scan-plate-azure", methods=["POST"])
 def scan_plate_azure():
