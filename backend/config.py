@@ -28,9 +28,9 @@ class Config:
 
     # 3. DeepFace Model Configuration
     # Options: "Facenet" (128-dim), "Facenet512" (512-dim), "ArcFace" (512-dim), "VGG-Face"
-    FACE_MODEL = "Facenet512"
+    FACE_MODEL = "Facenet"
     # Cosine distance match threshold for Facenet (lower = stricter match)
-    MATCH_THRESHOLD = 0.60
+    MATCH_THRESHOLD = 0.40
 
     # 4. Claims / hot-spot data
     # Azure Cosmos DB is the source of truth: it's writable, so claims submitted

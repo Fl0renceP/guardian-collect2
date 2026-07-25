@@ -26,7 +26,6 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
         embeddings = DeepFace.represent(
             img_path=tmp_path,
             model_name=model_name,
-            detector_backend="retinaface",  # Faster for single face detection
             enforce_detection=True  # Fails cleanly if no face is detected
         )
         query_vector = embeddings[0]["embedding"]

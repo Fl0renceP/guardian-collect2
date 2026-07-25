@@ -21,7 +21,7 @@ CREATE TABLE persons (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     full_name VARCHAR(255) NOT NULL,
     status person_status NOT NULL DEFAULT 'verified',
-    face_embedding vector(512),
+    face_embedding vector(128),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -82,7 +82,7 @@ def setup_and_seed():
 
             # Generate 128-dim FaceNet embedding via DeepFace using local image file
             print(f"Extracting facial embedding for {record['full_name']}...")
-            objs = DeepFace.represent(img_path=local_path, model_name="Facenet512", detector_backend="retinaface", enforce_detection=False)
+            objs = DeepFace.represent(img_path=local_path, model_name="Facenet", enforce_detection=False)
             vector_embedding = str(objs[0]["embedding"])
 
             # Insert into persons table
