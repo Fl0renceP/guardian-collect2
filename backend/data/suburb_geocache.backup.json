@@ -51,15 +51,7 @@
   "lng": 26.2950503,
   "osm_type": "town"
  },
- "ADMIRAL ISLAND AND PORT OWEN ESTATES": {
-  "approximate": true,
-  "display_name": "Admiral Island, Bergrivier Ward 7, Velddrif, Bergrivier Local Municipality, West Coast District Municipality, Western Cape, South Africa",
-  "importance": 1e-10,
-  "lat": -32.7875628,
-  "lng": 18.1521781,
-  "matched_query": "ADMIRAL ISLAND",
-  "osm_type": "islet"
- },
+ "ADMIRAL ISLAND AND PORT OWEN ESTATES": null,
  "ADMIRALS PARK": {
   "display_name": "Admirals Way, Admiral's Park, Temperance Town, Cape Town Ward 100, City of Cape Town, Western Cape, 7150, South Africa",
   "importance": 0.053378961623559894,
@@ -147,15 +139,7 @@
   "lng": 28.1220546,
   "osm_type": "town"
  },
- "ALBERTON NORTH": {
-  "approximate": true,
-  "display_name": "Alberton, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1449, South Africa",
-  "importance": 0.4755415098206907,
-  "lat": -26.2669894,
-  "lng": 28.1220546,
-  "matched_query": "ALBERTON",
-  "osm_type": "town"
- },
+ "ALBERTON NORTH": null,
  "ALBERTSDAL": {
   "display_name": "Albertsdal, Ekurhuleni Ward 38, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1454, South Africa",
   "importance": 0.14674088883802544,
@@ -394,15 +378,7 @@
   "lng": 28.1980556,
   "osm_type": "suburb"
  },
- "ANNLIN WEST": {
-  "approximate": true,
-  "display_name": "Annlin, Tshwane Ward 50, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0110, South Africa",
-  "importance": 0.14673678263523304,
-  "lat": -25.655,
-  "lng": 28.1980556,
-  "matched_query": "ANNLIN",
-  "osm_type": "suburb"
- },
+ "ANNLIN WEST": null,
  "ANZAC": {
   "display_name": "Anzac, Ekurhuleni Ward 97, Brakpan, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1518, South Africa",
   "importance": 0.14671787365529865,
@@ -935,15 +911,7 @@
   "lng": 26.7137289,
   "osm_type": "suburb"
  },
- "BEDFORD 68-IR": {
-  "approximate": true,
-  "display_name": "Bedford, Nxuba Local Municipality, Amathole District Municipality, Eastern Cape, 5780, South Africa",
-  "importance": 0.2782362227145218,
-  "lat": -32.6783333,
-  "lng": 26.0883333,
-  "matched_query": "BEDFORD",
-  "osm_type": "town"
- },
+ "BEDFORD 68-IR": null,
  "BEDFORD GARDENS": {
   "display_name": "Bedford Gardens, Westridge, eThekwini Ward 33, Durban, eThekwini Metropolitan Municipality, KwaZulu-Natal, 4013, South Africa",
   "importance": 0.053403499656671974,
@@ -979,15 +947,7 @@
   "lng": 28.2904774,
   "osm_type": "town"
  },
- "BELFORT ESTATE": {
-  "approximate": true,
-  "display_name": "Belfort Dam, Bellfort, Matatiele Ward 8, Matatiele Local Municipality, Alfred Nzo District Municipality, Eastern Cape, South Africa",
-  "importance": 0.1333742969405661,
-  "lat": -30.1604988,
-  "lng": 28.7197403,
-  "matched_query": "BELFORT",
-  "osm_type": "reservoir"
- },
+ "BELFORT ESTATE": null,
  "BELGRADE": {
   "display_name": "Belgrade Crescent, Johannesburg Ward 100, Roodepoort, City of Johannesburg Metropolitan Municipality, Gauteng, 1747, South Africa",
   "importance": 0.05338432059205001,
@@ -1094,15 +1054,7 @@
   "lng": 18.6270614,
   "osm_type": "railway"
  },
- "BELLVILLE CENTRAL": {
-  "approximate": true,
-  "display_name": "Bellville, Charl Malan Street, Cape Town Ward 10, Bellville, City of Cape Town, Western Cape, 7750, South Africa",
-  "importance": 0.4113064781358611,
-  "lat": -33.9064324,
-  "lng": 18.6270614,
-  "matched_query": "BELLVILLE",
-  "osm_type": "railway"
- },
+ "BELLVILLE CENTRAL": null,
  "BELLVILLE PARK": {
   "display_name": "Bellville Business Park, Boston, Cape Town Ward 2, Bellville, City of Cape Town, Western Cape, 7530, South Africa",
   "importance": 0.08004356984817271,
@@ -1138,15 +1090,7 @@
   "lng": 18.7333333,
   "osm_type": "suburb"
  },
- "BELVEDERE EXT 1": {
-  "approximate": true,
-  "display_name": "Cityhill Church, 1 Greenmeadow Lane,Belvedere Ext 1, Hillcrest, 3650, Inanda Road, Albany Grove, eThekwini Ward 8, Hillcrest, eThekwini Metropolitan Municipality, KwaZulu-Natal, 3650, South Africa",
-  "importance": 4.096360723273087e-05,
-  "lat": -29.7605879,
-  "lng": 30.7790657,
-  "matched_query": "BELVEDERE EXT",
-  "osm_type": "amenity"
- },
+ "BELVEDERE EXT 1": null,
  "BEN FLEUR": {
   "display_name": "Ben Fleur, Paul Sauer Road, Emalahleni Ward 34, eMalahleni, Emalahleni Local Municipality, Nkangala, Mpumalanga, 1049, South Africa",
   "importance": 5.028839551380205e-05,
@@ -1169,15 +1113,7 @@
   "osm_type": "suburb"
  },
  "BENDOR EXT 11": null,
- "BENDOR EXT 35": {
-  "approximate": true,
-  "display_name": "Bendor Park, Polokwane Ward 21, Polokwane, Polokwane Local Municipality, Capricorn District Municipality, Limpopo, 0787, South Africa",
-  "importance": 0.14672448844129088,
-  "lat": -23.8883333,
-  "lng": 29.4847222,
-  "matched_query": "BENDOR",
-  "osm_type": "suburb"
- },
+ "BENDOR EXT 35": null,
  "BENDOR PARK": {
   "display_name": "Bendor Park, Polokwane Ward 21, Polokwane, Polokwane Local Municipality, Capricorn District Municipality, Limpopo, 0787, South Africa",
   "importance": 0.14672448844129088,
@@ -1403,15 +1339,7 @@
   "lng": 28.0683333,
   "osm_type": "suburb"
  },
- "BISHO CENTRAL": {
-  "approximate": true,
-  "display_name": "Bhisho, Buffalo City Metropolitan Municipality, Eastern Cape, 5605, South Africa",
-  "importance": 0.395266902838586,
-  "lat": -32.8494444,
-  "lng": 27.4463889,
-  "matched_query": "BISHO",
-  "osm_type": "town"
- },
+ "BISHO CENTRAL": null,
  "BISHOP LAVIS": {
   "display_name": "Bishop Lavis, Cape Town Ward 24, Elsiesriver, City of Cape Town, Western Cape, 7490, South Africa",
   "importance": 0.4192649767660532,
@@ -1447,15 +1375,7 @@
   "lng": 27.9741667,
   "osm_type": "suburb"
  },
- "BLAIR ATHOLL GOLF ESTATE": {
-  "approximate": true,
-  "display_name": "Blair Atholl, Riverside Estates, Tshwane Ward 48, City of Tshwane Metropolitan Municipality, Gauteng, South Africa",
-  "importance": 0.08003750133516438,
-  "lat": -25.9064897,
-  "lng": 27.908484,
-  "matched_query": "BLAIR ATHOLL",
-  "osm_type": "residential"
- },
+ "BLAIR ATHOLL GOLF ESTATE": null,
  "BLAIRGOWRIE": {
   "display_name": "Blairgowrie, Johannesburg Ward 99, Randburg, City of Johannesburg Metropolitan Municipality, Gauteng, 1865, South Africa",
   "importance": 0.14674088883802544,
@@ -1600,15 +1520,7 @@
   "lng": 28.1254138,
   "osm_type": "shop"
  },
- "BLUE WATER ESTATE": {
-  "approximate": true,
-  "display_name": "Blue Water Close, Kouga Ward 12, St. Francis Bay, Kouga Local Municipality, Sarah Baartman District Municipality, Eastern Cape, 6312, South Africa",
-  "importance": 0.05337833447775994,
-  "lat": -34.1850169,
-  "lng": 24.8502186,
-  "matched_query": "BLUE WATER",
-  "osm_type": "road"
- },
+ "BLUE WATER ESTATE": null,
  "BLUEWATER BAY": {
   "display_name": "Bluewater Bay, Nelson Mandela Bay Ward 60, Gqeberha, Nelson Mandela Bay Metropolitan Municipality, Eastern Cape, 6212, South Africa",
   "importance": 0.1467313809414816,
@@ -1658,24 +1570,8 @@
   "lng": 28.2535265,
   "osm_type": "tourism"
  },
- "BOKSBURG SOUTH": {
-  "approximate": true,
-  "display_name": "Boksburg, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1459, South Africa",
-  "importance": 0.4923976026560688,
-  "lat": -26.2124639,
-  "lng": 28.2617471,
-  "matched_query": "BOKSBURG",
-  "osm_type": "town"
- },
- "BOKSBURG WEST": {
-  "approximate": true,
-  "display_name": "Boksburg, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1459, South Africa",
-  "importance": 0.4923976026560688,
-  "lat": -26.2124639,
-  "lng": 28.2617471,
-  "matched_query": "BOKSBURG",
-  "osm_type": "town"
- },
+ "BOKSBURG SOUTH": null,
+ "BOKSBURG WEST": null,
  "BOLTON WOLD SH": {
   "display_name": "Bolton Wold AH, Midvaal Ward 13, Midvaal Local Municipality, Sedibeng District Municipality, Gauteng, 1961, South Africa",
   "importance": 0.14671166781109327,
@@ -1842,34 +1738,10 @@
   "lng": 18.7,
   "osm_type": "suburb"
  },
- "BRACKENFELL CENTRAL": {
-  "approximate": true,
-  "display_name": "Brackenfell, Cape Town Ward 7, Kraaifontein, City of Cape Town, Western Cape, 7560, South Africa",
-  "importance": 0.4226513483493388,
-  "lat": -33.883056,
-  "lng": 18.7,
-  "matched_query": "BRACKENFELL",
-  "osm_type": "suburb"
- },
+ "BRACKENFELL CENTRAL": null,
  "BRACKENFELL INDUSTRIAL": null,
- "BRACKENFELL NORTH": {
-  "approximate": true,
-  "display_name": "Brackenfell, Cape Town Ward 7, Kraaifontein, City of Cape Town, Western Cape, 7560, South Africa",
-  "importance": 0.4226513483493388,
-  "lat": -33.883056,
-  "lng": 18.7,
-  "matched_query": "BRACKENFELL",
-  "osm_type": "suburb"
- },
- "BRACKENFELL SOUTH": {
-  "approximate": true,
-  "display_name": "Brackenfell, Cape Town Ward 7, Kraaifontein, City of Cape Town, Western Cape, 7560, South Africa",
-  "importance": 0.4226513483493388,
-  "lat": -33.883056,
-  "lng": 18.7,
-  "matched_query": "BRACKENFELL",
-  "osm_type": "suburb"
- },
+ "BRACKENFELL NORTH": null,
+ "BRACKENFELL SOUTH": null,
  "BRACKENHURST": {
   "display_name": "Brackenhurst, Ekurhuleni Ward 38, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1481, South Africa",
   "importance": 0.14674088883802544,
@@ -2133,15 +2005,7 @@
   "lng": 30.9975505,
   "osm_type": "suburb"
  },
- "BROOKLANDS LIFESTYLE ESTATE": {
-  "approximate": true,
-  "display_name": "Brooklands Crescent, Broadway, eThekwini Ward 36, Durban North, eThekwini Metropolitan Municipality, KwaZulu-Natal, 4016, South Africa",
-  "importance": 0.053403499656671974,
-  "lat": -29.7874681,
-  "lng": 31.0375561,
-  "matched_query": "BROOKLANDS",
-  "osm_type": "road"
- },
+ "BROOKLANDS LIFESTYLE ESTATE": null,
  "BROOKLYN": {
   "display_name": "Brooklyn, Cape Town, City of Cape Town, Western Cape, South Africa",
   "importance": 0.4183902988676434,
@@ -2165,15 +2029,7 @@
   "lng": 28.0280556,
   "osm_type": "suburb"
  },
- "BRYANSTON EAST": {
-  "approximate": true,
-  "display_name": "Bryanston, Randburg, City of Johannesburg Metropolitan Municipality, Gauteng, South Africa",
-  "importance": 0.14674088883802544,
-  "lat": -26.0513889,
-  "lng": 28.0280556,
-  "matched_query": "BRYANSTON",
-  "osm_type": "suburb"
- },
+ "BRYANSTON EAST": null,
  "BRYANSTON WEST": {
   "display_name": "Cisco Systems South Africa, 15, Georgian Crescent West, Johannesburg Ward 106, Randburg, City of Johannesburg Metropolitan Municipality, Gauteng, 2152, South Africa",
   "importance": 4.91851682306709e-05,
@@ -2391,15 +2247,7 @@
   "osm_type": "suburb"
  },
  "CARLSWALD ESTATE": null,
- "CARLSWALD NORTH ESTATE": {
-  "approximate": true,
-  "display_name": "Carlswald, Johannesburg Ward 112, Midrand, City of Johannesburg Metropolitan Municipality, Gauteng, 1684, South Africa",
-  "importance": 0.14671585183489733,
-  "lat": -25.9832152,
-  "lng": 28.0991162,
-  "matched_query": "CARLSWALD",
-  "osm_type": "suburb"
- },
+ "CARLSWALD NORTH ESTATE": null,
  "CARNARVON": {
   "display_name": "Carnarvon, Kareeberg Local Municipality, Pixley ka Seme District Municipality, Northern Cape, 8925, South Africa",
   "importance": 0.2909516038077344,
@@ -2519,15 +2367,7 @@
   "lng": 28.2172051,
   "osm_type": "shop"
  },
- "CENTURION CENTRAL": {
-  "approximate": true,
-  "display_name": "Centurion, City of Tshwane Metropolitan Municipality, Gauteng, 0246, South Africa",
-  "importance": 0.41118372170976975,
-  "lat": -25.836389,
-  "lng": 28.180278,
-  "matched_query": "CENTURION",
-  "osm_type": "town"
- },
+ "CENTURION CENTRAL": null,
  "CENTURION GOLF ESTATE": {
   "display_name": "Centurion Golf Estate, Tshwane Ward 65, Irene, City of Tshwane Metropolitan Municipality, Gauteng, 0046, South Africa",
   "importance": 0.14673678263523304,
@@ -2748,15 +2588,7 @@
   "osm_type": "suburb"
  },
  "CLAYVILLE EAST": null,
- "CLEARWATER ESTATE": {
-  "approximate": true,
-  "display_name": "Clearwater, Southcrest, Ekurhuleni Ward 37, Alberton, City of Ekurhuleni Metropolitan Municipality, Gauteng, South Africa",
-  "importance": 0.08007422217135879,
-  "lat": -26.2621032,
-  "lng": 28.1165303,
-  "matched_query": "CLEARWATER",
-  "osm_type": "residential"
- },
+ "CLEARWATER ESTATE": null,
  "CLEARY PARK": {
   "display_name": "Cleary Park, Nelson Mandela Bay Ward 32, Bethelsdorp, Nelson Mandela Bay Metropolitan Municipality, Eastern Cape, 6059, South Africa",
   "importance": 0.08006471427481496,
@@ -2928,15 +2760,7 @@
   "lng": 30.9053144,
   "osm_type": "leisure"
  },
- "COWIES HILL PARK": {
-  "approximate": true,
-  "display_name": "Cowies Hill Sports Club, Cnr, Hopson Road, Woodside, eThekwini Ward 18, Clermont, eThekwini Metropolitan Municipality, KwaZulu-Natal, 3629, South Africa",
-  "importance": 7.016632333862847e-05,
-  "lat": -29.8236143,
-  "lng": 30.9053144,
-  "matched_query": "COWIES HILL",
-  "osm_type": "leisure"
- },
+ "COWIES HILL PARK": null,
  "CRAIGAVON AH": {
   "display_name": "Craigavon, Johannesburg Ward 96, Randburg, City of Johannesburg Metropolitan Municipality, Gauteng, 2155, South Africa",
   "importance": 0.14671585183489733,
@@ -3485,15 +3309,7 @@
   "osm_type": "neighbourhood"
  },
  "DENVAR PARK": null,
- "DERDEPOORT 326-JR": {
-  "approximate": true,
-  "display_name": "Derdepoort Tuindorp, Tshwane Ward 5, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0150, South Africa",
-  "importance": 0.14673678263523304,
-  "lat": -25.6738889,
-  "lng": 28.2572222,
-  "matched_query": "DERDEPOORT",
-  "osm_type": "suburb"
- },
+ "DERDEPOORT 326-JR": null,
  "DERDEPOORTPARK": {
   "display_name": "Derdepoortpark, Tshwane Ward 87, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0022, South Africa",
   "importance": 0.14673678263523304,
@@ -3516,15 +3332,7 @@
   "lng": 25.4687529,
   "osm_type": "town"
  },
- "DESPATCH CENTRAL": {
-  "approximate": true,
-  "display_name": "Despatch, Nelson Mandela Bay Metropolitan Municipality, Eastern Cape, South Africa",
-  "importance": 0.2521482229732802,
-  "lat": -33.798352,
-  "lng": 25.4687529,
-  "matched_query": "DESPATCH",
-  "osm_type": "town"
- },
+ "DESPATCH CENTRAL": null,
  "DEURDRIF": {
   "display_name": "Deurdrif, Constantia, Cape Town, City of Cape Town, Western Cape, 7864, South Africa",
   "importance": 0.14674108110170134,
@@ -3532,15 +3340,7 @@
   "lng": 18.4583333,
   "osm_type": "suburb"
  },
- "DEVIL'S PEAK ESTATE": {
-  "approximate": true,
-  "display_name": "Devil's Peak, Cape Town, City of Cape Town, Western Cape, 7735, South Africa",
-  "importance": 0.42066187458738946,
-  "lat": -33.9546074,
-  "lng": 18.4403929,
-  "matched_query": "DEVIL'S PEAK",
-  "osm_type": "peak"
- },
+ "DEVIL'S PEAK ESTATE": null,
  "DHLAMINI": {
   "display_name": "Dhlamini Street, Noordgesig, Johannesburg Ward 29, Johannesburg, City of Johannesburg Metropolitan Municipality, Gauteng, 2001, South Africa",
   "importance": 0.05340755550469212,
@@ -3618,15 +3418,7 @@
   "lng": 27.9502778,
   "osm_type": "suburb"
  },
- "DIEPKLOOF 319-IQ": {
-  "approximate": true,
-  "display_name": "Diepkloof, Johannesburg Ward 27, Johannesburg, City of Johannesburg Metropolitan Municipality, Gauteng, 2001, South Africa",
-  "importance": 0.14674088883802544,
-  "lat": -26.2419444,
-  "lng": 27.9502778,
-  "matched_query": "DIEPKLOOF",
-  "osm_type": "suburb"
- },
+ "DIEPKLOOF 319-IQ": null,
  "DIEPKLOOF ZONE 1": {
   "display_name": "Diepkloof, Johannesburg Ward 27, Johannesburg, City of Johannesburg Metropolitan Municipality, Gauteng, 2001, South Africa",
   "importance": 0.14674088883802544,
@@ -3756,15 +3548,7 @@
   "lng": 18.6738873,
   "osm_type": "suburb"
  },
- "DOORNKLOOF 391-JR": {
-  "approximate": true,
-  "display_name": "Doornkloof, Swartland Ward 2, Moorreesburg, Swartland Local Municipality, West Coast District Municipality, Western Cape, South Africa",
-  "importance": 0.14670910276951243,
-  "lat": -33.1558267,
-  "lng": 18.6738873,
-  "matched_query": "DOORNKLOOF",
-  "osm_type": "suburb"
- },
+ "DOORNKLOOF 391-JR": null,
  "DOORNKOP": {
   "display_name": "Doornkop, Johannesburg Ward 53, Soweto, City of Johannesburg Metropolitan Municipality, Gauteng, 1861, South Africa",
   "importance": 0.14672573510337983,
@@ -3779,15 +3563,7 @@
   "lng": 28.2355556,
   "osm_type": "suburb"
  },
- "DOORNPOORT 295-JR": {
-  "approximate": true,
-  "display_name": "Doornpoort, Tshwane Ward 96, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0017, South Africa",
-  "importance": 0.14673678263523304,
-  "lat": -25.6469444,
-  "lng": 28.2355556,
-  "matched_query": "DOORNPOORT",
-  "osm_type": "suburb"
- },
+ "DOORNPOORT 295-JR": null,
  "DORANDIA": {
   "display_name": "Dorandia, Tshwane Ward 98, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0155, South Africa",
   "importance": 0.14673678263523304,
@@ -3865,15 +3641,7 @@
   "lng": 18.4535761,
   "osm_type": "farmyard"
  },
- "DRIEFONTEIN 87-IR": {
-  "approximate": true,
-  "display_name": "Driefontein, Kagisano-Molopo Local Municipality, Dr Ruth Segomotsi Mompati District Municipality, North West, South Africa",
-  "importance": 0.14671166781109327,
-  "lat": -26.2320212,
-  "lng": 23.5267818,
-  "matched_query": "DRIEFONTEIN",
-  "osm_type": "village"
- },
+ "DRIEFONTEIN 87-IR": null,
  "DROSTE PARK": null,
  "DRUMBLADE AH": null,
  "DUBE": {
@@ -3995,24 +3763,8 @@
   "lng": 18.6494444,
   "osm_type": "town"
  },
- "DURBANVILLE CENTRAL": {
-  "approximate": true,
-  "display_name": "Durbanville, City of Cape Town, Western Cape, 7550, South Africa",
-  "importance": 0.43398728502681116,
-  "lat": -33.8402778,
-  "lng": 18.6494444,
-  "matched_query": "DURBANVILLE",
-  "osm_type": "town"
- },
- "DURBANVILLE EXT 20": {
-  "approximate": true,
-  "display_name": "Durbanville, City of Cape Town, Western Cape, 7550, South Africa",
-  "importance": 0.43398728502681116,
-  "lat": -33.8402778,
-  "lng": 18.6494444,
-  "matched_query": "DURBANVILLE",
-  "osm_type": "town"
- },
+ "DURBANVILLE CENTRAL": null,
+ "DURBANVILLE EXT 20": null,
  "DURBANVILLE HILLS": {
   "display_name": "Durbanville Hills, Cape Town Ward 112, Durbanville, City of Cape Town, Western Cape, 7551, South Africa",
   "importance": 0.14671096284428164,
@@ -4056,15 +3808,7 @@
   "lng": 27.9230371,
   "osm_type": "neighbourhood"
  },
- "EARLS COURT LIFESTYLE ESTATE": {
-  "approximate": true,
-  "display_name": "Earls Court, George Local Municipality, Garden Route District Municipality, Western Cape, South Africa",
-  "importance": 0.14672076829175246,
-  "lat": -33.9621162,
-  "lng": 22.4234558,
-  "matched_query": "EARLS COURT",
-  "osm_type": "suburb"
- },
+ "EARLS COURT LIFESTYLE ESTATE": null,
  "EARLSFIELD": {
   "display_name": "Earlsfield, eThekwini Ward 37, Clermont, eThekwini Metropolitan Municipality, KwaZulu-Natal, 4035, South Africa",
   "importance": 0.14673683299000528,
@@ -4093,24 +3837,8 @@
   "lng": 27.8998573,
   "osm_type": "city"
  },
- "EAST LONDON CBD": {
-  "approximate": true,
-  "display_name": "KuGompo City, Buffalo City Metropolitan Municipality, Eastern Cape, 5201, South Africa",
-  "importance": 0.5306427129552851,
-  "lat": -33.0191604,
-  "lng": 27.8998573,
-  "matched_query": "EAST LONDON",
-  "osm_type": "city"
- },
- "EAST LONDON CENTRAL": {
-  "approximate": true,
-  "display_name": "London, Ward 7, Bushbuckridge, Ehlanzeni, Mpumalanga, 1282, South Africa",
-  "importance": 0.14671166781109327,
-  "lat": -24.8177778,
-  "lng": 31.0472222,
-  "matched_query": "LONDON",
-  "osm_type": "suburb"
- },
+ "EAST LONDON CBD": null,
+ "EAST LONDON CENTRAL": null,
  "EAST LYNNE": {
   "display_name": "East Lynne, Tshwane Ward 84, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0159, South Africa",
   "importance": 0.14673678263523304,
@@ -4120,15 +3848,7 @@
  },
  "EAST RAND PROPRIETARY MINES": null,
  "EAST RAND PTY MINES": null,
- "EAST RAND PTY MINES GOLFCOURSE": {
-  "approximate": true,
-  "display_name": "East Rand, Commissioner Street, Ekurhuleni Ward 93, Boksburg, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1459, South Africa",
-  "importance": 5.0891126878721564e-05,
-  "lat": -26.217268,
-  "lng": 28.2300471,
-  "matched_query": "EAST RAND",
-  "osm_type": "railway"
- },
+ "EAST RAND PTY MINES GOLFCOURSE": null,
  "EAST ROCK": {
   "display_name": "East Rock, Cape Town Ward 21, Bellville, City of Cape Town, Western Cape, 7561, South Africa",
   "importance": 0.14670932249942775,
@@ -4379,33 +4099,9 @@
   "lng": 22.2447288,
   "osm_type": "isolated_dwelling"
  },
- "ELANDSFONTEIN 308-IQ": {
-  "approximate": true,
-  "display_name": "Elandsfontein, Beaufort West Ward 7, Beaufort West Local Municipality, Central Karoo District Municipality, Western Cape, South Africa",
-  "importance": 0.10670809872587164,
-  "lat": -31.7525836,
-  "lng": 22.2447288,
-  "matched_query": "ELANDSFONTEIN",
-  "osm_type": "isolated_dwelling"
- },
- "ELANDSFONTEIN 352-JR": {
-  "approximate": true,
-  "display_name": "Elandsfontein, Beaufort West Ward 7, Beaufort West Local Municipality, Central Karoo District Municipality, Western Cape, South Africa",
-  "importance": 0.10670809872587164,
-  "lat": -31.7525836,
-  "lng": 22.2447288,
-  "matched_query": "ELANDSFONTEIN",
-  "osm_type": "isolated_dwelling"
- },
- "ELANDSFONTEIN 90-IR": {
-  "approximate": true,
-  "display_name": "Elandsfontein, Beaufort West Ward 7, Beaufort West Local Municipality, Central Karoo District Municipality, Western Cape, South Africa",
-  "importance": 0.10670809872587164,
-  "lat": -31.7525836,
-  "lng": 22.2447288,
-  "matched_query": "ELANDSFONTEIN",
-  "osm_type": "isolated_dwelling"
- },
+ "ELANDSFONTEIN 308-IQ": null,
+ "ELANDSFONTEIN 352-JR": null,
+ "ELANDSFONTEIN 90-IR": null,
  "ELANDSHEUWEL": {
   "display_name": "Elandsheuwel, Matlosana Ward 16, Klerksdorp, Matlosana Local Municipality, Dr Kenneth Kaunda District Municipality, North West, 2572, South Africa",
   "importance": 0.14671613412680243,
@@ -4532,15 +4228,7 @@
   "lng": 28.1988889,
   "osm_type": "suburb"
  },
- "ELSIES RIVER INDUSTRIAL": {
-  "approximate": true,
-  "display_name": "Elsies River, 1st Avenue, Vrijzee, Cape Town Ward 26, Parow, City of Cape Town, Western Cape, 7940, South Africa",
-  "importance": 4.3569848172686615e-05,
-  "lat": -33.9105228,
-  "lng": 18.5691391,
-  "matched_query": "ELSIES RIVER",
-  "osm_type": "railway"
- },
+ "ELSIES RIVER INDUSTRIAL": null,
  "ELSPARK": {
   "display_name": "Elspark, Ekurhuleni Ward 42, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1418, South Africa",
   "importance": 0.1467175577935454,
@@ -4609,15 +4297,7 @@
   "lng": 30.7213523,
   "osm_type": "town"
  },
- "EMPANGENI CENTRAL": {
-  "approximate": true,
-  "display_name": "Empangeni, uMhlathuze Local Municipality, King Cetswayo District Municipality, KwaZulu-Natal, 3380, South Africa",
-  "importance": 0.35614271866453184,
-  "lat": -28.746111,
-  "lng": 31.897222,
-  "matched_query": "EMPANGENI",
-  "osm_type": "town"
- },
+ "EMPANGENI CENTRAL": null,
  "ENDULWENI": {
   "display_name": "Endulweni, Ekurhuleni Ward 6, Thembisa, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1632, South Africa",
   "importance": 0.14670944457160293,
@@ -4860,15 +4540,7 @@
   "lng": 28.3077777,
   "osm_type": "suburb"
  },
- "FAERIE GLEN EXT 25": {
-  "approximate": true,
-  "display_name": "Faerie Glen, Tshwane Ward 44, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0043, South Africa",
-  "importance": 0.14673678263523304,
-  "lat": -25.7816666,
-  "lng": 28.3077777,
-  "matched_query": "FAERIE GLEN",
-  "osm_type": "suburb"
- },
+ "FAERIE GLEN EXT 25": null,
  "FAIRBREEZE": {
   "display_name": "Fairbreeze, Dannhauser Ward 6, Dannhauser Local Municipality, Amajuba District Municipality, KwaZulu-Natal, South Africa",
   "importance": 0.14671166781109327,
@@ -5259,15 +4931,7 @@
   "lng": 28.0042447,
   "osm_type": "suburb"
  },
- "FOURWAYS EXT 14": {
-  "approximate": true,
-  "display_name": "Fourways High, Kingfisher Drive, Douglasdale, Johannesburg Ward 115, Randburg, City of Johannesburg Metropolitan Municipality, Gauteng, 2155, South Africa",
-  "importance": 4.91851682306709e-05,
-  "lat": -26.026876,
-  "lng": 28.0060223,
-  "matched_query": "FOURWAYS EXT",
-  "osm_type": "building"
- },
+ "FOURWAYS EXT 14": null,
  "FOURWAYS GARDENS": {
   "display_name": "Fourways Gardens Phase 2, Fourways, Johannesburg Ward 94, Randburg, City of Johannesburg Metropolitan Municipality, Gauteng, South Africa",
   "importance": 0.08004918516823069,
@@ -5449,15 +5113,7 @@
   "lng": 18.4097222,
   "osm_type": "suburb"
  },
- "GARDENVALE AH": {
-  "approximate": true,
-  "display_name": "Gardenvale Academic School, Boven Road, Klipwater, Midvaal Ward 12, Midvaal Local Municipality, Sedibeng District Municipality, Gauteng, South Africa",
-  "importance": 4.5001144426596745e-05,
-  "lat": -26.4243042,
-  "lng": 28.1124654,
-  "matched_query": "GARDENVALE",
-  "osm_type": "amenity"
- },
+ "GARDENVALE AH": null,
  "GARLINGTON ESTATE": {
   "display_name": "Garlington Estate, uMgeni Local Municipality, uMgungundlovu District Municipality, KwaZulu-Natal, 3245, South Africa",
   "importance": 0.1467271297779812,
@@ -5579,15 +5235,7 @@
   "lng": 28.172588,
   "osm_type": "suburb"
  },
- "GERMISTON SOUTH (INDUSTRIES E A)": {
-  "approximate": true,
-  "display_name": "Germiston South, Ekurhuleni Ward 36, Germiston, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1411, South Africa",
-  "importance": 0.14674088883802544,
-  "lat": -26.2241302,
-  "lng": 28.172588,
-  "matched_query": "GERMISTON SOUTH",
-  "osm_type": "suburb"
- },
+ "GERMISTON SOUTH (INDUSTRIES E A)": null,
  "GEZINA": {
   "display_name": "Gezina, Tshwane Ward 53, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0084, South Africa",
   "importance": 0.14673678263523304,
@@ -5624,15 +5272,7 @@
   "osm_type": "suburb"
  },
  "GLEN ASHLEY": null,
- "GLEN AUSTIN AH": {
-  "approximate": true,
-  "display_name": "Glen Austin Bird Sanctuary and Bullfrog Reserve, Johannesburg Ward 92, Midrand, City of Johannesburg Metropolitan Municipality, Gauteng, South Africa",
-  "importance": 0.08004728694590674,
-  "lat": -25.9767209,
-  "lng": 28.1654635,
-  "matched_query": "GLEN AUSTIN",
-  "osm_type": "nature_reserve"
- },
+ "GLEN AUSTIN AH": null,
  "GLEN BARRIE": {
   "display_name": "Glen Barrie, George Local Municipality, Garden Route District Municipality, Western Cape, South Africa",
   "importance": 0.14672076829175246,
@@ -5889,15 +5529,7 @@
   "lng": 24.5348307,
   "osm_type": "town"
  },
- "GRAANENDAL ESTATE": {
-  "approximate": true,
-  "display_name": "Graanendal Shopping Centre, Brackenfell Boulevard, The Crest, Cape Town Ward 105, Durbanville, City of Cape Town, Western Cape, 7550, South Africa",
-  "importance": 4.429617761496937e-05,
-  "lat": -33.8148996,
-  "lng": 18.6743758,
-  "matched_query": "GRAANENDAL",
-  "osm_type": "shop"
- },
+ "GRAANENDAL ESTATE": null,
  "GRABOUW": {
   "display_name": "Grabouw, Theewaterskloof Local Municipality, Overberg District Municipality, Western Cape, 7160, South Africa",
   "importance": 0.34081317763107843,
@@ -6004,15 +5636,7 @@
   "lng": 28.0127778,
   "osm_type": "suburb"
  },
- "GREENSIDE EAST": {
-  "approximate": true,
-  "display_name": "Greenside, Johannesburg Ward 87, Rosebank, City of Johannesburg Metropolitan Municipality, Gauteng, 2092, South Africa",
-  "importance": 0.468045927445346,
-  "lat": -26.1547222,
-  "lng": 28.0127778,
-  "matched_query": "GREENSIDE",
-  "osm_type": "suburb"
- },
+ "GREENSIDE EAST": null,
  "GREENSTONE HILL": {
   "display_name": "Greenstone Hill Office Park, Antwerp, Johannesburg Ward 32, Sandton, City of Johannesburg Metropolitan Municipality, Gauteng, South Africa",
   "importance": 0.08007422217135879,
@@ -6020,15 +5644,7 @@
   "lng": 28.1473032,
   "osm_type": "commercial"
  },
- "GREENSTONE HILL EXT 8": {
-  "approximate": true,
-  "display_name": "Greenstone Hill Office Park, Antwerp, Johannesburg Ward 32, Sandton, City of Johannesburg Metropolitan Municipality, Gauteng, South Africa",
-  "importance": 0.08007422217135879,
-  "lat": -26.1179651,
-  "lng": 28.1473032,
-  "matched_query": "GREENSTONE HILL",
-  "osm_type": "commercial"
- },
+ "GREENSTONE HILL EXT 8": null,
  "GREENSTONE PARK": {
   "display_name": "Greenstone Hill Office Park, Antwerp, Johannesburg Ward 32, Sandton, City of Johannesburg Metropolitan Municipality, Gauteng, South Africa",
   "importance": 0.08007422217135879,
@@ -6122,15 +5738,7 @@
   "lng": 28.2183333,
   "osm_type": "suburb"
  },
- "GROENKLOOF 358-JR": {
-  "approximate": true,
-  "display_name": "Groenkloof, Tshwane Ward 59, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0027, South Africa",
-  "importance": 0.31353539144981896,
-  "lat": -25.7752778,
-  "lng": 28.2183333,
-  "matched_query": "GROENKLOOF",
-  "osm_type": "suburb"
- },
+ "GROENKLOOF 358-JR": null,
  "GROENVALLEI": null,
  "GROENVLEI": {
   "display_name": "Groenvlei, eMadlangeni Ward 4, eMadlangeni Local Municipality, Amajuba District Municipality, KwaZulu-Natal, South Africa",
@@ -6363,15 +5971,7 @@
   "lng": 28.2378733,
   "osm_type": "railway"
  },
- "HATTON ESTATE": {
-  "approximate": true,
-  "display_name": "Hatton, Cape Town, City of Cape Town, Western Cape, South Africa",
-  "importance": 0.14674108110170134,
-  "lat": -33.9799251,
-  "lng": 18.5346768,
-  "matched_query": "HATTON",
-  "osm_type": "suburb"
- },
+ "HATTON ESTATE": null,
  "HAVEN HILLS": {
   "display_name": "Haven Hills South, Buffalo City Ward 16, KuGompo City, Buffalo City Metropolitan Municipality, Eastern Cape, 5252, South Africa",
   "importance": 0.14672061722743568,
@@ -6679,15 +6279,7 @@
   "lng": 18.425,
   "osm_type": "suburb"
  },
- "HIGH RIDING COUNTRY ESTATE": {
-  "approximate": true,
-  "display_name": "High Riding Estate, Sir Lowry's Pass, Cape Town Ward 84, Sir Lowry's Pass, City of Cape Town, Western Cape, South Africa",
-  "importance": 0.08004124132143127,
-  "lat": -34.1263498,
-  "lng": 18.9145431,
-  "matched_query": "HIGH RIDING",
-  "osm_type": "residential"
- },
+ "HIGH RIDING COUNTRY ESTATE": null,
  "HIGHBURY": {
   "display_name": "Highbury, Midvaal Ward 5, Midvaal Local Municipality, Sedibeng District Municipality, Gauteng, 1873, South Africa",
   "importance": 0.14671166781109327,
@@ -6856,15 +6448,7 @@
   "lng": 27.9253018,
   "osm_type": "suburb"
  },
- "HONEYDEW MANOR": {
-  "approximate": true,
-  "display_name": "Honeydew, Roodepoort, City of Johannesburg Metropolitan Municipality, Gauteng, South Africa",
-  "importance": 0.14672573510337983,
-  "lat": -26.0788389,
-  "lng": 27.9253018,
-  "matched_query": "HONEYDEW",
-  "osm_type": "suburb"
- },
+ "HONEYDEW MANOR": null,
  "HONEYDEW RIDGE": {
   "display_name": "Honeydew Ridge, Emily Lane, Wilgeheuwel, Johannesburg Ward 97, Roodepoort, City of Johannesburg Metropolitan Municipality, Gauteng, 1735, South Africa",
   "importance": 5.9068436713161176e-05,
@@ -6879,15 +6463,7 @@
   "lng": 27.7519158,
   "osm_type": "road"
  },
- "HONINGKLIP 178 IQ": {
-  "approximate": true,
-  "display_name": "Honingklip Road, Mogale City Ward 29, Krugersdorp, Mogale City Local Municipality, West Rand District Municipality, Gauteng, South Africa",
-  "importance": 0.05338432059205001,
-  "lat": -26.0334644,
-  "lng": 27.7519158,
-  "matched_query": "HONINGKLIP",
-  "osm_type": "road"
- },
+ "HONINGKLIP 178 IQ": null,
  "HOOG-EN-DROOG": null,
  "HOOGSTEDE": {
   "display_name": "Hoogstede Road, Drakenstein Ward 1, Paarl, Drakenstein Local Municipality, Cape Winelands District Municipality, Western Cape, 7630, South Africa",
@@ -7111,15 +6687,7 @@
   "lng": 28.2666667,
   "osm_type": "suburb"
  },
- "IMPALA PARK (WITKOPPIE RIDGE)": {
-  "approximate": true,
-  "display_name": "Impala Park, Ekurhuleni Ward 23, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1470, South Africa",
-  "importance": 0.14671787365529865,
-  "lat": -26.1611111,
-  "lng": 28.2666667,
-  "matched_query": "IMPALA PARK",
-  "osm_type": "suburb"
- },
+ "IMPALA PARK (WITKOPPIE RIDGE)": null,
  "INANDA": {
   "display_name": "Inanda, Johannesburg Ward 91, Sandton, City of Johannesburg Metropolitan Municipality, Gauteng, 1969, South Africa",
   "importance": 0.4669015045583901,
@@ -7129,15 +6697,7 @@
  },
  "INANDA FARM": null,
  "INANDA NAMIBIA": null,
- "INCHANGA WEST": {
-  "approximate": true,
-  "display_name": "Inchanga, eThekwini Ward 4, eThekwini Metropolitan Municipality, KwaZulu-Natal, 3670, South Africa",
-  "importance": 0.30723887866744215,
-  "lat": -29.7375,
-  "lng": 30.6641667,
-  "matched_query": "INCHANGA",
-  "osm_type": "suburb"
- },
+ "INCHANGA WEST": null,
  "INDUSTRIA NORTH": {
   "display_name": "Potch Industria Cemetery, Tlokwe Ward 6, Potchefstroom, Tlokwe Local Municipality, Dr Kenneth Kaunda District Municipality, North West, South Africa",
   "importance": 0.08005715648126951,
@@ -7246,15 +6806,7 @@
   "lng": 30.061111,
   "osm_type": "village"
  },
- "J P BEZUIDENHOUT PARK": {
-  "approximate": true,
-  "display_name": "General P. J. Liebenberg Crescent, Welgelegen, Cape Town Ward 1, Parow, City of Cape Town, Western Cape, 7506, South Africa",
-  "importance": 0.053407747768368014,
-  "lat": -33.8693079,
-  "lng": 18.5658241,
-  "matched_query": "J P",
-  "osm_type": "road"
- },
+ "J P BEZUIDENHOUT PARK": null,
  "JABULANI": {
   "display_name": "Jabulani, Johannesburg Ward 46, Soweto, City of Johannesburg Metropolitan Municipality, Gauteng, 1723, South Africa",
   "importance": 0.14672573510337983,
@@ -7626,25 +7178,9 @@
   "lng": 28.231283,
   "osm_type": "amenity"
  },
- "KEMPTON PARK HOSPITAL": {
-  "approximate": true,
-  "display_name": "Kempton Park, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1619, South Africa",
-  "importance": 0.4802863843985767,
-  "lat": -26.0964372,
-  "lng": 28.2336325,
-  "matched_query": "KEMPTON PARK",
-  "osm_type": "town"
- },
+ "KEMPTON PARK HOSPITAL": null,
  "KEMPTON PARK NU": null,
- "KEMPTON PARK OTHER": {
-  "approximate": true,
-  "display_name": "Kempton Park, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1619, South Africa",
-  "importance": 0.4802863843985767,
-  "lat": -26.0964372,
-  "lng": 28.2336325,
-  "matched_query": "KEMPTON PARK",
-  "osm_type": "town"
- },
+ "KEMPTON PARK OTHER": null,
  "KEMPTON PARK WEST": {
   "display_name": "Kempton Park West, Ekurhuleni Ward 17, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1625, South Africa",
   "importance": 0.46679646759257826,
@@ -7819,15 +7355,7 @@
   "lng": 24.7834303,
   "osm_type": "industrial"
  },
- "KINDLEWOOD ESTATE": {
-  "approximate": true,
-  "display_name": "Kindlewood Drive, Mount Edgecombe, eThekwini Ward 102, Umhlanga Rocks, eThekwini Metropolitan Municipality, KwaZulu-Natal, 4302, South Africa",
-  "importance": 0.053403499656671974,
-  "lat": -29.7333319,
-  "lng": 31.0457826,
-  "matched_query": "KINDLEWOOD",
-  "osm_type": "road"
- },
+ "KINDLEWOOD ESTATE": null,
  "KING GEORGE PARK": {
   "display_name": "King George Park, George Ward 3, George Local Municipality, Garden Route District Municipality, Western Cape, South Africa",
   "importance": 0.14672076829175246,
@@ -8193,15 +7721,7 @@
   "lng": 27.235515,
   "osm_type": "town"
  },
- "KROONSTAD CENTRAL": {
-  "approximate": true,
-  "display_name": "Kroonstad, Moqhaka Local Municipality, Fezile Dabi District Municipality, Free State, 1499, South Africa",
-  "importance": 0.44058309708484666,
-  "lat": -27.6532701,
-  "lng": 27.235515,
-  "matched_query": "KROONSTAD",
-  "osm_type": "town"
- },
+ "KROONSTAD CENTRAL": null,
  "KRUGERSDORP": {
   "display_name": "Krugersdorp, Mogale City Local Municipality, West Rand District Municipality, Gauteng, 1733, South Africa",
   "importance": 0.5006385087145426,
@@ -8209,15 +7729,7 @@
   "lng": 27.775556,
   "osm_type": "city"
  },
- "KRUGERSDORP EAST": {
-  "approximate": true,
-  "display_name": "Krugersdorp, Mogale City Local Municipality, West Rand District Municipality, Gauteng, 1733, South Africa",
-  "importance": 0.5006385087145426,
-  "lat": -26.095556,
-  "lng": 27.775556,
-  "matched_query": "KRUGERSDORP",
-  "osm_type": "city"
- },
+ "KRUGERSDORP EAST": null,
  "KRUGERSDORP NORTH": {
   "display_name": "Krugersdorp, N4, Rustenburg Ward 17, Rustenburg, Rustenburg Local Municipality, Bojanala Platinum District Municipality, North West, 0393, South Africa",
   "importance": 5.7400625619852255e-05,
@@ -8246,24 +7758,8 @@
   "lng": 18.6653344,
   "osm_type": "river"
  },
- "KUILS RIVER INDUSTRIAL": {
-  "approximate": true,
-  "display_name": "Kuils River, Cape Town Ward 114, Blue Downs, City of Cape Town, Western Cape, 7100, South Africa",
-  "importance": 0.14671304722667272,
-  "lat": -34.0059584,
-  "lng": 18.6679469,
-  "matched_query": "KUILS RIVER",
-  "osm_type": "river"
- },
- "KUILS RIVER SOUTH SMALL HOLDINGS": {
-  "approximate": true,
-  "display_name": "Kuils River, Cape Town Ward 114, Blue Downs, City of Cape Town, Western Cape, 7100, South Africa",
-  "importance": 0.14671304722667272,
-  "lat": -34.0059584,
-  "lng": 18.6679469,
-  "matched_query": "KUILS RIVER",
-  "osm_type": "river"
- },
+ "KUILS RIVER INDUSTRIAL": null,
+ "KUILS RIVER SOUTH SMALL HOLDINGS": null,
  "KUILSRIVIER INDUSTRIAL": null,
  "KULEKA": {
   "display_name": "Kuleka, uMhlathuze Ward 9, Empangeni, uMhlathuze Local Municipality, King Cetswayo District Municipality, KwaZulu-Natal, 3091, South Africa",
@@ -8305,33 +7801,9 @@
   "lng": 31.2881205,
   "osm_type": "town"
  },
- "KWADUKUZA CENTRAL": {
-  "approximate": true,
-  "display_name": "KwaDukuza, KwaDukuza Local Municipality, iLembe District Municipality, KwaZulu-Natal, 4449, South Africa",
-  "importance": 0.3492426022163027,
-  "lat": -29.3383782,
-  "lng": 31.2881205,
-  "matched_query": "KWADUKUZA",
-  "osm_type": "town"
- },
- "KWADUKUZA EXT 14": {
-  "approximate": true,
-  "display_name": "KwaDukuza, KwaDukuza Local Municipality, iLembe District Municipality, KwaZulu-Natal, 4449, South Africa",
-  "importance": 0.3492426022163027,
-  "lat": -29.3383782,
-  "lng": 31.2881205,
-  "matched_query": "KWADUKUZA",
-  "osm_type": "town"
- },
- "KWADUKUZA EXT 19": {
-  "approximate": true,
-  "display_name": "KwaDukuza, KwaDukuza Local Municipality, iLembe District Municipality, KwaZulu-Natal, 4449, South Africa",
-  "importance": 0.3492426022163027,
-  "lat": -29.3383782,
-  "lng": 31.2881205,
-  "matched_query": "KWADUKUZA",
-  "osm_type": "town"
- },
+ "KWADUKUZA CENTRAL": null,
+ "KWADUKUZA EXT 14": null,
+ "KWADUKUZA EXT 19": null,
  "KWAGGASRAND": {
   "display_name": "Kwaggasrand, Tshwane Ward 3, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0149, South Africa",
   "importance": 0.14673678263523304,
@@ -8368,15 +7840,7 @@
   "lng": 30.962222,
   "osm_type": "town"
  },
- "KWAMASHU HIGHWAY OPEN SPACE": {
-  "approximate": true,
-  "display_name": "Curnick Ndlovu Highway, Bridge City, eThekwini Ward 54, Phoenix, eThekwini Metropolitan Municipality, KwaZulu-Natal, 4359, South Africa",
-  "importance": 0.053403499656671974,
-  "lat": -29.722777,
-  "lng": 30.9859519,
-  "matched_query": "KWAMASHU HIGHWAY",
-  "osm_type": "road"
- },
+ "KWAMASHU HIGHWAY OPEN SPACE": null,
  "KWAMASHU M": {
   "display_name": "KwaMashu, eThekwini Metropolitan Municipality, KwaZulu-Natal, 4360, South Africa",
   "importance": 0.371323530184831,
@@ -8416,15 +7880,7 @@
   "lng": 27.9673203,
   "osm_type": "road"
  },
- "KYALAMI ESTATE": {
-  "approximate": true,
-  "display_name": "Kyalami, Pitts Avenue, Barbeque Downs, Johannesburg Ward 93, Sandton, City of Johannesburg Metropolitan Municipality, Gauteng, 1684, South Africa",
-  "importance": 0.5575461934497464,
-  "lat": -25.9970236,
-  "lng": 28.0678273,
-  "matched_query": "KYALAMI",
-  "osm_type": "leisure"
- },
+ "KYALAMI ESTATE": null,
  "KYALAMI GARDENS": {
   "display_name": "Kyalami Drive, Killarnay Gardens, Cape Town Ward 113, Cape Town, City of Cape Town, Western Cape, 7435, South Africa",
   "importance": 0.053407747768368014,
@@ -8728,15 +8184,7 @@
   "lng": 28.9011111,
   "osm_type": "suburb"
  },
- "LEEUWPOORT 113-IR": {
-  "approximate": true,
-  "display_name": "Leeuwpoort Safaris, Heilbron, Ngwathe Local Municipality, Fezile Dabi District Municipality, Free State, South Africa",
-  "importance": 0.08003908216983288,
-  "lat": -27.2215497,
-  "lng": 27.9264881,
-  "matched_query": "LEEUWPOORT",
-  "osm_type": "nature_reserve"
- },
+ "LEEUWPOORT 113-IR": null,
  "LEFARAGATLHE": {
   "display_name": "Lefaragatlhe Papic Church, Lefaragatlha, Rustenburg Ward 7, Rustenburg, Rustenburg Local Municipality, Bojanala Platinum District Municipality, North West, South Africa",
   "importance": 0.08005740062561986,
@@ -8774,15 +8222,7 @@
   "lng": 27.8246367,
   "osm_type": "town"
  },
- "LENASIA EXT 2": {
-  "approximate": true,
-  "display_name": "Lenasia Extension Two Park, Johannesburg Ward 9, Lenasia, City of Johannesburg Metropolitan Municipality, Gauteng, South Africa",
-  "importance": 0.08005906843671318,
-  "lat": -26.3237955,
-  "lng": 27.8276191,
-  "matched_query": "LENASIA EXT",
-  "osm_type": "park"
- },
+ "LENASIA EXT 2": null,
  "LENASIA SOUTH": {
   "display_name": "Lenasia South, Johannesburg Ward 120, Ennerdale, City of Johannesburg Metropolitan Municipality, Gauteng, 1829, South Africa",
   "importance": 0.14671353246356905,
@@ -9062,15 +8502,7 @@
   "lng": 28.3610739,
   "osm_type": "residential"
  },
- "LOMBARDY WEST": {
-  "approximate": true,
-  "display_name": "Lombardy East, Johannesburg Ward 81, Sandton, City of Johannesburg Metropolitan Municipality, Gauteng, 1616, South Africa",
-  "importance": 0.14674088883802544,
-  "lat": -26.1166667,
-  "lng": 28.125,
-  "matched_query": "LOMBARDY",
-  "osm_type": "suburb"
- },
+ "LOMBARDY WEST": null,
  "LONE HILL": {
   "display_name": "Lone Hill, Johannesburg Ward 94, Randburg, City of Johannesburg Metropolitan Municipality, Gauteng, 2062, South Africa",
   "importance": 0.14671585183489733,
@@ -9157,15 +8589,7 @@
   "lng": 25.5314759,
   "osm_type": "neighbourhood"
  },
- "LOWER LANGEFONTEIN": {
-  "approximate": true,
-  "display_name": "Langefontein Road, Cape Agulhas Ward 4, Bredasdorp, Cape Agulhas Local Municipality, Overberg District Municipality, Western Cape, South Africa",
-  "importance": 0.05337786144808114,
-  "lat": -34.5324453,
-  "lng": 20.026236,
-  "matched_query": "LANGEFONTEIN",
-  "osm_type": "road"
- },
+ "LOWER LANGEFONTEIN": null,
  "LUIPAARDSVLEI 246 IQ": null,
  "LUKASRAND": {
   "display_name": "Lukasrand, Tshwane Ward 59, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0027, South Africa",
@@ -9237,15 +8661,7 @@
   "lng": 28.2636111,
   "osm_type": "suburb"
  },
- "LYNNWOOD EXT 1": {
-  "approximate": true,
-  "display_name": "Lynnwood, Tshwane Ward 82, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0102, South Africa",
-  "importance": 0.3090170114439377,
-  "lat": -25.7611111,
-  "lng": 28.2636111,
-  "matched_query": "LYNNWOOD",
-  "osm_type": "suburb"
- },
+ "LYNNWOOD EXT 1": null,
  "LYNNWOOD GLEN": {
   "display_name": "Lynnwood Glen, Tshwane Ward 46, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0081, South Africa",
   "importance": 0.14673678263523304,
@@ -9471,15 +8887,7 @@
   "osm_type": "town"
  },
  "MAMELODI - LC5": null,
- "MAMELODI - RD5": {
-  "approximate": true,
-  "display_name": "Mamelodi, City of Tshwane Metropolitan Municipality, Gauteng, 0101, South Africa",
-  "importance": 0.16004000076295108,
-  "lat": -25.7158053,
-  "lng": 28.3808295,
-  "matched_query": "MAMELODI",
-  "osm_type": "town"
- },
+ "MAMELODI - RD5": null,
  "MAMELODI - S&S": {
   "display_name": "SOS Children's Village Mamelodi, Sibande Street, Tshwane Ward 23, Mamelodi, City of Tshwane Metropolitan Municipality, Gauteng, 0101, South Africa",
   "importance": 4.0000762951049326e-05,
@@ -9799,15 +9207,7 @@
   "lng": 30.9772719,
   "osm_type": "city"
  },
- "MBOMBELA CENTRAL": {
-  "approximate": true,
-  "display_name": "Mbombela, Ehlanzeni, Mpumalanga, 1201, South Africa",
-  "importance": 0.48605606103060034,
-  "lat": -25.4729094,
-  "lng": 30.9772719,
-  "matched_query": "MBOMBELA",
-  "osm_type": "city"
- },
+ "MBOMBELA CENTRAL": null,
  "MCGREGOR": {
   "display_name": "McGregor, Langeberg Ward 5, McGregor, Langeberg Local Municipality, Cape Winelands District Municipality, Western Cape, 6708, South Africa",
   "importance": 0.26922332516764147,
@@ -9993,15 +9393,7 @@
   "lng": 28.0197222,
   "osm_type": "town"
  },
- "MEYERTON PARK (FARMS)": {
-  "approximate": true,
-  "display_name": "Meyerton Park, Midvaal Ward 10, Meyerton, Midvaal Local Municipality, Sedibeng District Municipality, Gauteng, 1960, South Africa",
-  "importance": 0.14671166781109327,
-  "lat": -26.5525,
-  "lng": 27.9927778,
-  "matched_query": "MEYERTON PARK",
-  "osm_type": "suburb"
- },
+ "MEYERTON PARK (FARMS)": null,
  "MEYERVILLE": {
   "display_name": "Meyerville, Lekwa Ward 4, Standerton, Lekwa Local Municipality, Gert Sibande, Mpumalanga, 2430, South Africa",
   "importance": 0.14671007476920725,
@@ -10166,15 +9558,7 @@
   "lng": 26.8583105,
   "osm_type": "suburb"
  },
- "MMABATHO EXT 39": {
-  "approximate": true,
-  "display_name": "Mmabatho, Mahikeng Ward 8, Mahikeng, Mahikeng Local Municipality, Ngaka Modiri Molema District Municipality, North West, 2790, South Africa",
-  "importance": 0.39122798236215983,
-  "lat": -25.8402754,
-  "lng": 25.6091648,
-  "matched_query": "MMABATHO",
-  "osm_type": "suburb"
- },
+ "MMABATHO EXT 39": null,
  "MMABATHO UNIT 2": {
   "display_name": "Mmabatho, Mahikeng Ward 8, Mahikeng, Mahikeng Local Municipality, Ngaka Modiri Molema District Municipality, North West, 2790, South Africa",
   "importance": 0.39122798236215983,
@@ -10442,15 +9826,7 @@
   "lng": 27.556389,
   "osm_type": "town"
  },
- "MOOIPLAATS 355-JR": {
-  "approximate": true,
-  "display_name": "Mooiplaats, Main Road, Christoburg, Tshwane Ward 61, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, South Africa",
-  "importance": 7.011596856636938e-05,
-  "lat": -25.8235068,
-  "lng": 28.0798716,
-  "matched_query": "MOOIPLAATS",
-  "osm_type": "shop"
- },
+ "MOOIPLAATS 355-JR": null,
  "MOORREESBURG": {
   "display_name": "Moorreesburg, Swartland Local Municipality, West Coast District Municipality, Western Cape, South Africa",
   "importance": 0.32592895108882386,
@@ -10545,15 +9921,7 @@
   "lng": 22.1536248,
   "osm_type": "town"
  },
- "MOSSEL BAY CENTRAL": {
-  "approximate": true,
-  "display_name": "Mossel Bay, Garden Route District Municipality, Western Cape, 6500, South Africa",
-  "importance": 0.456516836198595,
-  "lat": -34.1832022,
-  "lng": 22.1536248,
-  "matched_query": "MOSSEL BAY",
-  "osm_type": "town"
- },
+ "MOSSEL BAY CENTRAL": null,
  "MOTHERWELL": {
   "display_name": "Motherwell, Nelson Mandela Bay Metropolitan Municipality, Eastern Cape, 6211, South Africa",
   "importance": 0.21080589711721126,
@@ -10961,24 +10329,8 @@
   "lng": 30.9772719,
   "osm_type": "city"
  },
- "NELSPRUIT 312-JT": {
-  "approximate": true,
-  "display_name": "Mbombela, Ehlanzeni, Mpumalanga, 1201, South Africa",
-  "importance": 0.48605606103060034,
-  "lat": -25.4729094,
-  "lng": 30.9772719,
-  "matched_query": "NELSPRUIT",
-  "osm_type": "city"
- },
- "NELSPRUIT RESERVE 133-JU": {
-  "approximate": true,
-  "display_name": "Nelspruit Nature Reserve, Mbombela Ward 16, Mbombela, Ehlanzeni, Mpumalanga, South Africa",
-  "importance": 0.08005567177843897,
-  "lat": -25.4891511,
-  "lng": 30.9801855,
-  "matched_query": "NELSPRUIT RESERVE",
-  "osm_type": "nature_reserve"
- },
+ "NELSPRUIT 312-JT": null,
+ "NELSPRUIT RESERVE 133-JU": null,
  "NESERHOF": {
   "display_name": "Neserhof, Matlosana Ward 19, Klerksdorp, Matlosana Local Municipality, Dr Kenneth Kaunda District Municipality, North West, 2571, South Africa",
   "importance": 0.14671613412680243,
@@ -11016,15 +10368,7 @@
   "osm_type": "suburb"
  },
  "NEW GERMANY INDUSTRIAL PARK": null,
- "NEW MARKET MANOR": {
-  "approximate": true,
-  "display_name": "New Market Junction, Foreshore, Cape Town Ward 115, Cape Town, City of Cape Town, Western Cape, South Africa",
-  "importance": 0.08007441443503469,
-  "lat": -33.9267508,
-  "lng": 18.4389809,
-  "matched_query": "NEW MARKET",
-  "osm_type": "residential"
- },
+ "NEW MARKET MANOR": null,
  "NEW ORLEANS": {
   "display_name": "New Orleans, Drakenstein Ward 22, Paarl, Drakenstein Local Municipality, Cape Winelands District Municipality, Western Cape, 7620, South Africa",
   "importance": 0.1467199626153963,
@@ -11537,15 +10881,7 @@
  "OLIEVENHOUTBOS 37": null,
  "OLIEVENHOUTBOS 4": null,
  "OLIEVENHOUTPOORT 196-IQ": null,
- "OLIFANTSFONTEIN 410-JR": {
-  "approximate": true,
-  "display_name": "Olifantsfontein, Ben Schoeman Highway, Johannesburg Ward 112, Midrand, City of Johannesburg Metropolitan Municipality, Gauteng, 1687, South Africa",
-  "importance": 4.728694590672187e-05,
-  "lat": -25.9598881,
-  "lng": 28.132456,
-  "matched_query": "OLIFANTSFONTEIN",
-  "osm_type": "highway"
- },
+ "OLIFANTSFONTEIN 410-JR": null,
  "OLIFANTSKOP": {
   "display_name": "Olifantskop, Sundays River Valley Local Municipality, Sarah Baartman District Municipality, Eastern Cape, South Africa",
   "importance": 0.16004500114442663,
@@ -11553,15 +10889,7 @@
   "lng": 25.9318821,
   "osm_type": "peak"
  },
- "OLIFANTSVLEI 327-IQ": {
-  "approximate": true,
-  "display_name": "Olifantsvlei Nature Reserve, Johannesburg, City of Johannesburg Metropolitan Municipality, Gauteng, 2001, South Africa",
-  "importance": 0.4668490071334186,
-  "lat": -26.3161473,
-  "lng": 27.9257536,
-  "matched_query": "OLIFANTSVLEI",
-  "osm_type": "nature_reserve"
- },
+ "OLIFANTSVLEI 327-IQ": null,
  "OLIVE GROVE": {
   "display_name": "Olive Grove, Mooikloof, Tshwane Ward 91, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, South Africa",
   "importance": 0.08003750133516438,
@@ -11782,15 +11110,7 @@
   "lng": 18.4711933,
   "osm_type": "suburb"
  },
- "PAARDEPLAATS 177 IQ": {
-  "approximate": true,
-  "display_name": "Paardeplaats, Elias Motsoaledi Ward 19, Elias Motsoaledi Local Municipality, Sekhukhune District Municipality, Limpopo, South Africa",
-  "importance": 0.14670685358968485,
-  "lat": -25.0360392,
-  "lng": 29.7125641,
-  "matched_query": "PAARDEPLAATS",
-  "osm_type": "suburb"
- },
+ "PAARDEPLAATS 177 IQ": null,
  "PAARL": {
   "display_name": "Paarl, Drakenstein Local Municipality, Cape Winelands District Municipality, Western Cape, 7622, South Africa",
   "importance": 0.4841887491509792,
@@ -12092,24 +11412,8 @@
   "lng": 19.503841,
   "osm_type": "village"
  },
- "PEERLESS PARK EAST": {
-  "approximate": true,
-  "display_name": "Peerless Park, Cape Town Ward 111, Kraaifontein, City of Cape Town, Western Cape, 7500, South Africa",
-  "importance": 0.14670932249942775,
-  "lat": -33.843121,
-  "lng": 18.7235033,
-  "matched_query": "PEERLESS PARK",
-  "osm_type": "suburb"
- },
- "PEERLESS PARK NORTH": {
-  "approximate": true,
-  "display_name": "Peerless Park, Cape Town Ward 111, Kraaifontein, City of Cape Town, Western Cape, 7500, South Africa",
-  "importance": 0.14670932249942775,
-  "lat": -33.843121,
-  "lng": 18.7235033,
-  "matched_query": "PEERLESS PARK",
-  "osm_type": "suburb"
- },
+ "PEERLESS PARK EAST": null,
+ "PEERLESS PARK NORTH": null,
  "PELHAM": {
   "display_name": "Pelham, Msunduzi Ward 36, Pietermaritzburg, Msunduzi Local Municipality, uMgungundlovu District Municipality, KwaZulu-Natal, 3209, South Africa",
   "importance": 0.1467271297779812,
@@ -12449,64 +11753,16 @@
   "lng": 29.4443053,
   "osm_type": "shop"
  },
- "POLOKWANE EXT 18": {
-  "approximate": true,
-  "display_name": "Polokwane, Polokwane Local Municipality, Capricorn District Municipality, Limpopo, 0699, South Africa",
-  "importance": 0.5194946345197006,
-  "lat": -23.9058333,
-  "lng": 29.4613889,
-  "matched_query": "POLOKWANE",
-  "osm_type": "city"
- },
+ "POLOKWANE EXT 18": null,
  "POLOKWANE EXT 2": null,
  "POLOKWANE EXT 24": null,
- "POLOKWANE EXT 29": {
-  "approximate": true,
-  "display_name": "Polokwane, Polokwane Local Municipality, Capricorn District Municipality, Limpopo, 0699, South Africa",
-  "importance": 0.5194946345197006,
-  "lat": -23.9058333,
-  "lng": 29.4613889,
-  "matched_query": "POLOKWANE",
-  "osm_type": "city"
- },
+ "POLOKWANE EXT 29": null,
  "POLOKWANE EXT 34": null,
  "POLOKWANE EXT 38": null,
- "POLOKWANE EXT 4": {
-  "approximate": true,
-  "display_name": "Polokwane, Polokwane Local Municipality, Capricorn District Municipality, Limpopo, 0699, South Africa",
-  "importance": 0.5194946345197006,
-  "lat": -23.9058333,
-  "lng": 29.4613889,
-  "matched_query": "POLOKWANE",
-  "osm_type": "city"
- },
- "POLOKWANE EXT 44": {
-  "approximate": true,
-  "display_name": "Polokwane, Polokwane Local Municipality, Capricorn District Municipality, Limpopo, 0699, South Africa",
-  "importance": 0.5194946345197006,
-  "lat": -23.9058333,
-  "lng": 29.4613889,
-  "matched_query": "POLOKWANE",
-  "osm_type": "city"
- },
- "POLOKWANE EXT 6": {
-  "approximate": true,
-  "display_name": "Polokwane, Polokwane Local Municipality, Capricorn District Municipality, Limpopo, 0699, South Africa",
-  "importance": 0.5194946345197006,
-  "lat": -23.9058333,
-  "lng": 29.4613889,
-  "matched_query": "POLOKWANE",
-  "osm_type": "city"
- },
- "POLOKWANE EXT 61": {
-  "approximate": true,
-  "display_name": "Polokwane, Polokwane Local Municipality, Capricorn District Municipality, Limpopo, 0699, South Africa",
-  "importance": 0.5194946345197006,
-  "lat": -23.9058333,
-  "lng": 29.4613889,
-  "matched_query": "POLOKWANE",
-  "osm_type": "city"
- },
+ "POLOKWANE EXT 4": null,
+ "POLOKWANE EXT 44": null,
+ "POLOKWANE EXT 6": null,
+ "POLOKWANE EXT 61": null,
  "POLOKWANE SCHOOLS": null,
  "POMONA": {
   "display_name": "Pomona, Ekurhuleni Ward 100, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1623, South Africa",
@@ -12523,15 +11779,7 @@
   "lng": 27.8519562,
   "osm_type": "amenity"
  },
- "POORTVIEW AH": {
-  "approximate": true,
-  "display_name": "Life Poortview, 18, Malcolm Road, Johannesburg Ward 97, Roodepoort, City of Johannesburg Metropolitan Municipality, Gauteng, 1724, South Africa",
-  "importance": 5.9068436713161176e-05,
-  "lat": -26.089342,
-  "lng": 27.8519562,
-  "matched_query": "POORTVIEW",
-  "osm_type": "amenity"
- },
+ "POORTVIEW AH": null,
  "PORT ALFRED": {
   "display_name": "Port Alfred, Ndlambe Local Municipality, Sarah Baartman District Municipality, Eastern Cape, 6170, South Africa",
   "importance": 0.40712885412943295,
@@ -12849,15 +12097,7 @@
   "lng": 29.1615833,
   "osm_type": "peak"
  },
- "PYRAMID ESTATE AH": {
-  "approximate": true,
-  "display_name": "Pyramid, Okhahlamba Local Municipality, Uthukela District Municipality, KwaZulu-Natal, South Africa",
-  "importance": 0.1600422407873655,
-  "lat": -28.9878667,
-  "lng": 29.1615833,
-  "matched_query": "PYRAMID",
-  "osm_type": "peak"
- },
+ "PYRAMID ESTATE AH": null,
  "QAMATA": {
   "display_name": "Qamata River, Intsika Yethu Local Municipality, Chris Hani District Municipality, Eastern Cape, South Africa",
   "importance": 0.14670824673838403,
@@ -13011,15 +12251,7 @@
   "lng": 27.9716667,
   "osm_type": "suburb"
  },
- "RANDPARK 268-IQ": {
-  "approximate": true,
-  "display_name": "Randpark, Johannesburg Ward 98, Randburg, City of Johannesburg Metropolitan Municipality, Gauteng, 2118, South Africa",
-  "importance": 0.14674088883802544,
-  "lat": -26.1111111,
-  "lng": 27.9716667,
-  "matched_query": "RANDPARK",
-  "osm_type": "suburb"
- },
+ "RANDPARK 268-IQ": null,
  "RANDPARK RIDGE": {
   "display_name": "Randpark Ridge, Randburg, City of Johannesburg Metropolitan Municipality, Gauteng, 2156, South Africa",
   "importance": 0.46747621576595166,
@@ -13147,15 +12379,7 @@
   "lng": 18.4022343,
   "osm_type": "road"
  },
- "REGENTS PARK ESTATE": {
-  "approximate": true,
-  "display_name": "Regents Park Drive, Noordhoek Manor, Cape Town Ward 69, Noordhoek, City of Cape Town, Western Cape, 7978, South Africa",
-  "importance": 0.05338013656824594,
-  "lat": -34.1056858,
-  "lng": 18.4022343,
-  "matched_query": "REGENTS PARK",
-  "osm_type": "road"
- },
+ "REGENTS PARK ESTATE": null,
  "REIGER PARK": {
   "display_name": "Reiger Park Primary School, Excelsior Avenue, Ekurhuleni Ward 34, Boksburg, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1460, South Africa",
   "importance": 5.0891126878721564e-05,
@@ -13234,15 +12458,7 @@
   "lng": 28.7107635,
   "osm_type": "residential"
  },
- "RICHARDS BAY - NEW": {
-  "approximate": true,
-  "display_name": "Richards Bay, uMhlathuze Local Municipality, King Cetswayo District Municipality, KwaZulu-Natal, 3900, South Africa",
-  "importance": 0.4104423115181327,
-  "lat": -28.7707857,
-  "lng": 32.0577775,
-  "matched_query": "RICHARDS BAY",
-  "osm_type": "city"
- },
+ "RICHARDS BAY - NEW": null,
  "RICHARDS BAY CENTRAL": {
   "display_name": "SUN1 Richards Bay, 6, South East Central, Veldenvlei, uMhlathuze Ward 2, Richards Bay, uMhlathuze Local Municipality, King Cetswayo District Municipality, KwaZulu-Natal, 3900, South Africa",
   "importance": 4.793392843514179e-05,
@@ -13307,15 +12523,7 @@
   "lng": 18.895509,
   "osm_type": "village"
  },
- "RIEBEEK WEST MINE": {
-  "approximate": true,
-  "display_name": "Riebeek-Wes, Station Road, Swartland Ward 3, Riebeek-Wes, Swartland Local Municipality, West Coast District Municipality, Western Cape, 7306, South Africa",
-  "importance": 4.2436102845762077e-05,
-  "lat": -33.3416964,
-  "lng": 18.8770498,
-  "matched_query": "RIEBEEK WEST",
-  "osm_type": "railway"
- },
+ "RIEBEEK WEST MINE": null,
  "RIET RIVER": {
   "display_name": "Riet River, Free State, South Africa",
   "importance": 0.2636224323479305,
@@ -13375,15 +12583,7 @@
   "lng": 28.2599061,
   "osm_type": "residential"
  },
- "RIETVLEI VIEW COUNTRY ESTATES": {
-  "approximate": true,
-  "display_name": "Rietvlei View Country Estate, Tshwane Ward 91, City of Tshwane Metropolitan Municipality, Gauteng, South Africa",
-  "importance": 0.08003750133516438,
-  "lat": -25.894516,
-  "lng": 28.3374898,
-  "matched_query": "RIETVLEI VIEW",
-  "osm_type": "residential"
- },
+ "RIETVLEI VIEW COUNTRY ESTATES": null,
  "RIS PARK AH": null,
  "RISECLIFF": {
   "display_name": "Risecliff, eThekwini Ward 72, Chatsworth, eThekwini Metropolitan Municipality, KwaZulu-Natal, 4030, South Africa",
@@ -13578,15 +12778,7 @@
   "lng": 27.8472222,
   "osm_type": "suburb"
  },
- "ROODEKRANS 183-IQ": {
-  "approximate": true,
-  "display_name": "Roodekrans, Johannesburg Ward 83, Roodepoort, City of Johannesburg Metropolitan Municipality, Gauteng, 1746, South Africa",
-  "importance": 0.14672573510337983,
-  "lat": -26.1038889,
-  "lng": 27.8472222,
-  "matched_query": "ROODEKRANS",
-  "osm_type": "suburb"
- },
+ "ROODEKRANS 183-IQ": null,
  "ROODEPLAAT": {
   "display_name": "Roodeplaat Dam Nature Reserve, City of Tshwane Metropolitan Municipality, Gauteng, 0035, South Africa",
   "importance": 0.18929199030239088,
@@ -13638,15 +12830,7 @@
   "lng": 28.1513889,
   "osm_type": "suburb"
  },
- "ROOIHUISKRAAL NORTH": {
-  "approximate": true,
-  "display_name": "Rooihuiskraal, Tshwane Ward 64, Golden Fields Estate, City of Tshwane Metropolitan Municipality, Gauteng, 0154, South Africa",
-  "importance": 0.14673678263523304,
-  "lat": -25.8933333,
-  "lng": 28.1513889,
-  "matched_query": "ROOIHUISKRAAL",
-  "osm_type": "suburb"
- },
+ "ROOIHUISKRAAL NORTH": null,
  "ROOIRIVIER-RIF": {
   "display_name": "Rooirivier-Rif, George Ward 23, George Local Municipality, Garden Route District Municipality, Western Cape, South Africa",
   "importance": 0.14672076829175246,
@@ -13887,15 +13071,7 @@
   "osm_type": "town"
  },
  "SABLE HILLS WATERFRONT ESTATE": null,
- "SADDLEBROOK ESTATE": {
-  "approximate": true,
-  "display_name": "Saddlebrook Drive, Johannesburg Ward 112, Diepsloot, City of Johannesburg Metropolitan Municipality, Gauteng, 2069, South Africa",
-  "importance": 0.05337165407797357,
-  "lat": -25.946236,
-  "lng": 28.0442061,
-  "matched_query": "SADDLEBROOK",
-  "osm_type": "road"
- },
+ "SADDLEBROOK ESTATE": null,
  "SAFARI TUINE": {
   "display_name": "Safari Gardens, Rustenburg Ward 14, Rustenburg, Rustenburg Local Municipality, Bojanala Platinum District Municipality, North West, 0393, South Africa",
   "importance": 0.14672406729228651,
@@ -14290,15 +13466,7 @@
   "osm_type": "town"
  },
  "SERENGETI GOLF AND WILDLIFE ESTATE": null,
- "SESHEGO-9E EXT 3": {
-  "approximate": true,
-  "display_name": "Seshego, Polokwane Ward 17, Polokwane, Polokwane Local Municipality, Capricorn District Municipality, Limpopo, 0742, South Africa",
-  "importance": 0.3151525238377993,
-  "lat": -23.8494444,
-  "lng": 29.3894444,
-  "matched_query": "SESHEGO",
-  "osm_type": "suburb"
- },
+ "SESHEGO-9E EXT 3": null,
  "SESHEGO-A": {
   "display_name": "Seshego, Polokwane Ward 17, Polokwane, Polokwane Local Municipality, Capricorn District Municipality, Limpopo, 0742, South Africa",
   "importance": 0.3151525238377993,
@@ -14329,15 +13497,7 @@
   "lng": 30.87,
   "osm_type": "suburb"
  },
- "SHALLCROSS EXT 2": {
-  "approximate": true,
-  "display_name": "Shallcross, eThekwini Ward 71, Chatsworth, eThekwini Metropolitan Municipality, KwaZulu-Natal, 4147, South Africa",
-  "importance": 0.30093685344584264,
-  "lat": -29.8852778,
-  "lng": 30.87,
-  "matched_query": "SHALLCROSS",
-  "osm_type": "suburb"
- },
+ "SHALLCROSS EXT 2": null,
  "SHANGRILA": {
   "display_name": "Shangrila, Ingwe Ward 7, Ingwe Local Municipality, Sisonke District Municipality, KwaZulu-Natal, South Africa",
   "importance": 0.0800374540321965,
@@ -14567,15 +13727,7 @@
   "lng": 18.4665789,
   "osm_type": "amenity"
  },
- "SODWANA BAY NATIONAL PARK": {
-  "approximate": true,
-  "display_name": "Sodwana Bay, The Big Five False Bay Local Municipality, Umkhanyakude District Municipality, KwaZulu-Natal, South Africa",
-  "importance": 0.14670416800183103,
-  "lat": -27.548832,
-  "lng": 32.6711841,
-  "matched_query": "SODWANA BAY",
-  "osm_type": "village"
- },
+ "SODWANA BAY NATIONAL PARK": null,
  "SOLHEIM": {
   "display_name": "Solheim, Ekurhuleni Ward 21, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1416, South Africa",
   "importance": 0.14674088883802544,
@@ -14612,15 +13764,7 @@
   "lng": 18.8489342,
   "osm_type": "town"
  },
- "SOMERSET WEST COUNTRY CLUB": {
-  "approximate": true,
-  "display_name": "Somerset West Golf Club, Reitz Street, Briza, Cape Town Ward 15, Somerset West, City of Cape Town, Western Cape, 7130, South Africa",
-  "importance": 4.873197528033902e-05,
-  "lat": -34.0798375,
-  "lng": 18.8403989,
-  "matched_query": "SOMERSET WEST CLUB",
-  "osm_type": "amenity"
- },
+ "SOMERSET WEST COUNTRY CLUB": null,
  "SONEIKE": {
   "display_name": "Soneike, Cape Town Ward 8, Kuilsrivier, City of Cape Town, Western Cape, 7580, South Africa",
   "importance": 0.14670932249942775,
@@ -14652,15 +13796,7 @@
   "lng": 28.3391442,
   "osm_type": "road"
  },
- "SONNEVELD ESTATE": {
-  "approximate": true,
-  "display_name": "Sonneveld Street, Sunair Park, Ekurhuleni Ward 74, Brakpan, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1541, South Africa",
-  "importance": 0.053384540321965324,
-  "lat": -26.2625608,
-  "lng": 28.3391442,
-  "matched_query": "SONNEVELD",
-  "osm_type": "road"
- },
+ "SONNEVELD ESTATE": null,
  "SONSTRAAL": {
   "display_name": "Sonstraal, Steve Biko Road, Trevenna, Tshwane Ward 81, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0002, South Africa",
   "importance": 7.011596856636938e-05,
@@ -14733,15 +13869,7 @@
   "lng": 31.0374115,
   "osm_type": "suburb"
  },
- "SOUTH CREST": {
-  "approximate": true,
-  "display_name": "Crest, 526, Jan Shoba Street, Hatfield, Tshwane Ward 56, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0028, South Africa",
-  "importance": 7.011596856636938e-05,
-  "lat": -25.7527707,
-  "lng": 28.2406649,
-  "matched_query": "CREST",
-  "osm_type": "amenity"
- },
+ "SOUTH CREST": null,
  "SOUTH END": {
   "display_name": "South End, Nelson Mandela Bay Ward 2, Gqeberha, Nelson Mandela Bay Metropolitan Municipality, Eastern Cape, 6006, South Africa",
   "importance": 0.1467313809414816,
@@ -14777,15 +13905,7 @@
   "lng": 28.0231609,
   "osm_type": "retail"
  },
- "SOUTHDOWNS IRENE COUNTRY FARM": {
-  "approximate": true,
-  "display_name": "Southdowns Estate to Irene Dairy, Centurion Golf Estate, Tshwane Ward 65, Irene, City of Tshwane Metropolitan Municipality, Gauteng, 0046, South Africa",
-  "importance": 0.040070115968566404,
-  "lat": -25.8802257,
-  "lng": 28.2077233,
-  "matched_query": "SOUTHDOWNS IRENE",
-  "osm_type": "road"
- },
+ "SOUTHDOWNS IRENE COUNTRY FARM": null,
  "SOUTHERN PAARL": null,
  "SOUTHERNWOOD": {
   "display_name": "Southernwood, Buffalo City Ward 3, KuGompo City, Buffalo City Metropolitan Municipality, Eastern Cape, 5213, South Africa",
@@ -14872,15 +13992,7 @@
   "lng": 28.3984132,
   "osm_type": "aeroway"
  },
- "SPRINGS CENTRAL": {
-  "approximate": true,
-  "display_name": "Springs, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1559, South Africa",
-  "importance": 0.4844702563323565,
-  "lat": -26.2550033,
-  "lng": 28.4373147,
-  "matched_query": "SPRINGS",
-  "osm_type": "town"
- },
+ "SPRINGS CENTRAL": null,
  "SPRINGS NEW": null,
  "SPRINGS NU": null,
  "SPRINGS OLD": null,
@@ -14912,15 +14024,7 @@
   "lng": 24.832916,
   "osm_type": "village"
  },
- "ST GEORGES STRAND": {
-  "approximate": true,
-  "display_name": "Saint Georges, The Crest, Cape Town Ward 105, Durbanville, City of Cape Town, Western Cape, 7550, South Africa",
-  "importance": 0.08004429617761498,
-  "lat": -33.8157728,
-  "lng": 18.6708608,
-  "matched_query": "ST GEORGES",
-  "osm_type": "residential"
- },
+ "ST GEORGES STRAND": null,
  "ST HELENA": {
   "display_name": "St Helena, Kannaland Ward 2, Kannaland Local Municipality, Garden Route District Municipality, Western Cape, South Africa",
   "importance": 0.14672076829175246,
@@ -14970,15 +14074,7 @@
   "lng": 19.45448,
   "osm_type": "town"
  },
- "STANGER EXT 16": {
-  "approximate": true,
-  "display_name": "KwaDukuza, KwaDukuza Local Municipality, iLembe District Municipality, KwaZulu-Natal, 4449, South Africa",
-  "importance": 0.3492426022163027,
-  "lat": -29.3383782,
-  "lng": 31.2881205,
-  "matched_query": "STANGER",
-  "osm_type": "town"
- },
+ "STANGER EXT 16": null,
  "STANZA BOPAPE": {
   "display_name": "Stanza Bopape Street, Colbyn, Tshwane Ward 56, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 1166, South Africa",
   "importance": 0.05340344930189971,
@@ -15337,15 +14433,7 @@
   "lng": 28.0758333,
   "osm_type": "suburb"
  },
- "SUNNINGHILL EXT 95": {
-  "approximate": true,
-  "display_name": "Sunninghill, Johannesburg Ward 93, Sandton, City of Johannesburg Metropolitan Municipality, Gauteng, 2157, South Africa",
-  "importance": 0.14671585183489733,
-  "lat": -26.0352778,
-  "lng": 28.0758333,
-  "matched_query": "SUNNINGHILL",
-  "osm_type": "suburb"
- },
+ "SUNNINGHILL EXT 95": null,
  "SUNNYDALE": {
   "display_name": "Sunnydale, uMlalazi Ward 11, Eshowe, uMlalazi Local Municipality, King Cetswayo District Municipality, KwaZulu-Natal, South Africa",
   "importance": 0.14671478217746237,
@@ -16312,15 +15400,7 @@
   "lng": 21.241867,
   "osm_type": "city"
  },
- "UPINGTON EXTENSION": {
-  "approximate": true,
-  "display_name": "Upington, ǁKhara Hais Local Municipality, ZF Mgcawu District Municipality, Northern Cape, 8801, South Africa",
-  "importance": 0.439316009741455,
-  "lat": -28.456325,
-  "lng": 21.241867,
-  "matched_query": "UPINGTON",
-  "osm_type": "city"
- },
+ "UPINGTON EXTENSION": null,
  "URANIAVILLE": {
   "display_name": "Uraniaville, Matlosana Ward 19, Klerksdorp, Matlosana Local Municipality, Dr Kenneth Kaunda District Municipality, North West, 2571, South Africa",
   "importance": 0.14671613412680243,
@@ -16371,15 +15451,7 @@
   "osm_type": "suburb"
  },
  "VAALVIEW AH": null,
- "VAL DE VIE WINELANDS LIFESTYLE ESTATE": {
-  "approximate": true,
-  "display_name": "Val De Vie, Drakenstein Ward 28, Paarl, Drakenstein Local Municipality, Cape Winelands District Municipality, Western Cape, South Africa",
-  "importance": 0.1467199626153963,
-  "lat": -33.8013479,
-  "lng": 18.9703572,
-  "matched_query": "VAL DE VIE WINELANDS",
-  "osm_type": "suburb"
- },
+ "VAL DE VIE WINELANDS LIFESTYLE ESTATE": null,
  "VAL-DE-GRACE": {
   "display_name": "Val De Grace, Tshwane Ward 41, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0184, South Africa",
   "importance": 0.14673678263523304,
@@ -16528,24 +15600,8 @@
   "lng": 27.820268,
   "osm_type": "amenity"
  },
- "VANDERBIJLPARK N. E. 3": {
-  "approximate": true,
-  "display_name": "Vanderbijlpark, Emfuleni Local Municipality, Sedibeng District Municipality, Gauteng, 1911, South Africa",
-  "importance": 0.3955795074137208,
-  "lat": -26.706891,
-  "lng": 27.836271,
-  "matched_query": "VANDERBIJLPARK N.",
-  "osm_type": "town"
- },
- "VANDERBIJLPARK N. W. 7 INDUSTRIAL": {
-  "approximate": true,
-  "display_name": "Vanderbijlpark, Emfuleni Local Municipality, Sedibeng District Municipality, Gauteng, 1911, South Africa",
-  "importance": 0.3955795074137208,
-  "lat": -26.706891,
-  "lng": 27.836271,
-  "matched_query": "VANDERBIJLPARK N.",
-  "osm_type": "town"
- },
+ "VANDERBIJLPARK N. E. 3": null,
+ "VANDERBIJLPARK N. W. 7 INDUSTRIAL": null,
  "VANDERBIJLPARK S. E. 1": {
   "display_name": "Vanderbijlpark Municipal Pool, Tanner Street, SE2, Emfuleni Ward 5, Emfuleni Local Municipality, Sedibeng District Municipality, Gauteng, 1911, South Africa",
   "importance": 4.6739147020630466e-05,
@@ -16568,15 +15624,7 @@
   "lng": 27.885031,
   "osm_type": "amenity"
  },
- "VANDERBIJLPARK S. E. 7": {
-  "approximate": true,
-  "display_name": "Curro Vanderbijlpark Independent School, Hendrick van Eck Boulevard, SE8, Bedworth Park, Emfuleni Ward 4, Emfuleni Local Municipality, Sedibeng District Municipality, Gauteng, 1933, South Africa",
-  "importance": 4.6739147020630466e-05,
-  "lat": -26.7212211,
-  "lng": 27.8804754,
-  "matched_query": "VANDERBIJLPARK S. E.",
-  "osm_type": "amenity"
- },
+ "VANDERBIJLPARK S. E. 7": null,
  "VANDERBIJLPARK S. E. 8": {
   "display_name": "North-West University Vanderbijlpark Campus, Hendrick van Eck Boulevard, SE8, Bedworth Park, Emfuleni Ward 4, Emfuleni Local Municipality, Sedibeng District Municipality, Gauteng, 1900, South Africa",
   "importance": 4.6739147020630466e-05,
@@ -16584,15 +15632,7 @@
   "lng": 27.885031,
   "osm_type": "amenity"
  },
- "VANDERBIJLPARK S. W. 1": {
-  "approximate": true,
-  "display_name": "ArcelorMittal South Africa Vanderbijlpark Steel, Emfuleni Ward 8, Emfuleni Local Municipality, Sedibeng District Municipality, Gauteng, 1900, South Africa",
-  "importance": 0.08004673914702065,
-  "lat": -26.6454058,
-  "lng": 27.8288916,
-  "matched_query": "VANDERBIJLPARK S. W.",
-  "osm_type": "industrial"
- },
+ "VANDERBIJLPARK S. W. 1": null,
  "VANDERBIJLPARK S. W. 2": {
   "display_name": "Zywot, 2, Baker Street, SW5, Emfuleni Ward 5, Emfuleni Local Municipality, Sedibeng District Municipality, Gauteng, 1911, South Africa",
   "importance": 4.6739147020630466e-05,
@@ -16864,26 +15904,10 @@
   "lng": 28.2083333,
   "osm_type": "suburb"
  },
- "VOSLOORUS EXT 13": {
-  "approximate": true,
-  "display_name": "Vosloorus, Ekurhuleni Ward 46, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1475, South Africa",
-  "importance": 0.47077298976827575,
-  "lat": -26.3563889,
-  "lng": 28.2083333,
-  "matched_query": "VOSLOORUS",
-  "osm_type": "suburb"
- },
+ "VOSLOORUS EXT 13": null,
  "VOSLOORUS EXT 5": null,
  "VOSLOORUS EXT 6": null,
- "VOSLOORUS EXT 8": {
-  "approximate": true,
-  "display_name": "Vosloorus, Ekurhuleni Ward 46, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1475, South Africa",
-  "importance": 0.47077298976827575,
-  "lat": -26.3563889,
-  "lng": 28.2083333,
-  "matched_query": "VOSLOORUS",
-  "osm_type": "suburb"
- },
+ "VOSLOORUS EXT 8": null,
  "VREDEBOS": null,
  "VREDEFORT": {
   "display_name": "Vredefort, Ngwathe Local Municipality, Fezile Dabi District Municipality, Free State, 9595, South Africa",
@@ -17097,24 +16121,8 @@
   "lng": 28.094972,
   "osm_type": "residential"
  },
- "WATERFALL COUNTRY LIFESTYLE ESTATE": {
-  "approximate": true,
-  "display_name": "Waterfall, eThekwini Ward 9, Forest Hills, eThekwini Metropolitan Municipality, KwaZulu-Natal, 3652, South Africa",
-  "importance": 0.1467076302738994,
-  "lat": -29.7419444,
-  "lng": 30.8261111,
-  "matched_query": "WATERFALL",
-  "osm_type": "suburb"
- },
- "WATERFALL COUNTRY LIFESTYLE VILLAGE": {
-  "approximate": true,
-  "display_name": "Waterfall Country Village Estate, Barbeque Downs, Johannesburg Ward 93, Midrand, City of Johannesburg Metropolitan Municipality, Gauteng, South Africa",
-  "importance": 0.08004918516823069,
-  "lat": -26.0117947,
-  "lng": 28.094972,
-  "matched_query": "WATERFALL VILLAGE",
-  "osm_type": "residential"
- },
+ "WATERFALL COUNTRY LIFESTYLE ESTATE": null,
+ "WATERFALL COUNTRY LIFESTYLE VILLAGE": null,
  "WATERFALL EQUESTRIAN ESTATE": {
   "display_name": "Waterfall Equestrian Estate, Barbeque Downs, Johannesburg Ward 93, Sandton, City of Johannesburg Metropolitan Municipality, Gauteng, South Africa",
   "importance": 0.08004918516823069,
@@ -17144,15 +16152,7 @@
   "lng": 28.2383333,
   "osm_type": "suburb"
  },
- "WATERKLOOF 378-JR": {
-  "approximate": true,
-  "display_name": "Waterkloof, Tshwane Ward 42, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0145, South Africa",
-  "importance": 0.32173239253715025,
-  "lat": -25.7791667,
-  "lng": 28.2383333,
-  "matched_query": "WATERKLOOF",
-  "osm_type": "suburb"
- },
+ "WATERKLOOF 378-JR": null,
  "WATERKLOOF AH": {
   "display_name": "Waterkloof, Tshwane Ward 42, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0145, South Africa",
   "importance": 0.32173239253715025,
@@ -17210,15 +16210,7 @@
   "lng": 27.3244444,
   "osm_type": "suburb"
  },
- "WATERVAL 5-IR": {
-  "approximate": true,
-  "display_name": "Waterval, Rustenburg Ward 35, Rustenburg, Rustenburg Local Municipality, Bojanala Platinum District Municipality, North West, South Africa",
-  "importance": 0.14672406729228651,
-  "lat": -25.6952778,
-  "lng": 27.3244444,
-  "matched_query": "WATERVAL",
-  "osm_type": "suburb"
- },
+ "WATERVAL 5-IR": null,
  "WATERVAL BOVEN": {
   "display_name": "Waterval Boven, Emakhazeni Local Municipality, Nkangala, Mpumalanga, 1195, South Africa",
   "importance": 0.3022467077917196,
@@ -17398,15 +16390,7 @@
  },
  "WELLWAY PARK": null,
  "WELLWAY PARK EAST": null,
- "WELTEVREDEN VALLEY NORTH": {
-  "approximate": true,
-  "display_name": "Weltevreden Valley Core Primary School, Oliver Tambo Drive, Cape Town Ward 33, Mitchells Plain, City of Cape Town, Western Cape, 7755, South Africa",
-  "importance": 4.4224460212054895e-05,
-  "lat": -34.0187683,
-  "lng": 18.5784705,
-  "matched_query": "WELTEVREDEN VALLEY",
-  "osm_type": "amenity"
- },
+ "WELTEVREDEN VALLEY NORTH": null,
  "WELTEVREDENPARK": {
   "display_name": "Weltevredenpark, Roodepoort, City of Johannesburg Metropolitan Municipality, Gauteng, 1715, South Africa",
   "importance": 0.46726781293569014,
@@ -17470,15 +16454,7 @@
   "lng": 30.9538241,
   "osm_type": "suburb"
  },
- "WEST ACRES CENTRAL": {
-  "approximate": true,
-  "display_name": "Birch Acres, Ekurhuleni Ward 13, Thembisa, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1621, South Africa",
-  "importance": 0.4669015045583901,
-  "lat": -26.0569444,
-  "lng": 28.2069444,
-  "matched_query": "ACRES",
-  "osm_type": "suburb"
- },
+ "WEST ACRES CENTRAL": null,
  "WEST BEACH": {
   "display_name": "West Beach, Warwick Road, Bloubergrant, Cape Town Ward 23, Cape Town, City of Cape Town, Western Cape, 7436, South Africa",
   "importance": 7.441443503466877e-05,
@@ -17579,15 +16555,7 @@
   "lng": 30.8363889,
   "osm_type": "suburb"
  },
- "WESTMEAD EXT": {
-  "approximate": true,
-  "display_name": "Westmead, eThekwini Ward 15, Pinetown, eThekwini Metropolitan Municipality, KwaZulu-Natal, 3608, South Africa",
-  "importance": 0.14671023651483936,
-  "lat": -29.8186111,
-  "lng": 30.8363889,
-  "matched_query": "WESTMEAD",
-  "osm_type": "suburb"
- },
+ "WESTMEAD EXT": null,
  "WESTONARIA": {
   "display_name": "Westonaria, Westonaria Ward 4, Westonaria Local Municipality, West Rand District Municipality, Gauteng, 1779, South Africa",
   "importance": 0.47017671371464326,
@@ -17672,15 +16640,7 @@
   "lng": 22.5786317,
   "osm_type": "village"
  },
- "WILDERNESS CENTRAL": {
-  "approximate": true,
-  "display_name": "Wilderness, Garden Route District Municipality, Western Cape, 6560, South Africa",
-  "importance": 0.3113151607222326,
-  "lat": -33.9932378,
-  "lng": 22.5786317,
-  "matched_query": "WILDERNESS",
-  "osm_type": "village"
- },
+ "WILDERNESS CENTRAL": null,
  "WILDERNESS HEIGHTS": null,
  "WILGEHEUWEL": {
   "display_name": "Wilgeheuwel, Johannesburg Ward 97, Roodepoort, City of Johannesburg Metropolitan Municipality, Gauteng, South Africa",
@@ -17749,15 +16709,7 @@
   "lng": 27.8272468,
   "osm_type": "suburb"
  },
- "WIMBLEDON ESTATE": {
-  "approximate": true,
-  "display_name": "Wimbledon, Zander Crescent, Highbury, Cape Town Ward 19, Kuilsrivier, City of Cape Town, Western Cape, 7580, South Africa",
-  "importance": 4.1357289997665635e-05,
-  "lat": -33.958356,
-  "lng": 18.6860704,
-  "matched_query": "WIMBLEDON",
-  "osm_type": "railway"
- },
+ "WIMBLEDON ESTATE": null,
  "WINCHESTER HILLS": {
   "display_name": "Winchester Hills, Johannesburg Ward 54, Johannesburg, City of Johannesburg Metropolitan Municipality, Gauteng, 2001, South Africa",
   "importance": 0.14674088883802544,
@@ -17814,15 +16766,7 @@
   "lng": 18.7044444,
   "osm_type": "suburb"
  },
- "WINDSOR PARK ESTATE": {
-  "approximate": true,
-  "display_name": "Windsor Park, Cape Town Ward 102, Kraaifontein, City of Cape Town, Western Cape, 7500, South Africa",
-  "importance": 0.14670932249942775,
-  "lat": -33.8480556,
-  "lng": 18.7044444,
-  "matched_query": "WINDSOR PARK",
-  "osm_type": "suburb"
- },
+ "WINDSOR PARK ESTATE": null,
  "WINGATE GOLF ESTATE": {
   "display_name": "Wingate Golf Estate, Elarduspark, Tshwane Ward 47, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, 0181, South Africa",
   "importance": 0.08007011596856639,
@@ -17851,15 +16795,7 @@
   "lng": 30.7880093,
   "osm_type": "suburb"
  },
- "WINTERNEST AH": {
-  "approximate": true,
-  "display_name": "Winternest, Nest Road, Clarina, Tshwane Ward 98, Akasia, City of Tshwane Metropolitan Municipality, Gauteng, 0118, South Africa",
-  "importance": 7.011596856636938e-05,
-  "lat": -25.6467802,
-  "lng": 28.1282182,
-  "matched_query": "WINTERNEST",
-  "osm_type": "railway"
- },
+ "WINTERNEST AH": null,
  "WINTERSKLOOF": {
   "display_name": "Winterskloof, uMngeni Ward 7, uMgeni Local Municipality, uMgungundlovu District Municipality, KwaZulu-Natal, 3245, South Africa",
   "importance": 0.1467271297779812,
@@ -17895,15 +16831,7 @@
   "lng": 29.1464725,
   "osm_type": "historic"
  },
- "WITBANK EXT": {
-  "approximate": true,
-  "display_name": "eMalahleni, Emalahleni Local Municipality, Nkangala, Mpumalanga, 1034, South Africa",
-  "importance": 0.43712059073386417,
-  "lat": -25.8762409,
-  "lng": 29.2099962,
-  "matched_query": "WITBANK",
-  "osm_type": "city"
- },
+ "WITBANK EXT": null,
  "WITFIELD": {
   "display_name": "Witfield, Ekurhuleni Ward 33, City of Ekurhuleni Metropolitan Municipality, Gauteng, 1477, South Africa",
   "importance": 0.14674088883802544,
@@ -17919,25 +16847,9 @@
   "lng": 28.0086111,
   "osm_type": "suburb"
  },
- "WITKOPPIE 64-IR": {
-  "approximate": true,
-  "display_name": "Witkoppie, Vaalpark, Metsimaholo Ward 14, Sasolburg, Metsimaholo Local Municipality, Fezile Dabi District Municipality, Free State, 1948, South Africa",
-  "importance": 0.05338007248035397,
-  "lat": -26.7780117,
-  "lng": 27.845422,
-  "matched_query": "WITKOPPIE",
-  "osm_type": "road"
- },
+ "WITKOPPIE 64-IR": null,
  "WITPOORT (BEAULIEU)": null,
- "WITPOORT 406-JR": {
-  "approximate": true,
-  "display_name": "Witpoort, Maquassi Hills Ward 8, Maquassi Hills Local Municipality, Dr Kenneth Kaunda District Municipality, North West, South Africa",
-  "importance": 0.14671166781109327,
-  "lat": -27.1705556,
-  "lng": 26.1352778,
-  "matched_query": "WITPOORT",
-  "osm_type": "suburb"
- },
+ "WITPOORT 406-JR": null,
  "WITPOORTJIE": {
   "display_name": "Witpoortjie, Johannesburg Ward 71, Roodepoort, City of Johannesburg Metropolitan Municipality, Gauteng, 2170, South Africa",
   "importance": 0.14672573510337983,
@@ -18178,15 +17090,7 @@
   "lng": 21.567227,
   "osm_type": "peak"
  },
- "ZANDFONTEIN 317-JR": {
-  "approximate": true,
-  "display_name": "zandfontein cemetery, Tshwane Ward 55, Pretoria, City of Tshwane Metropolitan Municipality, Gauteng, South Africa",
-  "importance": 0.08007011596856639,
-  "lat": -25.6961864,
-  "lng": 28.1167447,
-  "matched_query": "ZANDFONTEIN",
-  "osm_type": "cemetery"
- },
+ "ZANDFONTEIN 317-JR": null,
  "ZASTRON": {
   "display_name": "Zastron, Mohokare Local Municipality, Xhariep District Municipality, Free State, South Africa",
   "importance": 0.2901765588551152,

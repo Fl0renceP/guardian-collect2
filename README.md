@@ -68,6 +68,15 @@ python backend/scripts/geocode_suburbs.py                # full run, resumable
 python backend/scripts/geocode_suburbs.py --retry-misses # re-try failures only
 ```
 
+`--retry-misses` broadens the query for names OpenStreetMap doesn't carry as
+distinct places — private estates, agricultural holdings, cadastral portions and
+directional variants (`ALBERTON NORTH` → `ALBERTON`). Those entries are stored
+with `"approximate": true` and the query that matched, the API returns
+`approximate` per hot-spot plus an `approximate_claims` total, and the map labels
+them "Approximate location" rather than passing an estimate off as an exact pin.
+The error is the offset between a sub-area and its parent suburb's centre —
+immaterial at the zoom this map is read at, but don't build routing on it.
+
 It is deliberately slow (~1 request/second, ~55 min for a full run) because
 [Nominatim's usage policy](https://operations.osmfoundation.org/policies/nominatim/)
 caps it there and requires a descriptive `User-Agent`. Don't parallelise it —

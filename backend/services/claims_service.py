@@ -363,6 +363,10 @@ def aggregate_hotspots(geocache, perils=None, item_types=None, date_from=None, d
                 "suburb": suburb,
                 "lat": point["lat"],
                 "lng": point["lng"],
+                # True when the pin came from a broadened query (a parent suburb
+                # rather than the exact name) — the UI says so rather than
+                # passing an estimate off as an exact location.
+                "approximate": bool(point.get("approximate")),
                 "count": bucket["count"],
                 "total_amount": round(bucket["total_amount"], 2),
                 "top_peril": bucket["perils"].most_common(1)[0][0],
@@ -373,11 +377,13 @@ def aggregate_hotspots(geocache, perils=None, item_types=None, date_from=None, d
     hotspots.sort(key=lambda h: h["count"], reverse=True)
 
     placed = sum(h["count"] for h in hotspots)
+    approximate_claims = sum(h["count"] for h in hotspots if h["approximate"])
     return {
         "hotspots": hotspots,
         "max_count": hotspots[0]["count"] if hotspots else 0,
         "matched_claims": matched,
         "placed_claims": placed,
+        "approximate_claims": approximate_claims,
         "unplaced_claims": matched - placed,
         "unplaced_breakdown": {
             "unknown_suburb": unknown_suburb,
