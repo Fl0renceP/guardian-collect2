@@ -1,109 +1,132 @@
+import os
+import tempfile
 import psycopg2
+import numpy as np
 from deepface import DeepFace
 from services.blob_storage import BlobStorageService
 
-# Initialize Blob Storage Helper
-blob_service = BlobStorageService()
+DATABASE_URL = os.getenv("DATABASE_URL")
+MATCH_THRESHOLD = 0.40  # L2 Euclidean distance threshold for FaceNet (Lower = stricter)
 
-def process_incoming_face_image(image_bytes, db_conn, model_name="Facenet", threshold=0.40):
+def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet", threshold=MATCH_THRESHOLD, filename="scan_input.jpg"):
     """
-    Core Logic:
-    1. Extract 128-dimension vector embedding using DeepFace.
-    2. Query PostgreSQL (pgvector) to find closest matching embedding.
-    3. If distance < threshold:
-       - 'offender' or 'suspect' -> Alert!
-       - 'verified' -> Member verified.
-    4. If no match -> Upload photo to Azure Blob + auto-enroll in Postgres as 'verified'.
+    Core facial recognition logic:
+    1. Extracts embedding from incoming image.
+    2. Queries pgvector for nearest match.
+    3. If match found (< 0.40 distance): returns person details & alert status.
+    4. If no match found: saves image to Azure Blob, registers new person as 'verified'.
     """
-    
-    # 1. Generate face embedding array using DeepFace
+    # 1. Save uploaded image bytes to a temporary file for DeepFace processing
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+        tmp.write(image_bytes)
+        tmp_path = tmp.name
+
     try:
-        embedding_objs = DeepFace.represent(
-            img_path=image_bytes, 
-            model_name=model_name, 
-            enforce_detection=True
+        # 2. Extract 128-dim vector embedding using FaceNet
+        embeddings = DeepFace.represent(
+            img_path=tmp_path,
+            model_name=model_name,
+            enforce_detection=True  # Fails cleanly if no face is detected
         )
-        scanned_vector = embedding_objs[0]["embedding"]
+        query_vector = embeddings[0]["embedding"]
+
     except Exception as e:
-        print(f"Face detection failed: {e}")
-        return {"error": "No face detected in image"}, 400
+        os.remove(tmp_path)
+        return {
+            "success": False,
+            "error": "No face detected in the image.",
+            "details": str(e)
+        }
 
-    # Convert list to string format required by pgvector query
-    vector_str = str(scanned_vector)
+    # Clean up temp file
+    os.remove(tmp_path)
 
-    # 2. Query PostgreSQL for vector similarity (Cosine Distance: <=>)
-    with db_conn.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT id, full_name, status, (face_embedding <=> %s::vector) AS distance
-            FROM persons
-            WHERE face_embedding IS NOT NULL
+    # 3. Query PostgreSQL using pgvector L2 distance operator (<->)
+    conn = db_conn or psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor()
+
+    try:
+        # Convert list to string format expected by pgvector '[x1, x2, ...]'
+        vector_str = str(query_vector)
+
+        # Query top 1 closest face vector in DB
+        query = """
+            SELECT 
+                p.id, 
+                p.full_name, 
+                p.status, 
+                (p.face_embedding <-> %s::vector) AS distance,
+                f.image_url
+            FROM persons p
+            LEFT JOIN person_faces f ON p.id = f.person_id
             ORDER BY distance ASC
             LIMIT 1;
-            """,
-            (vector_str,)
-        )
-        match = cursor.fetchone()
+        """
+        cursor.execute(query, (vector_str,))
+        result = cursor.fetchone()
 
-    # 3. Check if closest match falls within our threshold
-    if match and match[3] < threshold:
-        person_id, name, status, distance = match
-        confidence = round((1 - distance) * 100, 2)
-        
-        if status in ['offender', 'suspect']:
-            send_alert(person_id, name, status, confidence)
+        # 4. Check if we found a match within threshold
+        if result and result[3] < threshold:
+            person_id, full_name, status, distance, image_url = result
+            
+            # Determine alert condition
+            is_flagged = status in ["offender", "suspect"]
+
             return {
-                "flagged": True, 
-                "status": status, 
-                "name": name, 
-                "confidence": confidence
+                "success": True,
+                "is_known_user": True,
+                "alert": is_flagged,  # True for offender/suspect, False for verified
+                "status": status,
+                "person": {
+                    "id": person_id,
+                    "full_name": full_name,
+                    "status": status,
+                    "image_url": image_url
+                },
+                "match_distance": round(distance, 4),
+                "message": f"ALERT: {status.upper()} DETECTED!" if is_flagged else f"Member '{full_name}' is verified."
             }
-        else:
-            print(f"Member {name} is verified.")
-            return {
-                "flagged": False, 
-                "status": "verified", 
-                "name": name, 
-                "confidence": confidence
-            }
 
-    # 4. No match found -> Auto-enroll new subject as 'verified'
-    print("Unknown face detected. Auto-enrolling as verified member...")
-    new_person = auto_enroll_new_subject(image_bytes, scanned_vector, db_conn)
-    return {
-        "flagged": False, 
-        "status": "verified", 
-        "name": new_person["name"], 
-        "enrolled": True
-    }
+        # 5. NO MATCH FOUND -> Auto-register new person as 'verified'
+        blob_service = BlobStorageService()
+        blob_url = blob_service.upload_image(image_bytes, filename=f"auto_registered/{filename}")
 
-
-def auto_enroll_new_subject(image_bytes, face_vector, db_conn):
-    """Saves raw photo to Azure Blob Storage and registers new user in Postgres."""
-    # Upload image to Azure Blob Storage
-    image_url = blob_service.upload_image(image_bytes)
-    
-    with db_conn.cursor() as cursor:
-        # Insert into persons table
-        cursor.execute(
-            """
+        # Insert new person record with default status 'verified'
+        insert_person_sql = """
             INSERT INTO persons (full_name, status, face_embedding)
             VALUES (%s, %s, %s::vector)
-            RETURNING id, full_name;
-            """,
-            ("New Member (Auto-Enrolled)", "verified", str(face_vector))
-        )
-        person_id, name = cursor.fetchone()
-        
-        # Save face image link
-        cursor.execute(
-            "INSERT INTO person_faces (person_id, image_url) VALUES (%s, %s);",
-            (person_id, image_url)
-        )
-        db_conn.commit()
-        
-    return {"id": person_id, "name": name}
+            RETURNING id, full_name, status;
+        """
+        cursor.execute(insert_person_sql, ("New Community Member", "verified", vector_str))
+        new_person = cursor.fetchone()
+        conn.commit()
 
+        # Link face image URL
+        insert_face_sql = """
+            INSERT INTO person_faces (person_id, image_url)
+            VALUES (%s, %s);
+        """
+        cursor.execute(insert_face_sql, (new_person[0], blob_url))
+        conn.commit()
 
-def send_alert(person_id, name, status, confidence):
-    print(f"🚨 SECURITY ALERT: Detected {status.upper()} '{name}' (ID: {person_id}) with {confidence}% confidence!")
+        return {
+            "success": True,
+            "is_known_user": False,
+            "alert": False,
+            "status": "verified",
+            "person": {
+                "id": new_person[0],
+                "full_name": new_person[1],
+                "status": "verified",
+                "image_url": blob_url
+            },
+            "message": "Unrecognized face. Automatically registered new member with 'verified' status."
+        }
+
+    except Exception as e:
+        conn.rollback()
+        return {"success": False, "error": str(e)}
+    finally:
+        cursor.close()
+        if db_conn is None:
+            conn.close()

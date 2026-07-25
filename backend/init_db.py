@@ -2,24 +2,21 @@ import os
 import psycopg2
 from deepface import DeepFace
 from dotenv import load_dotenv
+from services.blob_storage import BlobStorageService
 
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 CREATE_SCHEMA_SQL = """
--- Drop tables if resetting for clean setup
 DROP TABLE IF EXISTS person_faces CASCADE;
 DROP TABLE IF EXISTS persons CASCADE;
 DROP TYPE IF EXISTS person_status CASCADE;
 
--- 1. Enable pgvector extension for local face embeddings
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. Create custom ENUM for member status
 CREATE TYPE person_status AS ENUM ('offender', 'suspect', 'verified');
 
--- 3. Create primary persons table with 128-dim vector embedding
 CREATE TABLE persons (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     full_name VARCHAR(255) NOT NULL,
@@ -29,7 +26,6 @@ CREATE TABLE persons (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. Create person_faces metadata table
 CREATE TABLE person_faces (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     person_id UUID NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
@@ -40,46 +36,54 @@ CREATE TABLE person_faces (
 CREATE INDEX idx_persons_status ON persons(status);
 """
 
-# Seed records (Name, Status, Placeholder URL)
-SEED_DATA = [
+# Seed definition linking to blob filenames
+SEED_RECORDS = [
     {
-        "full_name": "John Doe (Test Offender)",
+        "full_name": "Tinashe Madanire",
         "status": "offender",
-        "image_url": "https://guardiansa5001.blob.core.windows.net/face-images/seed_offender.jpg"
+        "blob_name": "seed_offender.jpeg",
+        "local_fallback_path": "seed_photos/offender.jpeg"
     },
     {
-        "full_name": "Jane Smith (Test Suspect)",
+        "full_name": "Victoria Armstrong",
         "status": "suspect",
-        "image_url": "https://guardiansa5001.blob.core.windows.net/face-images/seed_suspect.jpg"
+        "blob_name": "seed_suspect.jpeg",
+        "local_fallback_path": "seed_photos/suspect.jpeg"
     },
     {
-        "full_name": "Alex Johnson (Verified Member)",
+        "full_name": "Tadiwa Banda",
         "status": "verified",
-        "image_url": "https://guardiansa5001.blob.core.windows.net/face-images/seed_verified.jpg"
+        "blob_name": "seed_verified.jpeg",
+        "local_fallback_path": "seed_photos/verified.jpeg"
     }
 ]
 
-def generate_dummy_embedding():
-    """Generates a dummy 128-float vector if real seed image is not yet loaded."""
-    import random
-    return [random.uniform(-1, 1) for _ in range(128)]
-
-def initialize_database():
+def setup_and_seed():
     if not DATABASE_URL:
-        raise ValueError("DATABASE_URL environment variable is missing.")
-        
-    print("Connecting to Azure Cosmos DB for PostgreSQL ('citus' database)...")
+        raise ValueError("DATABASE_URL missing in .env")
+
+    # 1. Initialize Azure Blob Storage container and upload photos
+    blob_service = BlobStorageService()
+    
+    print("--- Step 1: Schema Creation & Azure Blob Sync ---")
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
 
     try:
-        print("Creating tables, ENUM types, and enabling pgvector...")
         cursor.execute(CREATE_SCHEMA_SQL)
         
-        print("Seeding initial records...")
-        for item in SEED_DATA:
-            # Generate vector embedding (Replace with DeepFace.represent() when actual image files exist)
-            embedding_vector = str(generate_dummy_embedding())
+        print("--- Step 2: Processing Embeddings & Seeding DB ---")
+        for record in SEED_RECORDS:
+            local_path = os.path.join(os.path.dirname(__file__), record["local_fallback_path"])
+            
+            # Upload image to blob container
+            image_url = blob_service.upload_image(local_path, filename=record["blob_name"])
+            print(f"Uploaded {record['full_name']} image to {image_url}")
+
+            # Generate 128-dim FaceNet embedding via DeepFace using local image file
+            print(f"Extracting facial embedding for {record['full_name']}...")
+            objs = DeepFace.represent(img_path=local_path, model_name="Facenet", enforce_detection=False)
+            vector_embedding = str(objs[0]["embedding"])
 
             # Insert into persons table
             cursor.execute(
@@ -88,28 +92,28 @@ def initialize_database():
                 VALUES (%s, %s, %s::vector)
                 RETURNING id;
                 """,
-                (item["full_name"], item["status"], embedding_vector)
+                (record["full_name"], record["status"], vector_embedding)
             )
             person_id = cursor.fetchone()[0]
 
-            # Insert associated face record
+            # Insert metadata record
             cursor.execute(
                 """
                 INSERT INTO person_faces (person_id, image_url)
                 VALUES (%s, %s);
                 """,
-                (person_id, item["image_url"])
+                (person_id, image_url)
             )
 
         conn.commit()
-        print("✅ Cosmos DB for PostgreSQL successfully initialized and seeded!")
+        print("✅ Azure Storage Container 'face-db2' ready & Database fully seeded with real face vectors!")
 
     except Exception as e:
         conn.rollback()
-        print(f"❌ Error during database initialization: {e}")
+        print(f"❌ Error during setup: {e}")
     finally:
         cursor.close()
         conn.close()
 
 if __name__ == "__main__":
-    initialize_database()
+    setup_and_seed()
