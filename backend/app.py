@@ -1,10 +1,14 @@
 import logging
 import psycopg2
-from flask import Flask, request, jsonify, send_from_directory
+import logging
+
+logging.getLogger("azure").setLevel(logging.WARNING)
+from flask import Flask, jsonify, request, send_from_directory
 
 from config import Config
 from routes.health_routes import health_bp
 from routes.hotspot_routes import hotspot_bp
+from routes.safety_routes import safety_bp
 from services.claims_service import warm_cache
 from services.recognition import process_incoming_face_image
 
@@ -19,6 +23,7 @@ app.config.from_object(Config)
 # Register Blueprints
 app.register_blueprint(health_bp)
 app.register_blueprint(hotspot_bp)
+app.register_blueprint(safety_bp)
 
 
 def get_db_connection():
@@ -27,15 +32,12 @@ def get_db_connection():
 
 
 @app.route("/")
-def home():
-    return jsonify({"message": "Guardian Collective API is running"}), 200
+def index():
+    return send_from_directory(app.static_folder, "index.html")
 
-
-@app.route("/test-scan", methods=["GET"])
-def test_scan_page():
-    """Serves a minimal upload form for facial-recognition endpoint testing."""
-    return send_from_directory(app.static_folder, "scan_test.html")
-
+@app.route("/safety-score.html")
+def safety_score_page():
+    return send_from_directory(app.static_folder, "safety-score.html")
 
 @app.route("/api/v1/scan-face", methods=["POST"])
 def scan_face():
