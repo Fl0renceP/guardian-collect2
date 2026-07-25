@@ -104,3 +104,11 @@ class Config:
     # Rough bounding box for South Africa, used to reject nonsense geocode hits
     # (a suburb name that also exists in another country).
     SA_BOUNDS = {"min_lat": -35.5, "max_lat": -21.5, "min_lng": 15.5, "max_lng": 33.5}
+
+    # 6. Predictive route-risk alerts (stored-data MVP)
+    ROUTE_RISK_HOTSPOT_RADIUS_KM = float(os.getenv("ROUTE_RISK_HOTSPOT_RADIUS_KM", "2.0"))
+    ROUTE_RISK_SIGHTING_RADIUS_KM = float(os.getenv("ROUTE_RISK_SIGHTING_RADIUS_KM", "1.2"))
+    ROUTE_RISK_RECENT_SIGHTING_HOURS = float(
+        os.getenv("ROUTE_RISK_RECENT_SIGHTING_HOURS", "72")
+    )
+    ROUTE_RISK_COOLDOWN_POINTS = int(os.getenv("ROUTE_RISK_COOLDOWN_POINTS", "2"))

@@ -1,6 +1,7 @@
 absl-py==2.5.0
 astunparse==1.6.3
 azure-core==1.41.0
+azure-ai-vision-imageanalysis==1.0.0
 azure-storage-blob==12.30.0
 beautifulsoup4==4.15.0
 blinker==1.9.0
@@ -12,6 +13,7 @@ colorama==0.4.6
 azure-cosmos>=4.5.1
 cryptography==49.0.0
 deepface==0.0.100
+easyocr==1.7.2
 filelock==3.32.0
 fire==0.7.1
 Flask==3.1.3

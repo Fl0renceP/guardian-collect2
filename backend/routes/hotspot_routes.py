@@ -12,6 +12,7 @@ from services.claims_service import (
     source_status,
 )
 from services.geocode_service import load_geocache
+from services.route_risk_service import score_route
 
 hotspot_bp = Blueprint("hotspots", __name__, url_prefix="/api")
 
@@ -92,3 +93,21 @@ def refresh_claims():
     invalidate_cache()
     load_claims(force_refresh=True)
     return jsonify({"refreshed": True, "claims": source_status()})
+
+
+@hotspot_bp.post("/route-risk")
+def route_risk():
+    """Predictive route-risk advisories from historical and stored data.
+
+    Request JSON:
+      route_points        - [{lat: float, lng: float}, ...] (required)
+      departure_time_utc  - ISO datetime string (optional)
+      perils              - optional peril filters
+      item_types          - optional item-type filters
+      date_from/date_to   - optional claim window (YYYY-MM-DD)
+    """
+    payload = request.get_json(silent=True) or {}
+    try:
+        return jsonify(score_route(payload))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
