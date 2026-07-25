@@ -36,7 +36,7 @@ app.register_blueprint(hotspot_bp)
 
 
 def get_db_connection():
-    """Establishes and returns a database connection using application config."""
+    #Establishes and returns a database connection using application config.
     return psycopg2.connect(Config.DATABASE_URL)
 
 
@@ -131,7 +131,7 @@ def scan_plate():
         conn.close()
 
 def extract_text_from_bytes(image_bytes: bytes) -> str:
-    """Sends image bytes to Azure AI Vision Read OCR and returns extracted text."""
+    #Sends image bytes to Azure AI Vision Read OCR and returns extracted text.
     try:
         result = client.analyze(
             image_data=image_bytes,
