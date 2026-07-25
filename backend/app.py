@@ -7,6 +7,7 @@ from routes.health_routes import health_bp
 from routes.hotspot_routes import hotspot_bp
 from services.claims_service import warm_cache
 from services.recognition import process_incoming_face_image
+from services import detection_log
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -52,6 +53,17 @@ def scan_face():
 
     image_bytes = file.read()
 
+    # Where the check came from. Defaults suit the file-upload demo; a real feed
+    # would send its own camera id and position.
+    camera_id = request.form.get("camera_id", "demo_upload").strip() or "demo_upload"
+
+    def _coord(name):
+        raw = request.form.get(name, "").strip()
+        try:
+            return float(raw) if raw else None
+        except ValueError:
+            return None
+
     conn = get_db_connection()
     try:
         # Process face matching against PostgreSQL + DeepFace
@@ -66,12 +78,56 @@ def scan_face():
         if isinstance(result, tuple):
             return jsonify(result[0]), result[1]
 
+        # Every check is logged, matched or not — that is the point of the
+        # detections table. record() swallows its own failures, so a logging
+        # problem can never stop an alert reaching the operator.
+        detection_id = detection_log.record(
+            conn, result,
+            threshold=Config.MATCH_THRESHOLD,
+            camera_id=camera_id,
+            lat=_coord("location_lat"),
+            lng=_coord("location_lng"),
+        )
+        if detection_id:
+            result["detection_id"] = detection_id
+
         return jsonify(result), 200
 
     except Exception as e:
         logger.error(f"Error processing facial scan: {e}")
         return jsonify({"error": "Internal processing error during scan"}), 500
 
+    finally:
+        conn.close()
+
+
+@app.route("/api/v1/detections", methods=["GET"])
+def list_detections():
+    """
+    Recent face checks, matched or not.
+
+    This is the continuous dataset the identity registry deliberately isn't:
+    every check is here, while only people someone chose to enrol are in persons.
+
+    ?limit=50        how many rows
+    ?alerts_only=1   only checks that met an alert condition
+    """
+    try:
+        limit = min(max(int(request.args.get("limit", 50)), 1), 500)
+    except ValueError:
+        return jsonify({"error": "limit must be a number"}), 400
+
+    alerts_only = request.args.get("alerts_only", "").lower() in ("1", "true", "yes")
+
+    conn = get_db_connection()
+    try:
+        return jsonify({
+            "summary": detection_log.summary(conn),
+            "detections": detection_log.recent(conn, limit=limit, alerts_only=alerts_only),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error reading detections: {e}")
+        return jsonify({"error": "Could not read the detection log"}), 500
     finally:
         conn.close()
 

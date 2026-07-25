@@ -101,6 +101,20 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
         # The UNION also folds in persons.face_embedding, the older one-vector-per-
         # person column. That keeps anyone whose photo rows have no embedding yet
         # visible to the search instead of silently dropping out of the gallery.
+        # Matching reads person_faces ONLY.
+        #
+        # An earlier version also UNIONed in persons.face_embedding as a safety
+        # net so nobody could drop out of the gallery. That arm had no
+        # use_for_matching filter — the legacy column carries no quality metadata
+        # to filter on — so it silently readmitted vectors the quality gate had
+        # rejected, and any stray persons row became matchable regardless of how
+        # it got there. A safety net that bypasses the safety check is not one.
+        #
+        # Every seeded and enrolled person now carries per-capture embeddings
+        # (init_db.py writes them, migrate_multi_face.py backfills them), so the
+        # net is no longer needed. Anyone with no gated reference is deliberately
+        # unmatchable: enroll_face.py --list shows a reference count of 0 for them.
+        #
         # use_for_matching excludes captures kept purely as case evidence — a
         # blurry 40px CCTV grab is real evidence and a terrible reference.
         #
@@ -116,14 +130,6 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
                 JOIN person_faces pf ON pf.person_id = p.id
                 WHERE pf.embedding IS NOT NULL
                   AND pf.use_for_matching
-
-                UNION ALL
-
-                SELECT p.id, p.full_name, p.status,
-                       (p.face_embedding <=> %(vec)s::vector) AS distance,
-                       NULL AS image_url
-                FROM persons p
-                WHERE p.face_embedding IS NOT NULL
             ),
             best_per_person AS (
                 SELECT DISTINCT ON (id) id, full_name, status, distance, image_url

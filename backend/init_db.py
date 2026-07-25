@@ -26,12 +26,39 @@ CREATE TABLE persons (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- One row per captured image. A person accumulates several over time (CCTV
+-- gives many sightings of the same individual), and each carries its own
+-- embedding because matching compares against every stored capture.
+--
+-- Keep this in step with migrate_multi_face.py and migrate_capture_metadata.py:
+-- those add these same columns to an existing database, this creates them fresh.
 CREATE TABLE person_faces (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     person_id UUID NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
     image_url TEXT NOT NULL,
+    embedding vector(512),
+    source TEXT,
+
+    -- FALSE means "evidence only": kept against the person, never used to
+    -- identify anyone. A blurry 40px CCTV grab is real evidence and a harmful
+    -- matching reference.
+    use_for_matching BOOLEAN NOT NULL DEFAULT TRUE,
+    quality_score REAL,
+    face_pixels INTEGER,
+    det_confidence REAL,
+    blur_variance REAL,
+    blur_directional_ratio REAL,
+
+    camera_id TEXT,
+    captured_at TIMESTAMP WITH TIME ZONE,
+    incident_ref TEXT,
+
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_person_faces_person_id ON person_faces(person_id);
+CREATE INDEX idx_person_faces_matchable
+    ON person_faces(person_id) WHERE use_for_matching AND embedding IS NOT NULL;
 
 CREATE INDEX idx_persons_status ON persons(status);
 """
@@ -80,10 +107,24 @@ def setup_and_seed():
             image_url = blob_service.upload_image(local_path, filename=record["blob_name"])
             print(f"Uploaded {record['full_name']} image to {image_url}")
 
-            # Generate 128-dim FaceNet embedding via DeepFace using local image file
+            # Generate the 512-dim Facenet512 embedding from the local image file.
+            #
+            # enforce_detection stays True to match services/recognition.py. With
+            # False, a seed photo whose face isn't found is silently embedded as
+            # the WHOLE image, and that garbage vector becomes the permanent
+            # reference for this person — a failure nothing downstream can detect.
+            # Better to fail loudly here, while someone is watching.
             print(f"Extracting facial embedding for {record['full_name']}...")
-            objs = DeepFace.represent(img_path=local_path, model_name="Facenet512", detector_backend="retinaface", enforce_detection=False)
-            vector_embedding = str(objs[0]["embedding"])
+            objs = DeepFace.represent(img_path=local_path, model_name="Facenet512", detector_backend="retinaface", enforce_detection=True)
+
+            # Largest face, not objs[0], which is arbitrary if the photo has more
+            # than one person in it.
+            def _area(face):
+                box = face.get("facial_area") or {}
+                return box.get("w", 0) * box.get("h", 0)
+
+            subject = max(objs, key=_area)
+            vector_embedding = str(subject["embedding"])
 
             # Insert into persons table
             cursor.execute(
@@ -96,13 +137,17 @@ def setup_and_seed():
             )
             person_id = cursor.fetchone()[0]
 
-            # Insert metadata record
+            # Link the face image, carrying its own embedding. Matching reads
+            # person_faces, not persons.face_embedding — a person can hold many
+            # reference photos and each needs its own vector. Seeding without one
+            # would leave a freshly initialised database with nothing to match.
             cursor.execute(
                 """
-                INSERT INTO person_faces (person_id, image_url)
-                VALUES (%s, %s);
+                INSERT INTO person_faces
+                    (person_id, image_url, embedding, source, use_for_matching)
+                VALUES (%s, %s, %s::vector, 'seed_data', TRUE);
                 """,
-                (person_id, image_url)
+                (person_id, image_url, vector_embedding)
             )
 
         conn.commit()
