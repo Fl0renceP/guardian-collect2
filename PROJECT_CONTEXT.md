@@ -129,14 +129,27 @@ backend/
   scripts/
     geocode_suburbs.py # one-time (resumable) Nominatim geocoder
   static/
-    index.html      # hot-spot heatmap — the app's landing screen
+    index.html      # standalone hot-spot heatmap served by Flask
   data/
     suburb_geocache.json  # suburb -> lat/lng, committed so nobody re-runs geocoding
   seed_data.py       # populate 3 test faces (offender, suspect, verified)
   requirements.txt
   .env.example
-frontend/
-  src/               # React app (owner: TBD per TEAM_ROLES.md)
+frontend/            # React 18 + Vite (owner: Tadiwa; claims flows: Keziah)
+  vite.config.js     # proxies /api -> Flask :5000, so no CORS setup
+  src/
+    main.jsx         # routes
+    api.js           # fetch wrapper + shared formatters
+    session.jsx      # current role/identity — STANDS IN FOR AUTH, see §9
+    theme.css        # design tokens (shared palette with the backend map)
+    components/
+      Layout.jsx     # app bar, nav, role switcher, theme toggle
+      StatusPill.jsx
+    views/
+      HotspotMap.jsx   # heatmap (Leaflet driven imperatively via refs)
+      SubmitClaim.jsx  # member: report an incident
+      MyClaims.jsx     # member: status + decline reasons
+      ReviewQueue.jsx  # employee: approve / decline
 docs/
   PROJECT_CONTEXT.md   # this file
   DEV_ROADMAP.md
@@ -161,7 +174,10 @@ See `docs/DATA_SCHEMA.md` for full column-level detail on:
 - Claims are read from **Cosmos DB**, not the CSV — `services/claims_service.py` is the only place that touches either. The CSV remains as an offline fallback; don't add a second reader for it.
 - Claims documents still carry no lat/long, so suburb names are resolved through the committed geocode cache (`backend/data/suburb_geocache.json`); don't add per-request geocoding.
 - **A claim with a `status` field only counts toward hot-spots once approved.** Absence of `status` means "historical, already part of the dataset". If you add claim submission, write `status: "pending"` and flip it on approval — that's what keeps unverified member submissions off the map.
-- After any claim write, call `claims_service.invalidate_cache()` so the map reflects it instead of waiting out the snapshot TTL.
+- After any claim write, call `claims_service.apply_to_snapshot(doc)` **and** `invalidate_cache()` — the first makes the very next read correct, the second lets a background refresh reconcile. Invalidating alone is not enough: stale-while-revalidate would keep serving the pre-write snapshot.
+- **There is no authentication.** `services/members_service.py` and `frontend/src/session.jsx` supply a demo identity that the API trusts. Don't build anything that assumes `member_id`/`employee_id` is verified — swapping in a real auth provider is a known outstanding task (see `DEV_ROADMAP.md` Phase 5).
+- Claim media lives in a **private** Blob container and is served through short-lived per-request SAS URLs (`services/storage_service.py`). Never make the container public or persist a signed URL on the claim document.
+- Door-camera consent is opt-in, per-incident, and timestamped. Don't default it to true, don't infer it, and don't reuse one incident's consent for another.
 - Keep commit messages descriptive; open a PR against `main` rather than pushing directly once more than one person is working in the repo.
 
 ## 10. Open questions (raised by the team, still unresolved)

@@ -28,9 +28,9 @@ Goal: file upload of an image → detect face → compare against 3 seeded faces
 ## Phase 2 — Claims data pipeline (can start in parallel once Phase 0 is done)
 - [x] Claims ingested into **Azure Cosmos DB** (`guardian-db` / `insurance-data`, 15,712 docs) and read live by `services/claims_service.py` — the hot-spot map picks up new claims without a redeploy. CSV retained as an offline fallback only.
 - [x] Distinct `SUBURB` values geocoded and cached — `scripts/geocode_suburbs.py` → `backend/data/suburb_geocache.json` (Nominatim, not Azure Maps; see PROJECT_CONTEXT §6)
-- [ ] Member claim submission endpoint (basic form → Cosmos doc with `status: "pending"`)
-- [ ] Discovery employee approve/deny endpoint (flip `status` to `"approved"`, then call `claims_service.invalidate_cache()`)
-      — the read side is already done: pending claims are excluded from hot-spots and approved ones counted, verified end to end against the live container.
+- [x] Member claim submission endpoint — `POST /api/claims` (multipart), writes a Cosmos doc with `status: "pending"`; photo/video to Blob Storage
+- [x] Discovery employee approve/deny endpoints — `POST /api/claims/<id>/approve` and `/deny`; approval joins the dataset and the hot-spot map, denial stores a reason shown to the member
+- [x] Member and employee React views for both flows (see Phase 5)
 
 ## Phase 3 — Hot-spot analytics + map
 - [x] `GET /api/hotspots` endpoint, filterable by crime category, item type and date range (+ `GET /api/filters` so the UI never hardcodes peril names)
@@ -44,7 +44,9 @@ Goal: file upload of an image → detect face → compare against 3 seeded faces
 - [ ] Azure Maps Route API wired up for patrol/response route suggestions between active hot-spots or toward an alert location
 
 ## Phase 5 — Integration, polish, demo prep
-- [ ] Frontend dashboard pulling from all endpoints (hotspot map, alerts feed, patrol routes, claims status)
+- [x] React 18 + Vite app in `frontend/` — hot-spot map, member claim submission, member claims status, employee review queue. Vite proxies `/api` to Flask (no CORS setup).
+- [ ] Frontend dashboard pulling from the remaining endpoints (alerts feed, patrol routes)
+- [ ] **Replace the demo identity switcher with real auth** — `members_service.py` and `session.jsx` currently trust a UI-selected identity; this is the biggest known gap
 - [ ] AI-generated weekly briefing via Azure AI Foundry (nice-to-have if time allows)
 - [ ] End-to-end run-through of the full demo flow, timed
 - [ ] Fallback plan: if any Phase 2-4 component isn't ready, Phase 1's standalone facial recognition demo is still a complete, presentable story on its own

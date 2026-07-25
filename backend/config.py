@@ -22,9 +22,17 @@ class Config:
     # 1. PostgreSQL Database with pgvector enabled
     DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/guardian_db")
 
-    # 2. Azure Blob Storage (Still used to save image files)
-    BLOB_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    # 2. Azure Blob Storage
+    AZURE_STORAGE_CONNECTION_STRING = _clean(os.getenv("AZURE_STORAGE_CONNECTION_STRING"))
+    BLOB_CONNECTION_STRING = AZURE_STORAGE_CONNECTION_STRING  # legacy alias
     BLOB_CONTAINER_NAME = "face-images"
+
+    # Claim evidence (photos / video). Private container — the review UI reads
+    # it through short-lived SAS URLs, never public links.
+    CLAIM_MEDIA_CONTAINER = _clean(os.getenv("CLAIM_MEDIA_CONTAINER", "claim-media"))
+    CLAIM_MEDIA_SAS_MINUTES = int(os.getenv("CLAIM_MEDIA_SAS_MINUTES", "30"))
+    # Per-file upload ceiling; Flask enforces the request total separately.
+    MAX_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_MB", "64")) * 1024 * 1024
 
     # 3. DeepFace Model Configuration
     # Options: "Facenet" (128-dim), "Facenet512" (512-dim), "ArcFace" (512-dim), "VGG-Face"
