@@ -29,8 +29,37 @@ class Config:
     # 3. DeepFace Model Configuration
     # Options: "Facenet" (128-dim), "Facenet512" (512-dim), "ArcFace" (512-dim), "VGG-Face"
     FACE_MODEL = "Facenet512"
-    # Cosine distance match threshold for Facenet (lower = stricter match)
-    MATCH_THRESHOLD = 0.60
+    # Cosine distance match threshold for Facenet (lower = stricter match).
+    # This is the value the endpoint actually uses — app.py passes it into
+    # recognition.process_incoming_face_image, overriding that module's default.
+    # It must stay in the same units as the operator in that module's query (<=>).
+    # 0.60 here was being compared against raw Euclidean distances of ~20-30, so
+    # nothing but a byte-identical image ever matched.
+    MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.30"))
+
+    # 3b. Face capture quality gate.
+    # CCTV frames are the problem case: a 30px face upscaled to the model's 160px
+    # input still yields 512 numbers, they just carry no identity. That vector sits
+    # roughly equidistant from everyone, so once enrolled it acts as a magnet for
+    # false matches. Captures below these bars are still stored as case evidence,
+    # but flagged use_for_matching = FALSE so they never become a reference.
+    #
+    # Short side of the detected face box, in pixels. Facenet512 consumes 160x160,
+    # so below ~80 we are upscaling 2x or more and inventing detail.
+    MIN_FACE_PIXELS = int(os.getenv("MIN_FACE_PIXELS", "80"))
+    # Detector's own confidence in the box.
+    MIN_DET_CONFIDENCE = float(os.getenv("MIN_DET_CONFIDENCE", "0.90"))
+    # Variance of the Laplacian on the face crop, normalised to 160x160 so the
+    # number is comparable across resolutions. Sharp faces run well above 100,
+    # motion-blurred CCTV grabs fall below 40.
+    MIN_BLUR_VARIANCE = float(os.getenv("MIN_BLUR_VARIANCE", "40.0"))
+    # Motion blur defeats the measure above, because it is directional: a subject
+    # walking past smears vertical edges while leaving horizontal ones sharp, so
+    # total edge energy stays high. Measured on a 25px horizontal smear, the
+    # x/y gradient ratio collapsed to 0.14 while every clean face sat at 0.39-0.87
+    # — and that blurred face still scored a higher Laplacian variance (132) than
+    # a perfectly usable dim photo (91), so no isotropic threshold separates them.
+    MIN_BLUR_DIRECTIONAL_RATIO = float(os.getenv("MIN_BLUR_DIRECTIONAL_RATIO", "0.25"))
 
     # 4. Claims / hot-spot data
     # Azure Cosmos DB is the source of truth: it's writable, so claims submitted
