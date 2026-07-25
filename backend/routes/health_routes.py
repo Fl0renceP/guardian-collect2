@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify
 
 from services.claims_service import source_status
 from services.geocode_service import geocache_status
+from services.storage_service import storage_status
 
 health_bp = Blueprint("health", __name__, url_prefix="/api")
 
@@ -18,5 +19,6 @@ def health():
             "service": "Guardian Collective API",
             "claims": source_status(),
             "geocode": geocache_status(),
+            "media_storage": storage_status(),
         }
     )
