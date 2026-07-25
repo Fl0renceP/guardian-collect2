@@ -31,6 +31,12 @@ def home():
     return jsonify({"message": "Guardian Collective API is running"}), 200
 
 
+@app.route("/test-scan", methods=["GET"])
+def test_scan_page():
+    """Serves a minimal upload form for facial-recognition endpoint testing."""
+    return send_from_directory(app.static_folder, "scan_test.html")
+
+
 @app.route("/api/v1/scan-face", methods=["POST"])
 def scan_face():
     """
