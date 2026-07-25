@@ -8,6 +8,8 @@ from routes.hotspot_routes import hotspot_bp
 from services.claims_service import warm_cache
 from services.recognition import process_incoming_face_image
 from services import detection_log
+from services import camera_poller
+from services import media_analysis
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +38,16 @@ def home():
 def test_scan_page():
     """Serves a minimal upload form for facial-recognition endpoint testing."""
     return send_from_directory(app.static_folder, "scan_test.html")
+
+
+@app.route("/live", methods=["GET"])
+def live_page():
+    """Continuous scanning from a camera — the no-manual-upload path.
+
+    Browsers only grant camera access on https:// or localhost, so open this as
+    http://localhost:5000/live, not by LAN IP.
+    """
+    return send_from_directory(app.static_folder, "live.html")
 
 
 @app.route("/api/v1/scan-face", methods=["POST"])
@@ -81,15 +93,17 @@ def scan_face():
         # Every check is logged, matched or not — that is the point of the
         # detections table. record() swallows its own failures, so a logging
         # problem can never stop an alert reaching the operator.
-        detection_id = detection_log.record(
+        detection_ids = detection_log.record(
             conn, result,
             threshold=Config.MATCH_THRESHOLD,
             camera_id=camera_id,
             lat=_coord("location_lat"),
             lng=_coord("location_lng"),
         )
-        if detection_id:
-            result["detection_id"] = detection_id
+        if detection_ids:
+            # One id per identified face, in the same order as result["faces"].
+            result["detection_ids"] = detection_ids
+            result["detection_id"] = detection_ids[0]
 
         return jsonify(result), 200
 
@@ -99,6 +113,99 @@ def scan_face():
 
     finally:
         conn.close()
+
+
+@app.route("/media", methods=["GET"])
+def media_page():
+    """Upload images and videos, identify everyone, compare across files."""
+    return send_from_directory(app.static_folder, "media.html")
+
+
+@app.route("/api/v1/media/analyse", methods=["POST"])
+def media_analyse():
+    """
+    Analyse one or more uploaded images/videos.
+
+    Runs on a background thread and returns a job id — a minute of video is
+    minutes of scanning, which is far longer than a request should be held open.
+    Poll /api/v1/media/job/<id>.
+    """
+    files = request.files.getlist("files") or request.files.getlist("file")
+    if not files:
+        return jsonify({"error": "No files provided in 'files'"}), 400
+
+    try:
+        interval = float(request.form.get("sample_interval", 1.0))
+    except ValueError:
+        return jsonify({"error": "sample_interval must be a number"}), 400
+    interval = min(max(interval, 0.2), 10.0)
+
+    uploads = []
+    for item in files:
+        if not item.filename:
+            continue
+        uploads.append((item.filename, item.read()))
+    if not uploads:
+        return jsonify({"error": "No usable files provided"}), 400
+
+    try:
+        job_id = media_analysis.submit(uploads, sample_interval=interval)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify({"job_id": job_id, "files": len(uploads)}), 202
+
+
+@app.route("/api/v1/media/job/<job_id>", methods=["GET"])
+def media_job(job_id):
+    state = media_analysis.job(job_id)
+    if state is None:
+        return jsonify({"error": "No such job"}), 404
+    return jsonify(state), 200
+
+
+@app.route("/api/v1/camera/test", methods=["POST"])
+def camera_test():
+    """One-shot fetch, so the UI can explain why a camera will not connect."""
+    url = (request.json or {}).get("url", "").strip()
+    try:
+        return jsonify(camera_poller.test_connection(url)), 200
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"Could not reach the camera: {e}",
+            "hint": "Check the phone and this machine are on the same network. "
+                    "Guest and conference wifi usually block device-to-device "
+                    "traffic — a phone hotspot avoids that.",
+        }), 502
+
+
+@app.route("/api/v1/camera/start", methods=["POST"])
+def camera_start():
+    """Begin pulling frames from a network camera. Nobody uploads anything."""
+    body = request.json or {}
+    try:
+        status = camera_poller.start(
+            url=(body.get("url") or "").strip(),
+            camera_id=(body.get("camera_id") or "IPCAM-01").strip(),
+            interval=float(body.get("interval", 1.5)),
+            motion_threshold=float(body.get("motion_threshold", 25.0)),
+        )
+        return jsonify(status), 200
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/v1/camera/stop", methods=["POST"])
+def camera_stop():
+    return jsonify(camera_poller.stop()), 200
+
+
+@app.route("/api/v1/camera/status", methods=["GET"])
+def camera_status():
+    return jsonify(camera_poller.status()), 200
 
 
 @app.route("/api/v1/detections", methods=["GET"])

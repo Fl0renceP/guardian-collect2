@@ -39,37 +39,77 @@ def label_for(result):
     return "no_match"
 
 
+def _face_label(face):
+    """Outcome for a single identified face."""
+    if face.get("is_known_user"):
+        return face.get("status") or "no_match"
+    return "no_match"
+
+
 def record(conn, result, threshold, camera_id="demo_upload", lat=None, lng=None):
-    """Write one detection row. Returns its id, or None if logging failed.
+    """Write the detection rows for one scan. Returns the row ids.
 
-    conn is the same connection the scan used. The insert is committed on its own
-    so a later failure elsewhere cannot silently discard the audit record.
+    ONE ROW PER FACE, not per frame. Three people walking past a camera together
+    is three checks on three individuals — collapsing that to a single row would
+    lose two of them from the audit trail, and the spec requires identifying
+    multiple faces, not just noticing that several were present.
+
+    A frame with no usable face still writes one row: "we looked and found
+    nothing" is itself a fact worth keeping.
+
+    conn is the same connection the scan used. Inserts are committed together so
+    a later failure elsewhere cannot silently discard the audit record.
     """
-    person = result.get("person") or {}
-    quality = result.get("capture_quality") or {}
+    faces = result.get("faces") or []
+    rows = []
 
-    params = {
-        "camera_id": camera_id or "demo_upload",
-        "lat": lat,
-        "lng": lng,
-        "person_id": person.get("id"),
-        "person_name": person.get("full_name"),
-        "label": label_for(result),
-        "score": result.get("match_distance"),
-        "threshold": threshold,
-        "margin": result.get("margin_to_next_person"),
-        "alert": bool(result.get("alert")),
-        "faces": result.get("faces_detected"),
-        "quality": quality.get("quality_score"),
-        "quality_passed": quality.get("passes"),
-    }
+    if faces:
+        for face in faces:
+            person = face.get("person") or {}
+            quality = face.get("capture_quality") or {}
+            rows.append({
+                "camera_id": camera_id or "demo_upload",
+                "lat": lat,
+                "lng": lng,
+                "person_id": person.get("id"),
+                "person_name": person.get("full_name"),
+                "label": _face_label(face),
+                "score": face.get("match_distance"),
+                "threshold": threshold,
+                "margin": face.get("margin_to_next_person"),
+                "alert": bool(face.get("alert")),
+                # How many faces the frame held, repeated on each row, so one row
+                # still tells you it came from a group shot.
+                "faces": result.get("faces_detected"),
+                "quality": quality.get("quality_score"),
+                "quality_passed": quality.get("passes"),
+            })
+    else:
+        quality = result.get("capture_quality") or {}
+        rows.append({
+            "camera_id": camera_id or "demo_upload",
+            "lat": lat,
+            "lng": lng,
+            "person_id": None,
+            "person_name": None,
+            "label": label_for(result),
+            "score": result.get("match_distance"),
+            "threshold": threshold,
+            "margin": result.get("margin_to_next_person"),
+            "alert": False,
+            "faces": result.get("faces_detected") or 0,
+            "quality": quality.get("quality_score"),
+            "quality_passed": quality.get("passes"),
+        })
 
     try:
+        ids = []
         with conn.cursor() as cur:
-            cur.execute(INSERT_SQL, params)
-            detection_id = cur.fetchone()[0]
+            for params in rows:
+                cur.execute(INSERT_SQL, params)
+                ids.append(str(cur.fetchone()[0]))
         conn.commit()
-        return str(detection_id)
+        return ids
     except Exception as exc:
         # Never let the audit trail take down the answer.
         logger.warning("Could not record detection: %s", exc)
@@ -77,7 +117,7 @@ def record(conn, result, threshold, camera_id="demo_upload", lat=None, lng=None)
             conn.rollback()
         except Exception:
             pass
-        return None
+        return []
 
 
 def recent(conn, limit=50, alerts_only=False):

@@ -2,6 +2,8 @@ import os
 import psycopg2
 from deepface import DeepFace
 from dotenv import load_dotenv
+
+from config import Config
 from services.blob_storage import BlobStorageService
 
 load_dotenv()
@@ -115,7 +117,7 @@ def setup_and_seed():
             # reference for this person — a failure nothing downstream can detect.
             # Better to fail loudly here, while someone is watching.
             print(f"Extracting facial embedding for {record['full_name']}...")
-            objs = DeepFace.represent(img_path=local_path, model_name="Facenet512", detector_backend="retinaface", enforce_detection=True)
+            objs = DeepFace.represent(img_path=local_path, model_name=Config.FACE_MODEL, detector_backend=Config.FACE_DETECTOR, enforce_detection=True, align=Config.FACE_ALIGN)
 
             # Largest face, not objs[0], which is arbitrary if the photo has more
             # than one person in it.

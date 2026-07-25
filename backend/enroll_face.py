@@ -101,8 +101,11 @@ def enroll(person_name, image_path, source, camera_id, captured_at, incident_ref
         objs = DeepFace.represent(
             img_path=image_path,
             model_name=Config.FACE_MODEL,
-            detector_backend="retinaface",
+            # Must match the scan path, or every reference stored here sits
+            # slightly out of step with every live scan.
+            detector_backend=Config.FACE_DETECTOR,
             enforce_detection=True,
+            align=Config.FACE_ALIGN,
         )
         if not objs:
             raise SystemExit("No face detected — nothing enrolled.")
