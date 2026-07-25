@@ -1,3 +1,4 @@
+import os
 import logging
 import psycopg2
 from flask import Flask, request, jsonify, send_from_directory
@@ -6,7 +7,20 @@ from config import Config
 from routes.health_routes import health_bp
 from routes.hotspot_routes import hotspot_bp
 from services.claims_service import warm_cache
+from services.plate_recognition import process_incoming_plate_image  
 from services.recognition import process_incoming_face_image
+from azure.ai.vision.imageanalysis import ImageAnalysisClient
+from azure.ai.vision.imageanalysis.models import VisualFeatures
+from azure.core.credentials import AzureKeyCredential
+
+# Initialize Client
+endpoint = os.environ.get("AZURE_VISION_ENDPOINT")
+key = os.environ.get("AZURE_VISION_KEY")
+
+client = ImageAnalysisClient(
+    endpoint=endpoint,
+    credential=AzureKeyCredential(key)
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -35,6 +49,16 @@ def home():
 def test_scan_page():
     """Serves a minimal upload form for facial-recognition endpoint testing."""
     return send_from_directory(app.static_folder, "scan_test.html")
+
+@app.route("/test-plate", methods=["GET"])
+def test_plate_page():
+    """Serves a minimal upload form for license plate recognition endpoint testing."""
+    return send_from_directory(app.static_folder, "plate_test.html")
+
+@app.route("/test-azure-plate", methods=["GET"])
+def test_plate_azure_page():
+    """Serves upload form for Azure license plate OCR testing."""
+    return send_from_directory(app.static_folder, "azure_plate_test.html")
 
 
 @app.route("/api/v1/scan-face", methods=["POST"])
@@ -75,6 +99,75 @@ def scan_face():
     finally:
         conn.close()
 
+@app.route("/api/v1/scan-plate", methods=["POST"])
+def scan_plate():
+    """License plate recognition scanning endpoint."""
+    if "file" not in request.files:
+        return jsonify({"error": "No image file provided in 'file' field"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+
+    image_bytes = file.read()
+    conn = get_db_connection()
+
+    try:
+        result = process_incoming_plate_image(
+            image_bytes=image_bytes,
+            db_conn=conn
+        )
+
+        if isinstance(result, tuple):
+            return jsonify(result[0]), result[1]
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        logger.error(f"Error processing plate scan: {e}")
+        return jsonify({"error": "Internal processing error during plate scan"}), 500
+
+    finally:
+        conn.close()
+
+def extract_text_from_bytes(image_bytes: bytes) -> str:
+    """Sends image bytes to Azure AI Vision Read OCR and returns extracted text."""
+    try:
+        result = client.analyze(
+            image_data=image_bytes,
+            visual_features=[VisualFeatures.READ]  # Correct Enum
+        )
+
+        extracted_words = []
+        if result.read is not None:  # Correct Property
+            for block in result.read.blocks:
+                for line in block.lines:
+                    extracted_words.append(line.text)
+
+        return " ".join(extracted_words)
+
+    except Exception as e:
+        logger.error(f"Azure OCR Error: {e}")
+        return ""
+
+@app.route("/api/v1/scan-plate-azure", methods=["POST"])
+def scan_plate_azure():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files["file"]
+    image_bytes = file.read()
+
+    # Extract text using Azure Vision
+    raw_text = extract_text_from_bytes(image_bytes)
+    
+    # Clean string (remove spaces/special characters for database matching)
+    cleaned_plate = "".join([c for c in raw_text if c.isalnum()]).upper()
+
+    return jsonify({
+        "raw_text": raw_text,
+        "cleaned_plate": cleaned_plate
+    }), 200
 
 if __name__ == "__main__":
     # Warm up claims cache on application boot
