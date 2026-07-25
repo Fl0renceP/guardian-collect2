@@ -98,7 +98,7 @@ Use the `face_recognition` Python library (dlib-based) for face detection + 128-
 | Image storage | Azure Blob Storage (store image files; keep DB rows lean) |
 | Claims OCR / plates | Azure AI Vision Read/OCR API |
 | Maps / hotspots | **Leaflet + leaflet.heat**, OpenStreetMap (CARTO) tiles for rendering; **Nominatim** for one-time suburb geocoding — no API key, see note below |
-| Routing | **Valhalla** (OpenStreetMap, public FOSSGIS instance — no key) with `exclude_polygons` for risk-avoiding routes; **H3** for the travel-risk surface |
+| Routing | Azure Maps Route API (still the plan for Phase 4 patrol routes) |
 | Alerts | Azure Functions (trigger logic) + Firebase Cloud Messaging (push delivery) |
 | AI-generated briefings | Azure AI Foundry (agent/prompt flow) |
 | Frontend | React 18 + Vite |
@@ -124,36 +124,19 @@ backend/
     health_routes.py
   services/
     face_service.py    # detection + embedding + matching + alert logic
-    claims_service.py  # claims load, hot-spot aggregation, submission + review
+    claims_service.py  # claims CSV load + hot-spot aggregation
     geocode_service.py # read access to the suburb geocode cache
-    storage_service.py # claim media -> private Blob container, SAS read URLs
-    members_service.py # demo identities — NOT auth, see §9
-    risk_service.py    # H3 travel-risk surface (where x when)
-    routing_service.py # Valhalla routing + risk-avoiding alternative
   scripts/
     geocode_suburbs.py # one-time (resumable) Nominatim geocoder
   static/
-    index.html      # standalone hot-spot heatmap served by Flask
+    index.html      # hot-spot heatmap — the app's landing screen
   data/
     suburb_geocache.json  # suburb -> lat/lng, committed so nobody re-runs geocoding
   seed_data.py       # populate 3 test faces (offender, suspect, verified)
   requirements.txt
   .env.example
-frontend/            # React 18 + Vite (owner: Tadiwa; claims flows: Keziah)
-  vite.config.js     # proxies /api -> Flask :5000, so no CORS setup
-  src/
-    main.jsx         # routes
-    api.js           # fetch wrapper + shared formatters
-    session.jsx      # current role/identity — STANDS IN FOR AUTH, see §9
-    theme.css        # design tokens (shared palette with the backend map)
-    components/
-      Layout.jsx     # app bar, nav, role switcher, theme toggle
-      StatusPill.jsx
-    views/
-      HotspotMap.jsx   # heatmap (Leaflet driven imperatively via refs)
-      SubmitClaim.jsx  # member: report an incident
-      MyClaims.jsx     # member: status + decline reasons
-      ReviewQueue.jsx  # employee: approve / decline
+frontend/
+  src/               # React app (owner: TBD per TEAM_ROLES.md)
 docs/
   PROJECT_CONTEXT.md   # this file
   DEV_ROADMAP.md
@@ -178,14 +161,7 @@ See `docs/DATA_SCHEMA.md` for full column-level detail on:
 - Claims are read from **Cosmos DB**, not the CSV — `services/claims_service.py` is the only place that touches either. The CSV remains as an offline fallback; don't add a second reader for it.
 - Claims documents still carry no lat/long, so suburb names are resolved through the committed geocode cache (`backend/data/suburb_geocache.json`); don't add per-request geocoding.
 - **A claim with a `status` field only counts toward hot-spots once approved.** Absence of `status` means "historical, already part of the dataset". If you add claim submission, write `status: "pending"` and flip it on approval — that's what keeps unverified member submissions off the map.
-- After any claim write, call `claims_service.apply_to_snapshot(doc)` **and** `invalidate_cache()` — the first makes the very next read correct, the second lets a background refresh reconcile. Invalidating alone is not enough: stale-while-revalidate would keep serving the pre-write snapshot.
-- **There is no authentication.** `services/members_service.py` and `frontend/src/session.jsx` supply a demo identity that the API trusts. Don't build anything that assumes `member_id`/`employee_id` is verified — swapping in a real auth provider is a known outstanding task (see `DEV_ROADMAP.md` Phase 5).
-- Claim media lives in a **private** Blob container and is served through short-lived per-request SAS URLs (`services/storage_service.py`). Never make the container public or persist a signed URL on the claim document.
-- Door-camera consent is opt-in, per-incident, and timestamped. Don't default it to true, don't infer it, and don't reuse one incident's consent for another.
-- **Never present the travel-risk surface as street-level.** Claims are located to suburb centroids, so risk is binned to ~5 km² H3 cells. "This area has more evening hijack claims" is supported; "avoid this road" is not.
-- The risk surface separates *where* (smoothed spatial density) from *when* (a single pooled hour/day profile) because claims are far too sparse per suburb to estimate both together. Don't refactor it into per-cell-per-hour counts — that's noise, not signal.
-- Risk scores normalise against a **fixed** reference peak, not the current moment's peak. Normalising per query cancels the time multiplier out algebraically and makes every hour look identical.
-- **Don't loosen `ROUTE_MIN_RISK_REDUCTION` to make demos look better.** Suggesting detours on noise is how this feature turns into an app that tells people to avoid particular neighbourhoods — a real redlining risk in the South African context.
+- After any claim write, call `claims_service.invalidate_cache()` so the map reflects it instead of waiting out the snapshot TTL.
 - Keep commit messages descriptive; open a PR against `main` rather than pushing directly once more than one person is working in the repo.
 
 ## 10. Open questions (raised by the team, still unresolved)

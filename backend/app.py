@@ -3,10 +3,8 @@ import psycopg2
 from flask import Flask, request, jsonify, send_from_directory
 
 from config import Config
-from routes.claim_routes import claim_bp
 from routes.health_routes import health_bp
 from routes.hotspot_routes import hotspot_bp
-from routes.route_routes import route_bp
 from services.claims_service import warm_cache
 from services.recognition import process_incoming_face_image
 

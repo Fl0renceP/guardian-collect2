@@ -1,17 +1,4 @@
 /backend/venv
-.env
+.env 
 
 /backend/.env
-
-# Frontend
-/frontend/node_modules
-/frontend/dist
-/frontend/.vite
-
-# Python
-__pycache__/
-*.pyc
-
-# Geocache temp file written during a geocoding run
-/backend/data/*.json.tmp
-/backend/data/suburb_geocache.backup.json

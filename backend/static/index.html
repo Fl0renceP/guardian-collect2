@@ -161,7 +161,6 @@ h1 { font-size: 22px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
 .tip .t-val { font-size: 20px; font-weight: 650; line-height: 1.15; }
 .tip .t-val small { font-size: 12px; font-weight: 400; color: var(--ink-2); margin-left: 3px; }
 .tip .t-amt { font-size: 12.5px; color: var(--ink-2); margin-top: 1px; }
-.tip .t-approx { font-size: 11.5px; color: var(--ink-muted); margin-top: 3px; font-style: italic; }
 .tip .t-rows { margin-top: 7px; border-top: 1px solid var(--hairline); padding-top: 6px; }
 .tip .t-row { display: flex; align-items: center; gap: 7px; font-size: 12.5px; margin-top: 2px; }
 .tip .t-name { color: var(--ink-2); }
@@ -385,13 +384,6 @@ tbody tr:last-child td { border-bottom: none; }
     amt.textContent = money.format(spot.total_amount) + " total value";
     el.appendChild(amt);
 
-    if (spot.approximate) {
-      var approx = document.createElement("div");
-      approx.className = "t-approx";
-      approx.textContent = "Approximate location (nearest known place)";
-      el.appendChild(approx);
-    }
-
     var perils = Object.keys(spot.perils).slice(0, 4);
     if (perils.length) {
       var rows = document.createElement("div");
@@ -513,15 +505,12 @@ tbody tr:last-child td { border-bottom: none; }
     if (b.unknown_suburb) parts.push(num.format(b.unknown_suburb) + " with no suburb recorded");
     if (b.not_geocoded) {
       parts.push(num.format(b.not_geocoded) + " in " +
-        num.format(b.not_geocoded_suburbs) + " suburbs that couldn't be located");
+        num.format(b.not_geocoded_suburbs) + " suburbs not yet geocoded");
     }
-    var text = parts.length
+    var el = document.getElementById("coverage");
+    el.textContent = parts.length
       ? "Not on map: " + parts.join("; ")
       : "All matching claims are on the map";
-    if (data.approximate_claims) {
-      text += " · " + num.format(data.approximate_claims) + " pinned approximately";
-    }
-    document.getElementById("coverage").textContent = text;
   }
 
   function renderTable(spots) {
