@@ -166,6 +166,20 @@ def _fetch():
     return _load_from_csv(), "csv-fallback"
 
 
+def _notify_claims_changed():
+    """Drop anything derived from the claim set.
+
+    Imported lazily because risk_service reads through load_claims — a top-level
+    import here would be circular.
+    """
+    try:
+        from services import risk_service
+
+        risk_service.invalidate()
+    except Exception:  # pragma: no cover - derived caches must never break a write
+        logger.exception("Could not invalidate the risk surface.")
+
+
 def _is_fresh():
     return (
         _snapshot is not None
@@ -195,6 +209,7 @@ def _refresh_now():
         _snapshot = countable
         _snapshot_at = time.monotonic()
         _snapshot_source = source
+        _notify_claims_changed()
         logger.info(
             "Loaded %d claims (%d countable) from %s in %.2fs",
             len(claims), len(countable), source, time.monotonic() - started,
@@ -264,6 +279,7 @@ def apply_to_snapshot(document):
     if _is_countable(normalized):
         remaining.append(normalized)
     _snapshot = remaining
+    _notify_claims_changed()
 
 
 def invalidate_cache():

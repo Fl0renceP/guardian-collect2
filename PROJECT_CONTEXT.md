@@ -98,7 +98,7 @@ Use the `face_recognition` Python library (dlib-based) for face detection + 128-
 | Image storage | Azure Blob Storage (store image files; keep DB rows lean) |
 | Claims OCR / plates | Azure AI Vision Read/OCR API |
 | Maps / hotspots | **Leaflet + leaflet.heat**, OpenStreetMap (CARTO) tiles for rendering; **Nominatim** for one-time suburb geocoding — no API key, see note below |
-| Routing | Azure Maps Route API (still the plan for Phase 4 patrol routes) |
+| Routing | **Valhalla** (OpenStreetMap, public FOSSGIS instance — no key) with `exclude_polygons` for risk-avoiding routes; **H3** for the travel-risk surface |
 | Alerts | Azure Functions (trigger logic) + Firebase Cloud Messaging (push delivery) |
 | AI-generated briefings | Azure AI Foundry (agent/prompt flow) |
 | Frontend | React 18 + Vite |
@@ -124,8 +124,12 @@ backend/
     health_routes.py
   services/
     face_service.py    # detection + embedding + matching + alert logic
-    claims_service.py  # claims CSV load + hot-spot aggregation
+    claims_service.py  # claims load, hot-spot aggregation, submission + review
     geocode_service.py # read access to the suburb geocode cache
+    storage_service.py # claim media -> private Blob container, SAS read URLs
+    members_service.py # demo identities — NOT auth, see §9
+    risk_service.py    # H3 travel-risk surface (where x when)
+    routing_service.py # Valhalla routing + risk-avoiding alternative
   scripts/
     geocode_suburbs.py # one-time (resumable) Nominatim geocoder
   static/
@@ -178,6 +182,10 @@ See `docs/DATA_SCHEMA.md` for full column-level detail on:
 - **There is no authentication.** `services/members_service.py` and `frontend/src/session.jsx` supply a demo identity that the API trusts. Don't build anything that assumes `member_id`/`employee_id` is verified — swapping in a real auth provider is a known outstanding task (see `DEV_ROADMAP.md` Phase 5).
 - Claim media lives in a **private** Blob container and is served through short-lived per-request SAS URLs (`services/storage_service.py`). Never make the container public or persist a signed URL on the claim document.
 - Door-camera consent is opt-in, per-incident, and timestamped. Don't default it to true, don't infer it, and don't reuse one incident's consent for another.
+- **Never present the travel-risk surface as street-level.** Claims are located to suburb centroids, so risk is binned to ~5 km² H3 cells. "This area has more evening hijack claims" is supported; "avoid this road" is not.
+- The risk surface separates *where* (smoothed spatial density) from *when* (a single pooled hour/day profile) because claims are far too sparse per suburb to estimate both together. Don't refactor it into per-cell-per-hour counts — that's noise, not signal.
+- Risk scores normalise against a **fixed** reference peak, not the current moment's peak. Normalising per query cancels the time multiplier out algebraically and makes every hour look identical.
+- **Don't loosen `ROUTE_MIN_RISK_REDUCTION` to make demos look better.** Suggesting detours on noise is how this feature turns into an app that tells people to avoid particular neighbourhoods — a real redlining risk in the South African context.
 - Keep commit messages descriptive; open a PR against `main` rather than pushing directly once more than one person is working in the repo.
 
 ## 10. Open questions (raised by the team, still unresolved)

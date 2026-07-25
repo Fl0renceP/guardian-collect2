@@ -3,4 +3,5 @@ python-dotenv>=1.0.0
 requests>=2.31.0
 azure-cosmos>=4.5.1
 azure-storage-blob>=12.19.0
+h3>=4.0.0
 gunicorn>=21.2.0

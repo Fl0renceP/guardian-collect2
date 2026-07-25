@@ -5,6 +5,7 @@ import { api } from '../api'
 
 const MEMBER_NAV = [
   { to: '/', label: 'Hot-spots', end: true },
+  { to: '/route', label: 'Plan a route' },
   { to: '/report', label: 'Report an incident' },
   { to: '/my-claims', label: 'My claims' },
 ]

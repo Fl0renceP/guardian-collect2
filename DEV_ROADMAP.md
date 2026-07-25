@@ -41,7 +41,10 @@ Goal: file upload of an image → detect face → compare against 3 seeded faces
 ## Phase 4 — Alerts + route optimization
 - [ ] Replace the Phase 1 `send_alert()` stub with real delivery: Azure Function trigger → Firebase Cloud Messaging
 - [ ] Alert routing logic: members only get `offender` alerts; Crime Prevention Units get `offender` and `suspect` alerts
-- [ ] Azure Maps Route API wired up for patrol/response route suggestions between active hot-spots or toward an alert location
+- [x] **Member route optimisation** — `GET /api/risk` + `POST /api/routes/compare`, and the "Plan a route" view: fastest vs risk-avoiding route by travel mode and departure time, via Valhalla `exclude_polygons` (not Azure Maps — no key; see PROJECT_CONTEXT §6)
+- [ ] **Crime Prevention Unit patrol routing** — a different problem class to the member side: coverage/allocation (max-coverage or team-orienteering over the risk surface for N vehicles), not shortest-path. Feed the `/api/risk` cells into VROOM or OR-Tools; success metric is share of predicted risk covered per km driven
+- [ ] **Live motion alerts** — `watchPosition` in the browser, evaluate the current H3 cell client-side (h3-js) so no location trail leaves the device, alert on entering an elevated cell
+- [ ] Wire live/predicted alerts from Azure Functions into the risk surface alongside historical claims
 
 ## Phase 5 — Integration, polish, demo prep
 - [x] React 18 + Vite app in `frontend/` — hot-spot map, member claim submission, member claims status, employee review queue. Vite proxies `/api` to Flask (no CORS setup).

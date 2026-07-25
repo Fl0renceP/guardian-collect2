@@ -51,6 +51,16 @@ export const api = {
   members: () => request('/api/members'),
   suburbs: (q) => request(`/api/suburbs${qs({ q })}`),
 
+  // --- travel risk + routing ---
+  risk: (params) => request(`/api/risk${qs(params)}`),
+  riskProfile: () => request('/api/risk/profile'),
+  compareRoutes: (payload) =>
+    request('/api/routes/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+
   // --- claims ---
   submitClaim: (formData) =>
     request('/api/claims', { method: 'POST', body: formData }),
