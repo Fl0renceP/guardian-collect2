@@ -91,7 +91,15 @@ export default function Layout() {
     <>
       <header className="appbar">
         <div className="appbar-inner">
-          <span className="brand">Guardian Collective</span>
+          <NavLink to="/" className="brand" aria-label="Guardian Collective home">
+            <span className="brand-badge" aria-hidden="true">
+              GC
+            </span>
+            <span className="brand-text">
+              <span className="brand-word">Guardian Collective</span>
+              <span className="brand-bar" aria-hidden="true" />
+            </span>
+          </NavLink>
 
           <nav className="nav">
             {nav.map((item) => (
@@ -112,7 +120,7 @@ export default function Layout() {
           <div className="spacer" />
 
           {/* Demo identity switcher. Stands in for authentication — see session.jsx. */}
-          <label className="tiny" htmlFor="role-select" style={{ marginRight: -8 }}>
+          <label className="tiny viewing-label" htmlFor="role-select" style={{ marginRight: -4 }}>
             Viewing as
           </label>
           <select

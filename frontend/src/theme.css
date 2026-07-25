@@ -1,25 +1,62 @@
-/* Guardian Collective design tokens.
-   Sequential blue carries magnitude on the map; status colours are reserved for
-   claim state and never reused as series colours. Dark values are stepped for
-   the dark surface, not a flip of the light ones. */
+/* Guardian Collective design tokens, matched to the product mockups.
+
+   The identity is a teal -> blue -> violet -> magenta spectrum. Blue carries
+   primary actions (nav pills, buttons), magenta is the header rule and
+   secondary accent, and the full spectrum appears as a gradient on the wordmark
+   and progress bars.
+
+   Sequential ramps walk that same spectrum as **semantic heat** (cool = low,
+   hot = high), which is the documented exception to the one-hue rule and always
+   ships with a scale legend. The stops are chosen for *monotonic lightness* —
+   the mockup's five brand stops are all mid-lightness and unusable raw, so each
+   ramp is re-stepped (smallest lightness step 0.038 light / 0.046 dark, which
+   keeps adjacent bands distinguishable).
+
+   Contrast: --accent #2b73d4 gives 4.66:1 with white text (the mockup's own
+   #327fe1 measures 3.99:1 and would fail body text on a button, so it's used
+   only for large text and fills). Dark accent #5b9cf0 gives 5.97:1.
+
+   Status colours stay reserved for claim state and are never reused as series
+   colours; each always carries a text label so state never rests on colour. */
 
 :root {
   color-scheme: light;
-  --surface-1: #fcfcfb;
-  --page: #f9f9f7;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --ink-muted: #898781;
-  --hairline: #e1e0d9;
-  --border: rgba(11, 11, 11, 0.1);
-  --accent: #2a78d6;
+  --surface-1: #ffffff;
+  --page: #f3f3f5;
+  --ink: #14161c;
+  --ink-2: #4d5461;
+  --ink-muted: #838b98;
+  --hairline: #e4e6ea;
+  --border: rgba(20, 22, 28, 0.1);
+  --accent: #2b73d4;
   --accent-ink: #ffffff;
+  /* Magenta rule under the app bar, and the secondary accent. */
+  --rule: #e8368f;
+  --rule-strong: #c51a72;
+  --reward: #f2ac09;
 
-  --seq-100: #cde2fb;
-  --seq-250: #86b6ef;
-  --seq-400: #3987e5;
-  --seq-550: #1c5cab;
-  --seq-700: #0d366b;
+  /* The five brand stops, in fixed order. Used as a gradient, never as a
+     categorical series — see PatrolPlan for the series palette. */
+  --brand-1: #0fafb0;
+  --brand-2: #3286dd;
+  --brand-3: #6a57e1;
+  --brand-4: #b442ba;
+  --brand-5: #e5479b;
+  --brand-gradient: linear-gradient(
+    90deg,
+    var(--brand-1) 0%,
+    var(--brand-2) 27%,
+    var(--brand-3) 52%,
+    var(--brand-4) 78%,
+    var(--brand-5) 100%
+  );
+
+  /* Semantic heat, re-stepped for monotonic lightness on a light surface. */
+  --seq-100: #d3f0ec;
+  --seq-250: #8fd3dd;
+  --seq-400: #5b8ede;
+  --seq-550: #7a3fe0;
+  --seq-700: #a3126b;
 
   /* Reserved status palette — claim state only. */
   --good: #0ca30c;
@@ -37,35 +74,53 @@
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme='light'])) {
     color-scheme: dark;
-    --surface-1: #1a1a19;
-    --page: #0d0d0d;
+    --surface-1: #1b1b32;
+    --page: #101021;
     --ink: #ffffff;
-    --ink-2: #c3c2b7;
-    --ink-muted: #898781;
-    --hairline: #2c2c2a;
+    --ink-2: #c3c9d6;
+    --ink-muted: #8d94a6;
+    --hairline: #2b2c47;
     --border: rgba(255, 255, 255, 0.1);
-    --accent: #3987e5;
-    --good-wash: rgba(12, 163, 12, 0.16);
-    --warning-wash: rgba(250, 178, 25, 0.16);
-    --critical-wash: rgba(208, 59, 59, 0.18);
-    --shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    --accent: #5b9cf0;
+    --rule: #ea4999;
+    --rule-strong: #f2609f;
+    --reward: #f4ba33;
+    /* Same hue walk, lightness rising so low values recede into the surface. */
+    --seq-100: #0e3147;
+    --seq-250: #1a5c8e;
+    --seq-400: #3d63cf;
+    --seq-550: #b25ae0;
+    --seq-700: #f6b8dc;
+    --good-wash: rgba(12, 163, 12, 0.18);
+    --warning-wash: rgba(250, 178, 25, 0.18);
+    --critical-wash: rgba(208, 59, 59, 0.2);
+    --shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --surface-1: #1a1a19;
-  --page: #0d0d0d;
+  --surface-1: #1b1b32;
+  --page: #101021;
   --ink: #ffffff;
-  --ink-2: #c3c2b7;
-  --ink-muted: #898781;
-  --hairline: #2c2c2a;
+  --ink-2: #c3c9d6;
+  --ink-muted: #8d94a6;
+  --hairline: #2b2c47;
   --border: rgba(255, 255, 255, 0.1);
-  --accent: #3987e5;
-  --good-wash: rgba(12, 163, 12, 0.16);
-  --warning-wash: rgba(250, 178, 25, 0.16);
-  --critical-wash: rgba(208, 59, 59, 0.18);
-  --shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --accent: #5b9cf0;
+  --rule: #ea4999;
+  --rule-strong: #f2609f;
+  --reward: #f4ba33;
+  /* Same hue walk, lightness rising so low values recede into the surface. */
+  --seq-100: #0e3147;
+  --seq-250: #1a5c8e;
+  --seq-400: #3d63cf;
+  --seq-550: #b25ae0;
+  --seq-700: #f6b8dc;
+  --good-wash: rgba(12, 163, 12, 0.18);
+  --warning-wash: rgba(250, 178, 25, 0.18);
+  --critical-wash: rgba(208, 59, 59, 0.2);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
 
 * {
@@ -122,8 +177,10 @@ a {
 
 /* ---------- app bar ---------- */
 .appbar {
-  border-bottom: 1px solid var(--border);
   background: var(--surface-1);
+  /* The magenta rule from the mockups. Decorative only — it carries no meaning,
+     so its 3.92:1 against white is fine (nothing reads text off it). */
+  border-bottom: 2px solid var(--rule);
 }
 .appbar-inner {
   max-width: 1240px;
@@ -131,15 +188,73 @@ a {
   padding: 12px 20px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   flex-wrap: wrap;
 }
+/* The member role carries the logo lockup, six nav items and two identity
+   selects. Shed the least useful pieces in order — label, then the wordmark
+   (the badge alone still identifies the app) — before the row wraps. */
+.appbar-inner select {
+  max-width: 150px;
+  text-overflow: ellipsis;
+}
+@media (max-width: 1240px) {
+  .appbar-inner .viewing-label {
+    display: none;
+  }
+}
+@media (max-width: 1120px) {
+  .brand-text {
+    display: none;
+  }
+}
+/* Logo lockup: a "GC" badge, the wordmark in ink, and the brand spectrum as an
+   underline bar. The gradient lives on the bar rather than the letters, so the
+   wordmark keeps full text contrast and still reads under forced-colors. */
 .brand {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  color: inherit;
+}
+.brand-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--brand-gradient);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.brand-word {
+  font-size: 11.5px;
+  font-weight: 750;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--ink);
+  line-height: 1;
+  white-space: nowrap;
+}
+.brand-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--brand-gradient);
+}
+@media (forced-colors: active), print {
+  .brand-badge,
+  .brand-bar {
+    background: var(--accent);
+  }
 }
 .nav {
   display: flex;
@@ -149,7 +264,7 @@ a {
 .nav a {
   text-decoration: none;
   color: var(--ink-2);
-  padding: 6px 12px;
+  padding: 6px 9px;
   border-radius: 999px;
   font-size: 13.5px;
   white-space: nowrap;

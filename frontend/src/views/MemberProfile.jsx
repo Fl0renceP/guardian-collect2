@@ -100,24 +100,25 @@ export default function MemberProfile() {
     if (ringRef.current) map.removeLayer(ringRef.current)
     if (!point) return
 
+    const accent = theme === 'dark' ? '#5b9cf0' : '#2b73d4'
     ringRef.current = L.circle([point.lat, point.lng], {
       radius: radius * 1000,
-      color: '#2a78d6',
+      color: accent,
       weight: 1.5,
-      fillColor: '#2a78d6',
+      fillColor: accent,
       fillOpacity: 0.08,
     }).addTo(map)
     pinRef.current = L.circleMarker([point.lat, point.lng], {
       radius: 8,
       color: '#fff',
       weight: 2,
-      fillColor: '#2a78d6',
+      fillColor: accent,
       fillOpacity: 1,
     })
       .bindTooltip('Your home', { direction: 'top' })
       .addTo(map)
     map.fitBounds(ringRef.current.getBounds(), { padding: [30, 30] })
-  }, [point, radius])
+  }, [point, radius, theme])
 
   async function save(shareLocation) {
     setSaving(true)

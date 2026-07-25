@@ -12,35 +12,43 @@
    Dark values are stepped for the dark surface, not a flip of the light ones. */
 :root {
   color-scheme: light;
-  --surface-1:   #fcfcfb;
-  --page:        #f9f9f7;
-  --ink:         #0b0b0b;
-  --ink-2:       #52514e;
-  --ink-muted:   #898781;
-  --hairline:    #e1e0d9;
-  --border:      rgba(11,11,11,0.10);
-  --accent:      #2a78d6;
+  --surface-1:   #ffffff;
+  --page:        #f3f3f5;
+  --ink:         #14161c;
+  --ink-2:       #4d5461;
+  --ink-muted:   #838b98;
+  --hairline:    #e4e6ea;
+  --border:      rgba(20,22,28,0.10);
+  --accent:      #2b73d4;
+  --rule:        #e8368f;
 
-  /* Sequential blue ramp, light -> dark as magnitude rises */
-  --seq-100: #cde2fb;
-  --seq-250: #86b6ef;
-  --seq-400: #3987e5;
-  --seq-550: #1c5cab;
-  --seq-700: #0d366b;
+  /* Semantic heat through the brand spectrum (teal -> blue -> violet ->
+     magenta), re-stepped for monotonic lightness. Always with a scale legend. */
+  --seq-100: #d3f0ec;
+  --seq-250: #8fd3dd;
+  --seq-400: #5b8ede;
+  --seq-550: #7a3fe0;
+  --seq-700: #a3126b;
 
   --tiles: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --surface-1: #1a1a19;
-    --page:      #0d0d0d;
+    --surface-1: #1b1b32;
+    --page:      #101021;
     --ink:       #ffffff;
-    --ink-2:     #c3c2b7;
-    --ink-muted: #898781;
-    --hairline:  #2c2c2a;
+    --ink-2:     #c3c9d6;
+    --ink-muted: #8d94a6;
+    --hairline:  #2b2c47;
     --border:    rgba(255,255,255,0.10);
-    --accent:    #3987e5;
+    --accent:    #5b9cf0;
+    --rule:      #ea4999;
+    --seq-100: #0e3147;
+    --seq-250: #1a5c8e;
+    --seq-400: #3d63cf;
+    --seq-550: #b25ae0;
+    --seq-700: #f6b8dc;
     --tiles: dark;
   }
 }
@@ -70,9 +78,14 @@ body {
 header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
 h1 { font-size: 22px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
 .brand {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
-  color: var(--accent);
+  font-size: 11px; font-weight: 750; letter-spacing: 0.085em; text-transform: uppercase;
+  color: var(--ink); display: inline-flex; flex-direction: column; gap: 3px;
 }
+.brand::after {
+  content: ""; height: 3px; border-radius: 2px;
+  background: linear-gradient(90deg, #0fafb0 0%, #3286dd 27%, #6a57e1 52%, #b442ba 78%, #e5479b 100%);
+}
+@media (forced-colors: active), print { .brand::after { background: var(--accent); } }
 .sub { color: var(--ink-2); font-size: 13.5px; margin: 2px 0 18px; }
 .theme-btn {
   margin-left: auto; background: var(--surface-1); color: var(--ink-2);
@@ -285,15 +298,17 @@ tbody tr:last-child td { border-bottom: none; }
   var TILES = {
     light: {
       url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-      // Sequential blue, light -> dark as claim density rises.
-      gradient: { 0.15: "#cde2fb", 0.4: "#86b6ef", 0.62: "#3987e5", 0.82: "#1c5cab", 1.0: "#0d366b" },
-      stroke: "#fcfcfb"
+      // Sequential magenta -> violet, light -> dark as claim density rises.
+      gradient: { 0.15: "#d3f0ec", 0.4: "#8fd3dd", 0.62: "#5b8ede", 0.82: "#7a3fe0", 1.0: "#a3126b" },
+      stroke: "#ffffff",
+      mark: "#7a3fe0"
     },
     dark: {
       url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-      // Same single hue, stepped for the dark surface (dark -> bright as density rises).
-      gradient: { 0.15: "#184f95", 0.4: "#256abf", 0.62: "#3987e5", 0.82: "#6da7ec", 1.0: "#cde2fb" },
-      stroke: "#1a1a19"
+      // Same hue walk, lightness rising so low values recede into the surface.
+      gradient: { 0.15: "#0e3147", 0.4: "#1a5c8e", 0.62: "#3d63cf", 0.82: "#b25ae0", 1.0: "#f6b8dc" },
+      stroke: "#1b1b32",
+      mark: "#b25ae0"
     }
   };
 
@@ -444,7 +459,7 @@ tbody tr:last-child td { border-bottom: none; }
         color: theme.stroke,
         weight: 1.5,
         opacity: 0,
-        fillColor: "#3987e5",
+        fillColor: theme.mark,
         fillOpacity: 0
       });
       marker.bindTooltip(buildTooltip(spot), {

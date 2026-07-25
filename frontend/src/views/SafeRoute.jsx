@@ -5,13 +5,15 @@ import { useSession } from '../session'
 
 /* Safer-route planning.
 
-   Colour reasoning: the risk cells keep the sequential blue ramp used by the
-   hot-spot map, because they encode the same thing (magnitude) and should read
-   the same way. The two routes therefore can't also be blue. Rather than pick a
-   second arbitrary hue, they use **emphasis** — the recommended route is drawn
-   thick in the accent, the alternative thin and grey. That matches what the
-   screen is actually saying (one of these is advised) and keeps identity off
-   colour alone, since both are labelled in the legend and the comparison table. */
+   Colour reasoning: the risk cells keep the sequential magenta->violet ramp used
+   by the hot-spot map, because they encode the same thing (magnitude) and should
+   read the same way. The routes therefore must not share that hue family —
+   a magenta line over magenta cells would be unreadable, which is why the
+   recommended route stays orange even though magenta is now the brand accent.
+   Beyond that the routes use **emphasis**: the recommended one is drawn thick
+   and saturated, the alternative thin and grey. That matches what the screen is
+   actually saying (one of these is advised) and keeps identity off colour alone,
+   since both are labelled in the legend and the comparison table. */
 
 const MODES = [
   { id: 'auto', label: 'Driving' },
@@ -27,11 +29,11 @@ const DEFAULT_ORIGIN = { lat: -25.7479, lng: 28.2293, label: 'Pretoria' }
 const DEFAULT_DEST = { lat: -26.2041, lng: 28.0473, label: 'Johannesburg CBD' }
 
 const RISK_STEPS = [
-  { min: 0.85, color: '#0d366b' },
-  { min: 0.7, color: '#1c5cab' },
-  { min: 0.55, color: '#3987e5' },
-  { min: 0.4, color: '#86b6ef' },
-  { min: 0.0, color: '#cde2fb' },
+  { min: 0.85, color: '#a3126b' },
+  { min: 0.7, color: '#7a3fe0' },
+  { min: 0.55, color: '#5b8ede' },
+  { min: 0.4, color: '#8fd3dd' },
+  { min: 0.0, color: '#d3f0ec' },
 ]
 const riskColor = (score) => (RISK_STEPS.find((s) => score >= s.min) || RISK_STEPS[4]).color
 

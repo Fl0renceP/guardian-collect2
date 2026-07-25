@@ -13,10 +13,15 @@ import { useSession } from '../session'
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-// Categorical slots 1-6 in fixed order, light and dark steps.
+// Categorical slots in fixed order, light and dark steps. The magenta slot was
+// dropped when the brand moved to magenta — a vehicle line the same hue as the
+// accent reads as chrome rather than data. Validated as a set: worst adjacent
+// pair is yellow<->aqua at CVD dE 9.1 / normal dE 22.9, both above the gates.
+// Aqua and yellow fall below 3:1 on the light surface, which is why every
+// vehicle is also named in the legend and the table.
 const VEHICLE_COLORS = {
-  light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7'],
-  dark: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#9085e9'],
+  light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#4a3aa7', '#008300'],
+  dark: ['#3987e5', '#d95926', '#199e70', '#c98500', '#9085e9', '#0ca30c'],
 }
 
 function useThemeName() {

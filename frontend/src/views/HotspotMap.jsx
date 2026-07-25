@@ -17,13 +17,15 @@ const SA_CENTER = [-29.0, 25.0]
 const THEMES = {
   light: {
     url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    gradient: { 0.15: '#cde2fb', 0.4: '#86b6ef', 0.62: '#3987e5', 0.82: '#1c5cab', 1.0: '#0d366b' },
-    stroke: '#fcfcfb',
+    gradient: { 0.15: '#d3f0ec', 0.4: '#8fd3dd', 0.62: '#5b8ede', 0.82: '#7a3fe0', 1.0: '#a3126b' },
+    stroke: '#ffffff',
+    mark: '#7a3fe0',
   },
   dark: {
     url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    gradient: { 0.15: '#184f95', 0.4: '#256abf', 0.62: '#3987e5', 0.82: '#6da7ec', 1.0: '#cde2fb' },
-    stroke: '#1a1a19',
+    gradient: { 0.15: '#0e3147', 0.4: '#1a5c8e', 0.62: '#3d63cf', 0.82: '#b25ae0', 1.0: '#f6b8dc' },
+    stroke: '#1b1b32',
+    mark: '#b25ae0',
   },
 }
 
@@ -205,7 +207,7 @@ export default function HotspotMap() {
         color: palette.stroke,
         weight: 1.5,
         opacity: 0,
-        fillColor: '#3987e5',
+        fillColor: palette.mark,
         fillOpacity: 0,
       })
       marker.bindTooltip(buildTooltip(spot), {
