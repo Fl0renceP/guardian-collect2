@@ -1,8 +1,11 @@
 import os
 import tempfile
+import cv2
 import psycopg2
 import numpy as np
 from deepface import DeepFace
+
+from services.face_quality import assess as assess_quality
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -59,6 +62,18 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
         query_vector = subject["embedding"]
         faces_detected = len(embeddings)
         face_confidence = subject.get("face_confidence")
+
+        # Advisory only — a scan is NEVER refused for poor quality. You always
+        # want to try to identify whoever is in front of the camera, however bad
+        # the frame. The score tells the operator how much to trust the answer,
+        # which is a different question from whether the image is fit to become a
+        # stored reference (that gate lives in enrolment).
+        probe_image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+        capture_quality = (
+            assess_quality(probe_image, subject.get("facial_area"), face_confidence)
+            if probe_image is not None
+            else None
+        )
 
     except Exception as e:
         os.remove(tmp_path)
@@ -191,6 +206,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
                 "supporting_captures": captures,
                 "faces_detected": faces_detected,
                 "face_confidence": face_confidence,
+                "capture_quality": capture_quality,
                 "message": f"ALERT: {status.upper()} DETECTED!" if is_flagged else f"Member '{full_name}' is verified."
             }
 
@@ -207,6 +223,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
             "nearest_person": {"full_name": result[1], "status": result[2]} if result else None,
             "faces_detected": faces_detected,
             "face_confidence": face_confidence,
+            "capture_quality": capture_quality,
             "registered": False,
             "message": "Unknown face — not in the registry. Not added; enrolment is a separate admin action."
         }
