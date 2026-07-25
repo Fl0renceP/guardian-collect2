@@ -85,6 +85,17 @@ class Config:
     # a perfectly usable dim photo (91), so no isotropic threshold separates them.
     MIN_BLUR_DIRECTIONAL_RATIO = float(os.getenv("MIN_BLUR_DIRECTIONAL_RATIO", "0.25"))
 
+    # 3c. Azure AI Vision — Read/OCR, used for licence plates.
+    # Both values are on the "Keys and Endpoint" page of the Azure AI Services
+    # resource. The endpoint looks like https://<name>.cognitiveservices.azure.com/
+    #
+    # Note this is Vision READ, which is generally available. It is NOT the Azure
+    # Face API, whose identification and verification calls are Limited Access and
+    # need an approval process — see PROJECT_CONTEXT.md section 5. Face matching
+    # stays in our own pgvector pipeline for exactly that reason.
+    AZURE_VISION_ENDPOINT = _clean(os.getenv("AZURE_VISION_ENDPOINT"))
+    AZURE_VISION_KEY = _clean(os.getenv("AZURE_VISION_KEY"))
+
     # 4. Claims / hot-spot data
     # Azure Cosmos DB is the source of truth: it's writable, so claims submitted
     # and approved through the app show up on the hot-spot map without a redeploy.

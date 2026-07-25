@@ -1,14 +1,35 @@
 import io
 import re
 import logging
-import easyocr
 import numpy as np
 from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# Initialize EasyOCR reader (loads model once)
-reader = easyocr.Reader(['en'], gpu=False)
+# EasyOCR is imported lazily. Importing it at module scope took the whole
+# application down when the package was absent: app.py imports this module at
+# startup, so a missing optional OCR dependency stopped the face pipeline, the
+# live camera and the media analysis from running at all.
+#
+# Constructing the Reader also downloads ~100MB of models on first use, which is
+# not something an import statement should do.
+_reader = None
+
+
+def get_reader():
+    """Load the EasyOCR model on first use. Raises if the package is absent."""
+    global _reader
+    if _reader is None:
+        try:
+            import easyocr
+        except ImportError as exc:
+            raise RuntimeError(
+                "EasyOCR is not installed. Either `pip install easyocr` or use the "
+                "Azure Vision OCR path (services/plate_ocr.py), which needs no local model."
+            ) from exc
+        logger.info("Loading EasyOCR model (first use downloads weights)...")
+        _reader = easyocr.Reader(["en"], gpu=False)
+    return _reader
 
 def clean_plate_text(text: str) -> str:
     """Removes spaces, hyphens, and non-alphanumeric characters."""
@@ -24,7 +45,7 @@ def process_incoming_plate_image(image_bytes: bytes, db_conn):
         img_np = np.array(image)
 
         # Run OCR detection
-        results = reader.readtext(img_np)
+        results = get_reader().readtext(img_np)
         
         if not results:
             return {"error": "No text or license plate detected in image"}, 400

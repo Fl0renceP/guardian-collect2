@@ -12,6 +12,7 @@ from services.recognition import process_incoming_face_image
 from services import detection_log
 from services import camera_poller
 from services import media_analysis
+from services import plate_ocr
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -157,44 +158,35 @@ def scan_plate():
     finally:
         conn.close()
 
-def extract_text_from_bytes(image_bytes: bytes) -> str:
-    """Sends image bytes to Azure AI Vision Read OCR and returns extracted text."""
-    try:
-        result = client.analyze(
-            image_data=image_bytes,
-            visual_features=[VisualFeatures.READ]  # Correct Enum
-        )
-
-        extracted_words = []
-        if result.read is not None:  # Correct Property
-            for block in result.read.blocks:
-                for line in block.lines:
-                    extracted_words.append(line.text)
-
-        return " ".join(extracted_words)
-
-    except Exception as e:
-        logger.error(f"Azure OCR Error: {e}")
-        return ""
-
 @app.route("/api/v1/scan-plate-azure", methods=["POST"])
 def scan_plate_azure():
+    """
+    Licence plate recognition via Azure AI Vision Read.
+
+    The OCR, plate-shape filtering and registry lookup live in
+    services/plate_ocr.py. An earlier version of this route flattened every line
+    of text in the image into one string and stripped the punctuation, which
+    turned a photo containing a dealer sticker and a plate into a single
+    meaningless run of characters that could never match anything.
+    """
     if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
+        return jsonify({"error": "No image file provided in 'file' field"}), 400
 
     file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+
     image_bytes = file.read()
 
-    # Extract text using Azure Vision
-    raw_text = extract_text_from_bytes(image_bytes)
-    
-    # Clean string (remove spaces/special characters for database matching)
-    cleaned_plate = "".join([c for c in raw_text if c.isalnum()]).upper()
-
-    return jsonify({
-        "raw_text": raw_text,
-        "cleaned_plate": cleaned_plate
-    }), 200
+    conn = get_db_connection()
+    try:
+        result = plate_ocr.process_plate_image(image_bytes, db_conn=conn)
+        return jsonify(result), 200 if result.get("success") else 502
+    except Exception as e:
+        logger.error(f"Error processing Azure plate scan: {e}")
+        return jsonify({"error": "Internal processing error during plate scan"}), 500
+    finally:
+        conn.close()
 
 @app.route("/media", methods=["GET"])
 def media_page():
