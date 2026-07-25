@@ -57,6 +57,8 @@ class CameraPoller:
         self.last_result = None
         self.last_scan_at = None
         self._last_thumb = None
+        self.frame_width = None
+        self.frame_height = None
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -92,6 +94,10 @@ class CameraPoller:
         frame = cv2.imdecode(array, cv2.IMREAD_GRAYSCALE)
         if frame is None:
             return None
+        # Frame size travels with the result so the browser can map face boxes
+        # onto its preview — the boxes are in scanned-frame coordinates and mean
+        # nothing without the resolution they were measured in.
+        self.frame_height, self.frame_width = frame.shape[:2]
         thumb = cv2.resize(frame, _THUMB, interpolation=cv2.INTER_AREA).astype(np.int16)
         previous, self._last_thumb = self._last_thumb, thumb
         if previous is None:
@@ -145,6 +151,8 @@ class CameraPoller:
                             "message": result.get("message") or result.get("error"),
                             "faces_detected": result.get("faces_detected", 0),
                             "summary": result.get("summary"),
+                            "frame_width": self.frame_width,
+                            "frame_height": self.frame_height,
                             "faces": [
                                 {
                                     "index": f.get("index"),

@@ -44,9 +44,10 @@
     }
     #banner.show { display:block; animation:rise .25s ease-out; }
     @keyframes rise { from { transform:translateY(100%); } to { transform:translateY(0); } }
-    #banner.alert   { background:rgba(44,19,16,.92);  border-color:var(--alert);   color:var(--alert); }
-    #banner.ok      { background:rgba(15,42,27,.92);  border-color:var(--ok);      color:var(--ok); }
-    #banner.unknown { background:rgba(43,36,19,.92);  border-color:var(--unknown); color:var(--unknown); }
+    #banner.alert      { background:rgba(44,19,16,.92); border-color:var(--alert);   color:var(--alert); }
+    #banner.ok         { background:rgba(15,42,27,.92); border-color:var(--ok);      color:var(--ok); }
+    #banner.unknown    { background:rgba(43,36,19,.92); border-color:var(--unknown); color:var(--unknown); }
+    #banner.nodecision { background:rgba(25,29,36,.92); border-color:var(--muted);   color:var(--muted); }
     #banner .head { font-size:24px; font-weight:800; letter-spacing:-.02em; }
     #banner .name { font-size:17px; font-weight:600; color:#fff; margin-top:3px; }
     #banner .meta { font-size:12px; color:#c9ced8; margin-top:4px; }
@@ -83,6 +84,7 @@
     .hit.alert { border-color:var(--alert); }
     .hit.ok { border-color:var(--ok); }
     .hit.unknown { border-color:var(--unknown); }
+    .hit.nodecision { border-color:var(--muted); }
     .hit .who { font-weight:600; }
     .hit .det { color:var(--muted); font-size:11.5px; margin-top:2px;
                 font-variant-numeric:tabular-nums; }
@@ -313,7 +315,10 @@
     }
   }
 
+  // One class per face drives the banner, the box, the caption and the feed
+  // entry, so those four can never disagree about what a face is.
   function faceClass(f) {
+    if (f.confidence === "no_decision") return "nodecision";
     return f.alert ? "alert" : f.is_known_user ? "ok" : "unknown";
   }
 
@@ -322,7 +327,18 @@
     return name || "Unknown — not in the registry";
   }
 
-  const BOX_COLOUR = { alert:"#ff5a4e", ok:"#4ade80", unknown:"#e8c86a" };
+  // Read straight from the CSS custom properties rather than repeating the hex
+  // values here. They were previously duplicated, which meant restyling the
+  // banner silently left the boxes on the old palette — two sources of truth for
+  // one colour. Resolved once at startup; the values do not change at runtime.
+  const CSS = getComputedStyle(document.documentElement);
+  const cssColour = name => CSS.getPropertyValue(name).trim();
+  const BOX_COLOUR = {
+    alert: cssColour("--alert"),
+    ok: cssColour("--ok"),
+    unknown: cssColour("--unknown"),
+    nodecision: cssColour("--muted"),
+  };
 
   // Draw a box round every face. The canvas is sized to the CAPTURE resolution
   // and stretched by CSS onto the video, so bbox coordinates map straight across
@@ -513,16 +529,20 @@
       const r = s.last_result;
       if (r && r.at && r.at > lastIpScanAt) {
         lastIpScanAt = r.at;
-        // Same banner and feed the local camera writes to. Boxes are skipped
-        // here: the preview is an independent MJPEG stream, so its frames are
-        // not the ones that were scanned and the coordinates would not line up.
+        // Boxes ARE drawn here. The preview is an independent MJPEG stream, so
+        // the frame on screen is not the exact frame that was scanned and a box
+        // can trail a moving subject by a scan interval. That is a far better
+        // trade than showing no box at all — and because the stage is sized to
+        // the reported frame dimensions, a stationary subject lines up exactly.
+        stage.style.aspectRatio = (r.frame_width && r.frame_height)
+          ? `${r.frame_width} / ${r.frame_height}` : stage.style.aspectRatio;
         handle({
           success: r.success,
           alert: r.alert,
           message: r.message,
           summary: r.summary,
           faces: r.faces || [],
-        }, 0, 0);
+        }, r.frame_width || 0, r.frame_height || 0);
       }
     } catch (e) { /* transient; the next tick will retry */ }
   }

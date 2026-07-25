@@ -334,6 +334,30 @@ def list_detections():
         conn.close()
 
 
+def warm_face_model():
+    """Load the detector and embedding model before the first real request.
+
+    Facenet512 takes 20-40s to load, and it loads lazily on first use. Without
+    this, the first scan after every restart blocks for that long: pressing
+    "Start ingest" produced nothing for half a minute and looked broken, when it
+    was only loading. Paying the cost at boot moves the wait somewhere nobody is
+    watching a live camera.
+
+    A synthetic grey square is enough — the models load on the call, whether or
+    not it finds a face.
+    """
+    import numpy as _np
+    from services import face_geometry as _fg
+    from services import recognition as _rec
+
+    blank = _np.full((160, 160, 3), 128, dtype=_np.uint8)
+    _fg.detect_faces(blank)                    # loads the YuNet detector
+    _rec.DeepFace.represent(                   # loads Facenet512
+        img_path=blank, model_name=Config.FACE_MODEL,
+        detector_backend="skip", enforce_detection=False, align=False,
+    )
+
+
 if __name__ == "__main__":
     # Warm up claims cache on application boot
     try:
@@ -341,6 +365,15 @@ if __name__ == "__main__":
         logger.info("Successfully warmed claims cache.")
     except Exception as e:
         logger.warning(f"Failed to warm cache on startup: {e}")
+
+    try:
+        import time as _time
+        _started = _time.perf_counter()
+        warm_face_model()
+        logger.info("Face model warmed in %.1fs — first scan will be fast.",
+                    _time.perf_counter() - _started)
+    except Exception as e:
+        logger.warning(f"Could not warm the face model (first scan will be slow): {e}")
 
     # Run local dev server
     app.run(host="0.0.0.0", port=5000, debug=True)
