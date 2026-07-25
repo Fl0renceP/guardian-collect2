@@ -12,7 +12,38 @@ pip install -r requirements.txt
 python app.py
 ```
 
+<<<<<<< HEAD
 Then open <http://localhost:5000> — the crime hot-spot map is the landing screen.
+=======
+Then the React app:
+
+```bash
+cd frontend
+npm install
+npm run dev              # http://localhost:5173
+```
+
+**Open <http://localhost:5173>** — Vite proxies `/api` to Flask, so there's no
+CORS setup and no API base URL to configure. The Flask server also still serves
+a standalone copy of the map at <http://localhost:5000> if you want the backend
+demo on its own.
+
+## The three views
+
+Switch role with the "Viewing as" control in the top right (this stands in for
+login — see *Known gaps*).
+
+| View | Who | What |
+|---|---|---|
+| **Hot-spots** (`/`) | Both | Crime heatmap, filterable by category, item type and date |
+| **Report an incident** (`/report`) | Member | Submit a claim: location, crime type, description, times, photo/video, door-camera permission |
+| **My claims** (`/my-claims`) | Member | Status of their reports, and the **reason** when one is declined |
+| **Review queue** (`/review`) | Employee | Review submissions with evidence, then approve or decline with a reason |
+
+Approving a claim writes `status: "approved"`, which puts it into the working
+dataset and onto the hot-spot map immediately. Declining requires a reason,
+which is what the member is shown.
+>>>>>>> parent of 58795bf (route-optimisation)
 
 ## Endpoints
 
@@ -22,7 +53,34 @@ Then open <http://localhost:5000> — the crime hot-spot map is the landing scre
 | `GET /api/hotspots` | Per-suburb claim hot-spots. Optional filters: `peril`, `item_type`, `date_from`, `date_to` |
 | `GET /api/filters` | Peril / item-type values and the dataset's date bounds |
 | `POST /api/claims/refresh` | Force an immediate re-read of the claims collection |
+<<<<<<< HEAD
 | `GET /api/health` | Liveness + live claims source + geocode coverage |
+=======
+| `GET /api/health` | Liveness + live claims source + geocode coverage + media storage |
+
+## Claim media
+
+Photos and video go to Azure Blob Storage in a **private** container
+(`claim-media`, one folder per incident). Nothing is publicly readable: the
+review UI receives per-request SAS URLs that expire after
+`CLAIM_MEDIA_SAS_MINUTES` (default 30), so a leaked claim document doesn't hand
+out durable access to someone's incident footage.
+
+Door-camera permission is opt-in, never pre-ticked, scoped to the single
+incident, and stored with the timestamp the member gave it
+(`camera_consent` / `camera_consent_at`). The review screen shows assessors
+"do not pull footage for this claim" when it wasn't given.
+
+## Known gaps
+
+- **There is no authentication.** The role and identity are picked in the UI and
+  trusted by the API (`backend/services/members_service.py`,
+  `frontend/src/session.jsx`). Every endpoint taking a `member_id` or
+  `employee_id` would need a real authenticated principal before this is
+  anything but a demo.
+- **Declines are not pushed to members.** The reason is stored and shown in "My
+  claims"; real push delivery (Firebase Cloud Messaging) is Phase 4.
+>>>>>>> parent of 58795bf (route-optimisation)
 
 Filters are AND-ed; `peril` and `item_type` accept comma-separated or repeated values:
 

@@ -241,6 +241,30 @@ def warm_cache():
         _refresh_in_background()
 
 
+<<<<<<< HEAD
+=======
+def apply_to_snapshot(document):
+    """Fold a just-written claim into the in-memory snapshot immediately.
+
+    Marking the cache stale isn't enough on its own: stale-while-revalidate
+    serves the *old* snapshot while it refreshes, so a reviewer who approves a
+    claim would not see it on the map until a background pull finished. Patching
+    the one document keeps the response correct straight away, and the
+    background refresh still reconciles against Cosmos afterwards.
+    """
+    global _snapshot
+    if _snapshot is None:
+        return
+
+    incident = document.get("Incident") or document.get("id")
+    normalized = _normalize(document)
+    remaining = [c for c in _snapshot if c["incident"] != incident]
+    if _is_countable(normalized):
+        remaining.append(normalized)
+    _snapshot = remaining
+
+
+>>>>>>> parent of 58795bf (route-optimisation)
 def invalidate_cache():
     """Mark the snapshot stale so the next read re-queries.
 

@@ -21,9 +21,36 @@ app.register_blueprint(health_bp)
 app.register_blueprint(hotspot_bp)
 
 
+<<<<<<< HEAD
 def get_db_connection():
     """Establishes and returns a database connection using application config."""
     return psycopg2.connect(Config.DATABASE_URL)
+=======
+def create_app(config_object=Config):
+    app = Flask(__name__, static_folder="static", static_url_path="/static")
+    app.config.from_object(config_object)
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    # The Azure SDKs log every request/response header at INFO — useful when
+    # debugging them, unreadable otherwise.
+    for noisy in ("azure", "azure.core.pipeline.policies.http_logging_policy", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    app.register_blueprint(health_bp)
+    app.register_blueprint(hotspot_bp)
+    app.register_blueprint(claim_bp)
+
+    # Pull the claims collection on boot (off-thread) so the first visitor
+    # doesn't pay the cold-load cost.
+    warm_cache()
+
+    @app.get("/")
+    def index():
+        """The hot-spot map — the first thing a user sees on entering the app."""
+        return send_from_directory(app.static_folder, "index.html")
+
+    return app
+>>>>>>> parent of 58795bf (route-optimisation)
 
 
 @app.route("/")
