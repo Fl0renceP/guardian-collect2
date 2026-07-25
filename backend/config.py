@@ -23,9 +23,17 @@ class Config:
     # 1. PostgreSQL Database with pgvector enabled
     DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/guardian_db")
 
-    # 2. Azure Blob Storage (Still used to save image files)
-    BLOB_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    # 2. Azure Blob Storage
+    AZURE_STORAGE_CONNECTION_STRING = _clean(os.getenv("AZURE_STORAGE_CONNECTION_STRING"))
+    BLOB_CONNECTION_STRING = AZURE_STORAGE_CONNECTION_STRING  # legacy alias
     BLOB_CONTAINER_NAME = "face-images"
+
+    # Claim evidence (photos / video). Private container — the review UI reads
+    # it through short-lived SAS URLs, never public links.
+    CLAIM_MEDIA_CONTAINER = _clean(os.getenv("CLAIM_MEDIA_CONTAINER", "claim-media"))
+    CLAIM_MEDIA_SAS_MINUTES = int(os.getenv("CLAIM_MEDIA_SAS_MINUTES", "30"))
+    # Per-file upload ceiling; Flask enforces the request total separately.
+    MAX_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_MB", "64")) * 1024 * 1024
 
     # 3. DeepFace Model Configuration
     # Options: "Facenet" (128-dim), "Facenet512" (512-dim), "ArcFace" (512-dim), "VGG-Face"
@@ -40,6 +48,10 @@ class Config:
     COSMOS_KEY = _clean(os.getenv("COSMOS_KEY"))
     COSMOS_DATABASE = _clean(os.getenv("COSMOS_DATABASE", "guardian-db"))
     COSMOS_CONTAINER = _clean(os.getenv("COSMOS_CONTAINER", "insurance-data"))
+    # User directory: members, Discovery employees and Crime Prevention Units,
+    # partitioned by /role. Created on first use by users_service.
+    COSMOS_USERS_CONTAINER = _clean(os.getenv("COSMOS_USERS_CONTAINER", "users"))
+    USERS_CACHE_TTL_SECONDS = float(os.getenv("USERS_CACHE_TTL_SECONDS", "30"))
 
     
 
@@ -75,3 +87,30 @@ class Config:
     # Rough bounding box for South Africa, used to reject nonsense geocode hits
     # (a suburb name that also exists in another country).
     SA_BOUNDS = {"min_lat": -35.5, "max_lat": -21.5, "min_lng": 15.5, "max_lng": 33.5}
+
+    # 6. Travel-risk surface
+    # Resolution 7 is ~5 km across. Claims are located to suburb centroids, so
+    # anything finer would invent precision the data doesn't have.
+    RISK_H3_RESOLUTION = int(os.getenv("RISK_H3_RESOLUTION", "7"))
+    # Rings of neighbouring cells a claim's weight bleeds into (halving each
+    # ring), turning a centroid into a neighbourhood-sized footprint.
+    RISK_SMOOTHING_RINGS = int(os.getenv("RISK_SMOOTHING_RINGS", "2"))
+
+    # 7. Routing (Valhalla / OpenStreetMap)
+    # The public FOSSGIS instance needs no key. Self-host via Docker with a
+    # Geofabrik South Africa extract if rate limits or demo connectivity bite.
+    VALHALLA_URL = _clean(os.getenv("VALHALLA_URL", "https://valhalla1.openstreetmap.de/route"))
+    VALHALLA_TIMEOUT_SECONDS = float(os.getenv("VALHALLA_TIMEOUT_SECONDS", "30"))
+
+    # A cell must score at least this to be worth routing around.
+    ROUTE_AVOID_THRESHOLD = float(os.getenv("ROUTE_AVOID_THRESHOLD", "0.55"))
+    # Hard cap on excluded areas — hand Valhalla too many and it either detours
+    # absurdly or fails to find any route at all.
+    ROUTE_MAX_AVOID_POLYGONS = int(os.getenv("ROUTE_MAX_AVOID_POLYGONS", "12"))
+    # Past this much extra travel time, the safer route is shown but not advised.
+    ROUTE_MAX_DETOUR_RATIO = float(os.getenv("ROUTE_MAX_DETOUR_RATIO", "1.35"))
+    # And below this relative risk improvement it isn't worth suggesting at all —
+    # detours have a real cost and shouldn't be proposed on noise.
+    ROUTE_MIN_RISK_REDUCTION = float(os.getenv("ROUTE_MIN_RISK_REDUCTION", "0.20"))
+    # Score at or above which a sampled point counts as "high risk".
+    ROUTE_HIGH_RISK_THRESHOLD = float(os.getenv("ROUTE_HIGH_RISK_THRESHOLD", "0.55"))

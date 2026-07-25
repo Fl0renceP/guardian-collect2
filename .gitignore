@@ -1,7 +1,18 @@
 /backend/venv
 /backend/.venv
+
 .env
 /backend/.env
 
+# Python
 __pycache__/
 *.pyc
+
+# Frontend
+/frontend/node_modules
+/frontend/dist
+/frontend/.vite
+
+# Geocache temp files
+/backend/data/*.json.tmp
+/backend/data/suburb_geocache.backup.json
