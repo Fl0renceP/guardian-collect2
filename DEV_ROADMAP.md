@@ -26,15 +26,17 @@ Goal: file upload of an image → detect face → compare against 3 seeded faces
 **Exit criteria for Phase 1:** you can upload an image of the seeded "offender," get a match with a score above threshold, and see an alert fire in the logs — repeatably, not just once by luck.
 
 ## Phase 2 — Claims data pipeline (can start in parallel once Phase 0 is done)
-- [ ] Claims CSV cleaned and ingested into `claims` table (normalize `CLAIM_AMOUNT` decimal format, handle `NULL` vehicle fields)
-- [ ] Distinct `SUBURB` values geocoded via Azure Maps, cached into `claims_geocoded`
-- [ ] Member claim submission endpoint (basic form → pending row)
-- [ ] Discovery employee approve/deny endpoint (approved claims join the working dataset)
+- [x] Claims ingested into **Azure Cosmos DB** (`guardian-db` / `insurance-data`, 15,712 docs) and read live by `services/claims_service.py` — the hot-spot map picks up new claims without a redeploy. CSV retained as an offline fallback only.
+- [x] Distinct `SUBURB` values geocoded and cached — `scripts/geocode_suburbs.py` → `backend/data/suburb_geocache.json` (Nominatim, not Azure Maps; see PROJECT_CONTEXT §6)
+- [ ] Member claim submission endpoint (basic form → Cosmos doc with `status: "pending"`)
+- [ ] Discovery employee approve/deny endpoint (flip `status` to `"approved"`, then call `claims_service.invalidate_cache()`)
+      — the read side is already done: pending claims are excluded from hot-spots and approved ones counted, verified end to end against the live container.
 
 ## Phase 3 — Hot-spot analytics + map
-- [ ] Clustering pass over `claims_geocoded` (PostGIS `ST_ClusterDBSCAN` or Python/scikit-learn DBSCAN) grouped by peril category and time window
-- [ ] `GET /api/hotspots` endpoint, filterable by location and crime category
-- [ ] Azure Maps rendering hot-spots on the frontend
+- [x] `GET /api/hotspots` endpoint, filterable by crime category, item type and date range (+ `GET /api/filters` so the UI never hardcodes peril names)
+- [x] Hot-spot heatmap rendering on the frontend — Leaflet + leaflet.heat at `GET /`, the app's landing screen
+- [ ] Clustering pass grouped by peril category and time window (PostGIS `ST_ClusterDBSCAN` or scikit-learn DBSCAN) — current aggregation is per-suburb, which is enough for the demo but doesn't find cross-suburb clusters
+- [ ] Filter by location (radius around a member's address) — currently filterable by category/type/date only
 
 ## Phase 4 — Alerts + route optimization
 - [ ] Replace the Phase 1 `send_alert()` stub with real delivery: Azure Function trigger → Firebase Cloud Messaging

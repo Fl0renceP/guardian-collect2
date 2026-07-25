@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guardian Collective — Crime hot-spots</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+/* Palette roles from the project's reference palette. Sequential = blue (magnitude).
+   Dark values are stepped for the dark surface, not a flip of the light ones. */
+:root {
+  color-scheme: light;
+  --surface-1:   #fcfcfb;
+  --page:        #f9f9f7;
+  --ink:         #0b0b0b;
+  --ink-2:       #52514e;
+  --ink-muted:   #898781;
+  --hairline:    #e1e0d9;
+  --border:      rgba(11,11,11,0.10);
+  --accent:      #2a78d6;
+
+  /* Sequential blue ramp, light -> dark as magnitude rises */
+  --seq-100: #cde2fb;
+  --seq-250: #86b6ef;
+  --seq-400: #3987e5;
+  --seq-550: #1c5cab;
+  --seq-700: #0d366b;
+
+  --tiles: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page:      #0d0d0d;
+    --ink:       #ffffff;
+    --ink-2:     #c3c2b7;
+    --ink-muted: #898781;
+    --hairline:  #2c2c2a;
+    --border:    rgba(255,255,255,0.10);
+    --accent:    #3987e5;
+    --tiles: dark;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --page:      #0d0d0d;
+  --ink:       #ffffff;
+  --ink-2:     #c3c2b7;
+  --ink-muted: #898781;
+  --hairline:  #2c2c2a;
+  --border:    rgba(255,255,255,0.10);
+  --accent:    #3987e5;
+  --tiles: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 1240px; margin: 0 auto; padding: 20px 20px 48px; }
+
+/* ---------- header ---------- */
+header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+h1 { font-size: 22px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+.brand {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--accent);
+}
+.sub { color: var(--ink-2); font-size: 13.5px; margin: 2px 0 18px; }
+.theme-btn {
+  margin-left: auto; background: var(--surface-1); color: var(--ink-2);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 11px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.theme-btn:hover { color: var(--ink); }
+
+/* ---------- filters: one row, above everything it scopes ---------- */
+.filters {
+  display: flex; flex-wrap: wrap; gap: 18px 26px; align-items: flex-start;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 16px; margin-bottom: 16px;
+}
+.fgroup { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.flabel {
+  font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; max-width: 640px; }
+.chip {
+  background: transparent; color: var(--ink-2);
+  border: 1px solid var(--hairline); border-radius: 999px;
+  padding: 4px 11px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.chip:hover { border-color: var(--ink-muted); color: var(--ink); }
+.chip[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 550;
+}
+.chip .n { opacity: 0.65; font-size: 11.5px; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.dates { display: flex; align-items: center; gap: 6px; }
+.dates input {
+  background: var(--page); color: var(--ink); border: 1px solid var(--hairline);
+  border-radius: 7px; padding: 4px 7px; font: inherit; font-size: 13px;
+  color-scheme: light dark;
+}
+.dates span { color: var(--ink-muted); font-size: 13px; }
+
+/* ---------- KPI row ---------- */
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.tile {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+  padding: 13px 15px;
+}
+.tile .k {
+  font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-muted); margin-bottom: 5px;
+}
+.tile .v { font-size: 27px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.15; }
+.tile .m { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+
+/* ---------- map ---------- */
+.mapcard {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden;
+}
+#map { height: 560px; background: var(--page); }
+.leaflet-container { font: inherit; background: var(--page); }
+
+/* Refetch keeps the frame: hold the previous render, dimmed. */
+.stale { opacity: 0.55; transition: opacity 120ms ease; }
+
+/* ---------- legend ---------- */
+.legend {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  border-top: 1px solid var(--hairline); padding: 11px 15px;
+}
+.legend .lab { font-size: 12px; color: var(--ink-2); }
+.ramp { display: flex; flex-direction: column; gap: 3px; min-width: 210px; }
+.ramp .bar {
+  height: 9px; border-radius: 3px;
+  background: linear-gradient(to right, var(--seq-100), var(--seq-250), var(--seq-400), var(--seq-550), var(--seq-700));
+}
+.ramp .ticks {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--ink-muted); font-variant-numeric: tabular-nums;
+}
+.coverage { font-size: 12px; color: var(--ink-muted); margin-left: auto; text-align: right; }
+
+/* ---------- tooltip ---------- */
+.tip { min-width: 158px; }
+.tip .t-sub {
+  font-size: 11px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-muted); margin-bottom: 3px;
+}
+.tip .t-val { font-size: 20px; font-weight: 650; line-height: 1.15; }
+.tip .t-val small { font-size: 12px; font-weight: 400; color: var(--ink-2); margin-left: 3px; }
+.tip .t-amt { font-size: 12.5px; color: var(--ink-2); margin-top: 1px; }
+.tip .t-rows { margin-top: 7px; border-top: 1px solid var(--hairline); padding-top: 6px; }
+.tip .t-row { display: flex; align-items: center; gap: 7px; font-size: 12.5px; margin-top: 2px; }
+.tip .t-name { color: var(--ink-2); }
+.tip .t-n { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 550; }
+.leaflet-tooltip.gc-tip {
+  background: var(--surface-1); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 9px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.16); padding: 9px 11px;
+}
+.leaflet-tooltip.gc-tip::before { display: none; }
+/* The heat canvas is pure visual — it must not swallow pointer events aimed at
+   the hit-target markers sitting above it. */
+.leaflet-heatmap-layer { pointer-events: none; }
+
+/* ---------- table view ---------- */
+.tablewrap { margin-top: 16px; }
+.tabletoggle {
+  background: var(--surface-1); color: var(--ink-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 11px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.tabletoggle:hover { color: var(--ink); }
+.tablescroll {
+  overflow-x: auto; margin-top: 10px;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+}
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--hairline); }
+th {
+  font-size: 11px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-muted); white-space: nowrap;
+}
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:last-child td { border-bottom: none; }
+
+.msg { padding: 14px 15px; font-size: 13.5px; color: var(--ink-2); }
+.msg strong { color: var(--ink); }
+
+@media (max-width: 860px) {
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+  #map { height: 440px; }
+  .coverage { margin-left: 0; text-align: left; }
+}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+  <header>
+    <span class="brand">Guardian Collective</span>
+    <h1>Crime hot-spots</h1>
+    <button class="theme-btn" id="theme" type="button">Dark mode</button>
+  </header>
+  <p class="sub" id="subtitle">Discovery Insure claims by suburb — where incidents cluster, and when.</p>
+
+  <!-- Filters scope everything below them. Date range first. -->
+  <div class="filters">
+    <div class="fgroup">
+      <span class="flabel">Date range</span>
+      <div class="chips" id="date-presets"></div>
+    </div>
+    <div class="fgroup">
+      <span class="flabel">Custom range</span>
+      <div class="dates">
+        <input type="date" id="date-from" aria-label="From date">
+        <span>to</span>
+        <input type="date" id="date-to" aria-label="To date">
+      </div>
+    </div>
+    <div class="fgroup">
+      <span class="flabel">Crime category</span>
+      <div class="chips" id="peril-chips"></div>
+    </div>
+    <div class="fgroup">
+      <span class="flabel">Item type</span>
+      <div class="chips" id="item-chips"></div>
+    </div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="mapcard">
+    <div id="map"></div>
+    <div class="legend">
+      <div class="ramp">
+        <div class="bar"></div>
+        <div class="ticks" id="ramp-ticks"></div>
+      </div>
+      <span class="lab">Claims per suburb &middot; square-root scale</span>
+      <span class="coverage" id="coverage"></span>
+    </div>
+  </div>
+
+  <div class="tablewrap">
+    <button class="tabletoggle" id="table-toggle" type="button" aria-expanded="false">
+      Show data table
+    </button>
+    <div class="tablescroll" id="tablescroll" hidden>
+      <table>
+        <caption class="msg" style="text-align:left">Top 100 suburbs for the current filters.</caption>
+        <thead>
+          <tr>
+            <th>Suburb</th>
+            <th class="num">Claims</th>
+            <th class="num">Total claim value</th>
+            <th>Leading peril</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var SA_CENTER = [-29.0, 25.0];
+  var TILES = {
+    light: {
+      url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+      // Sequential blue, light -> dark as claim density rises.
+      gradient: { 0.15: "#cde2fb", 0.4: "#86b6ef", 0.62: "#3987e5", 0.82: "#1c5cab", 1.0: "#0d366b" },
+      stroke: "#fcfcfb"
+    },
+    dark: {
+      url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      // Same single hue, stepped for the dark surface (dark -> bright as density rises).
+      gradient: { 0.15: "#184f95", 0.4: "#256abf", 0.62: "#3987e5", 0.82: "#6da7ec", 1.0: "#cde2fb" },
+      stroke: "#1a1a19"
+    }
+  };
+
+  var money = new Intl.NumberFormat("en-ZA", {
+    style: "currency", currency: "ZAR", maximumFractionDigits: 0
+  });
+  var num = new Intl.NumberFormat("en-ZA");
+
+  var state = {
+    perils: [],       // empty = all
+    itemTypes: [],    // empty = all
+    dateFrom: null,
+    dateTo: null,
+    options: null,
+    data: null,
+    preset: "all"
+  };
+
+  var map, tileLayer, heatLayer, markerLayer, canvasRenderer, inflight = 0;
+
+  /* ---------------- map setup ---------------- */
+
+  function currentMode() {
+    var stamped = document.documentElement.getAttribute("data-theme");
+    if (stamped) return stamped;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  function initMap() {
+    map = L.map("map", {
+      center: SA_CENTER,
+      zoom: 5,
+      minZoom: 4,
+      preferCanvas: true,
+      worldCopyJump: false
+    });
+    // Dedicated pane above the heat canvas, so the hit-target markers stay
+    // hoverable no matter what order the layers get (re)added in.
+    map.createPane("marks");
+    map.getPane("marks").style.zIndex = 450;
+    canvasRenderer = L.canvas({ padding: 0.4, pane: "marks" });
+    markerLayer = L.layerGroup().addTo(map);
+    applyTheme();
+  }
+
+  function applyTheme() {
+    var theme = TILES[currentMode()];
+    if (tileLayer) map.removeLayer(tileLayer);
+    tileLayer = L.tileLayer(theme.url, {
+      maxZoom: 18,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; ' +
+        '<a href="https://carto.com/attributions">CARTO</a>'
+    }).addTo(map);
+    tileLayer.bringToBack();
+    if (state.data) render(state.data);
+  }
+
+  /* ---------------- rendering ---------------- */
+
+  // Claim counts are heavily right-skewed (a handful of suburbs dominate), so a
+  // linear intensity ramp would render almost everything invisible. Square root
+  // compresses the top end and keeps low-volume suburbs legible. The legend
+  // states the scale and labels real counts, so nothing is hidden by the choice.
+  function intensity(count, max) {
+    return max > 0 ? Math.sqrt(count) / Math.sqrt(max) : 0;
+  }
+
+  function buildTooltip(spot) {
+    var el = document.createElement("div");
+    el.className = "tip";
+
+    // Suburb and peril names come from the CSV — untrusted. textContent only.
+    var head = document.createElement("div");
+    head.className = "t-sub";
+    head.textContent = spot.suburb;
+    el.appendChild(head);
+
+    var val = document.createElement("div");
+    val.className = "t-val";
+    val.textContent = num.format(spot.count);
+    var unit = document.createElement("small");
+    unit.textContent = spot.count === 1 ? "claim" : "claims";
+    val.appendChild(unit);
+    el.appendChild(val);
+
+    var amt = document.createElement("div");
+    amt.className = "t-amt";
+    amt.textContent = money.format(spot.total_amount) + " total value";
+    el.appendChild(amt);
+
+    var perils = Object.keys(spot.perils).slice(0, 4);
+    if (perils.length) {
+      var rows = document.createElement("div");
+      rows.className = "t-rows";
+      perils.forEach(function (name) {
+        var row = document.createElement("div");
+        row.className = "t-row";
+        var label = document.createElement("span");
+        label.className = "t-name";
+        label.textContent = name;
+        row.appendChild(label);
+        var n = document.createElement("span");
+        n.className = "t-n";
+        n.textContent = num.format(spot.perils[name]);
+        row.appendChild(n);
+        rows.appendChild(row);
+      });
+      el.appendChild(rows);
+    }
+    return el;
+  }
+
+  function render(data) {
+    var spots = data.hotspots;
+    var max = data.max_count || 1;
+    var theme = TILES[currentMode()];
+
+    // Heat layer — every located suburb contributes.
+    var points = spots.map(function (s) { return [s.lat, s.lng, intensity(s.count, max)]; });
+    if (heatLayer) map.removeLayer(heatLayer);
+    heatLayer = L.heatLayer(points, {
+      radius: 22, blur: 18, max: 1.0, minOpacity: 0.32, maxZoom: 11,
+      gradient: theme.gradient
+    }).addTo(map);
+
+    // Invisible hit targets, one per suburb. The heat layer carries the visual;
+    // these carry interaction, so ~2.9k rings never compete with it for ink.
+    // The mark only becomes visible on hover, confirming what's being read.
+    // Canvas renderer keeps this many marks smooth, so no cap is applied —
+    // every suburb on the heat layer is also hoverable.
+    markerLayer.clearLayers();
+    spots.forEach(function (spot) {
+      var r = 5 + 11 * intensity(spot.count, max);
+      var marker = L.circleMarker([spot.lat, spot.lng], {
+        renderer: canvasRenderer,
+        // Hit area is deliberately larger than the heat blob it sits on:
+        // a 24px minimum target, never a pinpoint.
+        radius: Math.max(r, 12),
+        bubblingMouseEvents: false,
+        color: theme.stroke,
+        weight: 1.5,
+        opacity: 0,
+        fillColor: "#3987e5",
+        fillOpacity: 0
+      });
+      marker.bindTooltip(buildTooltip(spot), {
+        className: "gc-tip", direction: "top", offset: [0, -6], sticky: false
+      });
+      marker.on("mouseover", function () { marker.setStyle({ fillOpacity: 0.3, opacity: 0.9 }); });
+      marker.on("mouseout", function () { marker.setStyle({ fillOpacity: 0, opacity: 0 }); });
+      markerLayer.addLayer(marker);
+    });
+
+    renderKpis(data);
+    renderRamp(max);
+    renderCoverage(data);
+    renderTable(spots);
+  }
+
+  function tile(key, value, meta) {
+    var el = document.createElement("div");
+    el.className = "tile";
+    var k = document.createElement("div");
+    k.className = "k";
+    k.textContent = key;
+    var v = document.createElement("div");
+    v.className = "v";
+    v.textContent = value;
+    el.appendChild(k);
+    el.appendChild(v);
+    if (meta) {
+      var m = document.createElement("div");
+      m.className = "m";
+      m.textContent = meta;
+      el.appendChild(m);
+    }
+    return el;
+  }
+
+  function renderKpis(data) {
+    var spots = data.hotspots;
+    var total = spots.reduce(function (a, s) { return a + s.total_amount; }, 0);
+    var top = spots[0];
+    var host = document.getElementById("kpis");
+    host.textContent = "";
+    host.appendChild(tile("Incidents", num.format(data.matched_claims),
+      num.format(data.placed_claims) + " mapped"));
+    host.appendChild(tile("Suburbs affected", num.format(spots.length),
+      "with at least one mapped claim"));
+    host.appendChild(tile("Busiest suburb", top ? top.suburb : "—",
+      top ? num.format(top.count) + " claims · " + top.top_peril : "No data for this filter"));
+    host.appendChild(tile("Total claim value", money.format(total), "mapped claims only"));
+  }
+
+  function renderRamp(max) {
+    // Tick positions invert the sqrt scale so the labels show real claim counts.
+    var host = document.getElementById("ramp-ticks");
+    host.textContent = "";
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (frac) {
+      var span = document.createElement("span");
+      span.textContent = num.format(Math.round(max * frac * frac));
+      host.appendChild(span);
+    });
+  }
+
+  function renderCoverage(data) {
+    var b = data.unplaced_breakdown;
+    var parts = [];
+    if (b.unknown_suburb) parts.push(num.format(b.unknown_suburb) + " with no suburb recorded");
+    if (b.not_geocoded) {
+      parts.push(num.format(b.not_geocoded) + " in " +
+        num.format(b.not_geocoded_suburbs) + " suburbs not yet geocoded");
+    }
+    var el = document.getElementById("coverage");
+    el.textContent = parts.length
+      ? "Not on map: " + parts.join("; ")
+      : "All matching claims are on the map";
+  }
+
+  function renderTable(spots) {
+    var tbody = document.getElementById("tbody");
+    tbody.textContent = "";
+    spots.slice(0, 100).forEach(function (s) {
+      var tr = document.createElement("tr");
+      [
+        [s.suburb, ""],
+        [num.format(s.count), "num"],
+        [money.format(s.total_amount), "num"],
+        [s.top_peril, ""]
+      ].forEach(function (cell) {
+        var td = document.createElement("td");
+        if (cell[1]) td.className = cell[1];
+        td.textContent = cell[0];
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  /* ---------------- filters ---------------- */
+
+  function chip(label, count, pressed, onClick) {
+    var b = document.createElement("button");
+    b.className = "chip";
+    b.type = "button";
+    b.setAttribute("aria-pressed", pressed ? "true" : "false");
+    b.appendChild(document.createTextNode(label));
+    if (count != null) {
+      var n = document.createElement("span");
+      n.className = "n";
+      n.textContent = num.format(count);
+      b.appendChild(n);
+    }
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  function isoShift(isoDate, days) {
+    var d = new Date(isoDate + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() - days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  // Presets are anchored to the newest incident in the dataset, not to today —
+  // the data ends before the current date, so "last 30 days" from today is empty.
+  function datePresets() {
+    var max = state.options.date_max;
+    return [
+      { id: "all", label: "All time", from: null, to: null },
+      { id: "12m", label: "Last 12 months", from: isoShift(max, 365), to: max },
+      { id: "90d", label: "Last 90 days", from: isoShift(max, 90), to: max },
+      { id: "30d", label: "Last 30 days", from: isoShift(max, 30), to: max }
+    ];
+  }
+
+  function renderFilters() {
+    var opts = state.options;
+
+    var presetHost = document.getElementById("date-presets");
+    presetHost.textContent = "";
+    datePresets().forEach(function (p) {
+      presetHost.appendChild(chip(p.label, null, state.preset === p.id, function () {
+        state.preset = p.id;
+        state.dateFrom = p.from;
+        state.dateTo = p.to;
+        document.getElementById("date-from").value = p.from || "";
+        document.getElementById("date-to").value = p.to || "";
+        renderFilters();
+        load();
+      }));
+    });
+
+    var perilHost = document.getElementById("peril-chips");
+    perilHost.textContent = "";
+    perilHost.appendChild(chip("All", null, state.perils.length === 0, function () {
+      state.perils = [];
+      renderFilters();
+      load();
+    }));
+    opts.perils.forEach(function (p) {
+      perilHost.appendChild(chip(p.value, p.count, state.perils.indexOf(p.value) !== -1, function () {
+        var i = state.perils.indexOf(p.value);
+        if (i === -1) state.perils.push(p.value); else state.perils.splice(i, 1);
+        renderFilters();
+        load();
+      }));
+    });
+
+    var itemHost = document.getElementById("item-chips");
+    itemHost.textContent = "";
+    itemHost.appendChild(chip("All", null, state.itemTypes.length === 0, function () {
+      state.itemTypes = [];
+      renderFilters();
+      load();
+    }));
+    opts.item_types.forEach(function (t) {
+      itemHost.appendChild(chip(t.value, t.count, state.itemTypes.indexOf(t.value) !== -1, function () {
+        var i = state.itemTypes.indexOf(t.value);
+        if (i === -1) state.itemTypes.push(t.value); else state.itemTypes.splice(i, 1);
+        renderFilters();
+        load();
+      }));
+    });
+  }
+
+  /* ---------------- data ---------------- */
+
+  function load() {
+    var params = new URLSearchParams();
+    if (state.perils.length) params.set("peril", state.perils.join(","));
+    if (state.itemTypes.length) params.set("item_type", state.itemTypes.join(","));
+    if (state.dateFrom) params.set("date_from", state.dateFrom);
+    if (state.dateTo) params.set("date_to", state.dateTo);
+
+    var token = ++inflight;
+    // Refetch keeps the frame: hold the previous render, dimmed.
+    document.querySelector(".mapcard").classList.add("stale");
+    document.getElementById("kpis").classList.add("stale");
+
+    return fetch("/api/hotspots?" + params.toString())
+      .then(function (r) {
+        if (!r.ok) throw new Error("Request failed (" + r.status + ")");
+        return r.json();
+      })
+      .then(function (data) {
+        if (token !== inflight) return;  // a newer request already won
+        state.data = data;
+        render(data);
+      })
+      .catch(function (err) {
+        if (token !== inflight) return;
+        showError(err.message);
+      })
+      .finally(function () {
+        if (token !== inflight) return;
+        document.querySelector(".mapcard").classList.remove("stale");
+        document.getElementById("kpis").classList.remove("stale");
+      });
+  }
+
+  function showError(message) {
+    var el = document.getElementById("coverage");
+    el.textContent = "Could not load hot-spots: " + message;
+  }
+
+  /* ---------------- boot ---------------- */
+
+  document.getElementById("theme").addEventListener("click", function () {
+    var next = currentMode() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    this.textContent = next === "dark" ? "Light mode" : "Dark mode";
+    applyTheme();
+  });
+
+  document.getElementById("table-toggle").addEventListener("click", function () {
+    var box = document.getElementById("tablescroll");
+    var open = box.hidden;
+    box.hidden = !open;
+    this.setAttribute("aria-expanded", open ? "true" : "false");
+    this.textContent = open ? "Hide data table" : "Show data table";
+  });
+
+  ["date-from", "date-to"].forEach(function (id) {
+    document.getElementById(id).addEventListener("change", function () {
+      state.preset = null;
+      state.dateFrom = document.getElementById("date-from").value || null;
+      state.dateTo = document.getElementById("date-to").value || null;
+      renderFilters();
+      load();
+    });
+  });
+
+  document.getElementById("theme").textContent =
+    currentMode() === "dark" ? "Light mode" : "Dark mode";
+
+  initMap();
+
+  fetch("/api/filters")
+    .then(function (r) { return r.json(); })
+    .then(function (opts) {
+      state.options = opts;
+      document.getElementById("date-from").min = opts.date_min;
+      document.getElementById("date-from").max = opts.date_max;
+      document.getElementById("date-to").min = opts.date_min;
+      document.getElementById("date-to").max = opts.date_max;
+      document.getElementById("subtitle").textContent =
+        num.format(opts.total_claims) + " Discovery Insure claims, " +
+        opts.date_min + " to " + opts.date_max +
+        " — where incidents cluster, and when.";
+      renderFilters();
+      return load();
+    })
+    .catch(function (err) { showError(err.message); });
+})();
+</script>
+</body>
+</html>
