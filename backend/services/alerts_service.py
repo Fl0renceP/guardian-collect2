@@ -23,6 +23,7 @@ The shape is documented on `_alert`.
 """
 
 import logging
+from collections import deque
 from datetime import datetime, timedelta
 
 from services.claims_service import STATUS_PENDING, list_claims, load_claims
@@ -30,6 +31,8 @@ from services.geocode_service import load_geocache
 from services.risk_service import haversine_km
 
 logger = logging.getLogger(__name__)
+
+_DETECTION_ALERTS = deque(maxlen=200)
 
 # Which detection labels each audience is allowed to see.
 AUDIENCE_LABELS = {
@@ -56,7 +59,7 @@ SEVERITY_BY_PERIL = {
 def audience_for(label):
     """Who may see an alert about a person with this detection label."""
     audiences = [a for a, allowed in AUDIENCE_LABELS.items() if label in allowed]
-    return audiences or ["cpu"]
+    return audiences
 
 
 def _alert(
@@ -72,6 +75,7 @@ def _alert(
     lng=None,
     source="claims",
     meta=None,
+    push_audience=None,
 ):
     """One alert. `audience` is a list of "member" / "cpu"."""
     return {
@@ -87,7 +91,54 @@ def _alert(
         "lng": lng,
         "source": source,
         "meta": meta or {},
+        "push_audience": push_audience or [],
     }
+
+
+def record_detection(
+    *,
+    match_label,
+    entity_type,
+    title,
+    detail,
+    at=None,
+    suburb=None,
+    lat=None,
+    lng=None,
+    meta=None,
+):
+    """Append one scan detection to the live alert feed.
+
+    This is intentionally in-memory for the demo: the feed needs to update as
+    soon as a scan finishes, and the current frontend already polls /api/alerts.
+    """
+    label = (match_label or "").strip().lower()
+    audience = audience_for(label)
+    if not audience:
+        return None
+
+    severity = "critical" if label == "offender" else "serious"
+    event = _alert(
+        alert_id=f"det-{entity_type}-{datetime.utcnow().timestamp():.6f}",
+        kind="detection",
+        severity=severity,
+        title=title,
+        detail=detail,
+        at=at or datetime.utcnow(),
+        audience=audience,
+        suburb=suburb,
+        lat=lat,
+        lng=lng,
+        source="detections",
+        meta={
+            "entity_type": entity_type,
+            "match_label": label,
+            **(meta or {}),
+        },
+        push_audience=list(audience),
+    )
+    _DETECTION_ALERTS.appendleft(event)
+    return event
 
 
 def _incident_alerts(since_days, geocache):
@@ -171,14 +222,8 @@ def _submission_alerts(geocache):
 
 
 def _detection_alerts():
-    """Face/plate matches from Phase 1.
-
-    Returns nothing because `/api/detect` and the `detections` store don't exist
-    yet. When they do, emit one alert per match with
-    `audience=audience_for(match_label)` and the rest of this module needs no
-    changes — members will automatically see offender matches only.
-    """
-    return []
+    """Recent face/plate matches emitted by the manual scan endpoints."""
+    return list(_DETECTION_ALERTS)
 
 
 def _predicted_alerts():
@@ -207,6 +252,8 @@ def list_alerts(audience="cpu", since_days=DEFAULT_SINCE_DAYS, near=None, radius
         kept = []
         for alert in alerts:
             if alert["lat"] is None:
+                if alert["kind"] == "detection":
+                    kept.append(alert)
                 continue
             distance = haversine_km(near, (alert["lat"], alert["lng"]))
             if distance <= radius_km:
@@ -237,8 +284,8 @@ def source_status():
         {
             "source": "detections",
             "label": "Face / plate matches",
-            "live": False,
-            "note": "Awaiting Phase 1 (/api/detect)",
+            "live": True,
+            "note": "Live manual scan detections from face and plate checks.",
         },
         {
             "source": "predicted",

@@ -18,6 +18,7 @@ from routes.member_score_routes import member_score_bp
 from routes.route_routes import route_bp
 from routes.safety_routes import safety_bp
 from routes.user_routes import user_bp
+from services import alerts_service
 from services.claims_service import warm_cache
 
 logging.basicConfig(level=logging.INFO)
@@ -67,6 +68,60 @@ def get_azure_client():
 def get_db_connection():
     # Establishes and returns a database connection using application config.
     return psycopg2.connect(Config.DATABASE_URL)
+
+
+def _normalize_detection_status(raw_status):
+    status = (raw_status or "").strip().lower()
+    return status if status in {"suspect", "offender"} else None
+
+
+def _attach_face_alert(result):
+    status = _normalize_detection_status(result.get("status"))
+    if not status or not result.get("is_known_user"):
+        result["alert_event"] = None
+        result["alerts"] = []
+        return result
+
+    person = result.get("person") or {}
+    event = alerts_service.record_detection(
+        match_label=status,
+        entity_type="person",
+        title=f"{status.title()} identified by facial recognition",
+        detail=f"{person.get('full_name') or 'A person'} matched as {status}.",
+        meta={
+            "person_id": person.get("id"),
+            "full_name": person.get("full_name"),
+        },
+    )
+    result["alert_event"] = event
+    result["alerts"] = [event] if event else []
+    return result
+
+
+def _attach_plate_alert(result, *, source_endpoint):
+    plate = result.get("plate") or {}
+    status = _normalize_detection_status(plate.get("status"))
+    if not status or not result.get("match_found"):
+        result["alert_event"] = None
+        result["alerts"] = []
+        return result
+
+    plate_number = plate.get("plate_number") or result.get("extracted_text") or "Unknown plate"
+    event = alerts_service.record_detection(
+        match_label=status,
+        entity_type="vehicle",
+        title=f"{status.title()} plate identified",
+        detail=f"Vehicle plate {plate_number} matched as {status} via {source_endpoint}.",
+        meta={
+            "plate_id": plate.get("id"),
+            "plate_number": plate.get("plate_number"),
+            "owner_name": plate.get("owner_name"),
+            "source_endpoint": source_endpoint,
+        },
+    )
+    result["alert_event"] = event
+    result["alerts"] = [event] if event else []
+    return result
 
 
 def create_app(config_object=Config):
@@ -156,6 +211,7 @@ def create_app(config_object=Config):
             if isinstance(result, tuple):
                 return jsonify(result[0]), result[1]
 
+            result = _attach_face_alert(result)
             return jsonify(result), 200
         except Exception as e:
             logger.error(f"Error processing facial scan: {e}")
@@ -186,6 +242,7 @@ def create_app(config_object=Config):
             if isinstance(result, tuple):
                 return jsonify(result[0]), result[1]
 
+            result = _attach_plate_alert(result, source_endpoint="/api/v1/scan-plate")
             return jsonify(result), 200
         except Exception as e:
             logger.error(f"Error processing plate scan: {e}")
@@ -227,7 +284,7 @@ def create_app(config_object=Config):
             match = cursor.fetchone()
 
             if match:
-                return jsonify({
+                result = {
                     "match_found": True,
                     "raw_text": raw_text,
                     "extracted_text": cleaned_plate,
@@ -238,7 +295,9 @@ def create_app(config_object=Config):
                         "owner_name": match[3],
                         "image_url": match[4],
                     },
-                }), 200
+                }
+                result = _attach_plate_alert(result, source_endpoint="/api/v1/scan-plate-azure")
+                return jsonify(result), 200
 
             return jsonify({
                 "match_found": False,
