@@ -1,6 +1,7 @@
 /backend/venv
 /backend/.venv
 
+<<<<<<< HEAD
 .env
 /backend/.env
 
@@ -16,3 +17,9 @@ __pycache__/
 # Geocache temp files
 /backend/data/*.json.tmp
 /backend/data/suburb_geocache.backup.json
+=======
+/backend/.env
+
+__pycache__/
+*.py[cod]
+>>>>>>> 4c26ddbc83e34127d0555e987496d8f399c772d4
