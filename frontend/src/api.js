@@ -85,6 +85,12 @@ export const api = {
   listClaims: (params) => request(`/api/claims${qs(params)}`),
   claim: (id) => request(`/api/claims/${encodeURIComponent(id)}`),
   claimCounts: () => request('/api/claims/counts'),
+  // Victoria's claim-risk scorer (assessor-facing, no UI on it right now).
+  safetyScore: (claimId) => request(`/api/safety-score/${encodeURIComponent(claimId)}`),
+  // The member-facing reward score — a different thing entirely, see
+  // services/member_score_service.py.
+  memberSafetyScore: (memberId) =>
+    request(`/api/members/${encodeURIComponent(memberId)}/safety-score`),
   approveClaim: (id, payload) =>
     request(`/api/claims/${encodeURIComponent(id)}/approve`, {
       method: 'POST',

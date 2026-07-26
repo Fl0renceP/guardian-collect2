@@ -15302,6 +15302,14 @@
   "osm_type": "suburb"
  },
  "SOUTHRIDGE PARK": null,
+ "SOWETO": {
+  "approximate": false,
+  "display_name": "Soweto, City of Johannesburg Metropolitan Municipality, Gauteng, 1852, South Africa",
+  "importance": 0.5581351999255528,
+  "lat": -26.2227778,
+  "lng": 27.89,
+  "osm_type": "city"
+ },
  "SPANISH FARM": {
   "display_name": "Spanish Farm, Cape Town Ward 15, Somerset West, City of Cape Town, Western Cape, 7130, South Africa",
   "importance": 0.14671229495689322,

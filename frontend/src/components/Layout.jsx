@@ -6,11 +6,14 @@ import { api } from '../api'
 const NAV_BY_ROLE = {
   member: [
     { to: '/', label: 'Hot-spots', end: true },
+    { to: '/safety-score', label: 'Safety score' },
     { to: '/alerts', label: 'Alerts' },
     { to: '/route', label: 'Plan a route' },
-    { to: '/report', label: 'Report an incident' },
+    // Shortened from "Report an incident" — with seven member tabs the app bar
+    // wraps otherwise, and the page heading carries the full wording.
+    { to: '/report', label: 'Report' },
     { to: '/my-claims', label: 'My claims' },
-    { to: '/profile', label: 'My profile' },
+    { to: '/profile', label: 'Profile' },
   ],
   employee: [
     { to: '/', label: 'Hot-spots', end: true },

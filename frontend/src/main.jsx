@@ -13,6 +13,7 @@ import MemberProfile from './views/MemberProfile'
 import MyClaims from './views/MyClaims'
 import PatrolPlan from './views/PatrolPlan'
 import ReviewQueue from './views/ReviewQueue'
+import MemberSafetyScore from './views/MemberSafetyScore'
 import SafeRoute from './views/SafeRoute'
 import SubmitClaim from './views/SubmitClaim'
 
@@ -28,6 +29,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <Route path="my-claims" element={<MyClaims />} />
             <Route path="profile" element={<MemberProfile />} />
             <Route path="review" element={<ReviewQueue />} />
+            <Route path="safety-score" element={<MemberSafetyScore />} />
             <Route path="alerts" element={<AlertsFeed />} />
             <Route path="patrol" element={<PatrolPlan />} />
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,5 +1,4 @@
 import logging
-import psycopg2
 
 from flask import Flask, jsonify, request, send_from_directory
 
@@ -12,9 +11,16 @@ from routes.hotspot_routes import hotspot_bp
 from routes.route_routes import route_bp
 from routes.user_routes import user_bp
 from routes.safety_routes import safety_bp
+from routes.member_score_routes import member_score_bp
 
 from services.claims_service import warm_cache
-from services.recognition import process_incoming_face_image
+
+# NOTE: psycopg2 and services.recognition (-> DeepFace -> TensorFlow) are
+# imported inside scan_face() rather than here on purpose. Imported at module
+# level they made the whole API refuse to start without a ~600MB ML install —
+# the hot-spot map, claims, routing and alerts all use none of it. The scan
+# endpoint behaves identically; it just resolves its own dependencies on first
+# call instead of at boot. Nothing in the recognition logic itself is changed.
 
 
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +51,7 @@ def create_app(config_object=Config):
     app.register_blueprint(cpu_bp)
     app.register_blueprint(user_bp)
     app.register_blueprint(safety_bp)
+    app.register_blueprint(member_score_bp)
 
     # Warm claims cache
     try:
@@ -85,6 +92,20 @@ def create_app(config_object=Config):
             return jsonify(
                 {"error": "No selected file"}
             ), 400
+
+        # Deferred so the rest of the API can boot without the ML stack.
+        try:
+            import psycopg2
+            from services.recognition import process_incoming_face_image
+        except ImportError as e:
+            logger.error(f"Facial recognition stack unavailable: {e}")
+            return jsonify(
+                {
+                    "error": "Facial recognition is not available on this server.",
+                    "detail": "Install the DeepFace/TensorFlow dependencies "
+                              "from requirements.txt to enable it.",
+                }
+            ), 503
 
         image_bytes = file.read()
 

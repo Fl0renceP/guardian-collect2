@@ -24,6 +24,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from services import users_service  # noqa: E402
 
+# Seeded engagement counters behind the Guardian Safety Score. The app doesn't
+# yet log sessions or "took the safer route" events, so these stand in for that
+# telemetry — see services/member_score_service.py. The camera and claims halves
+# of the score are NOT seeded; they read real claim data.
+# Deliberately varied so the demo shows a spread of tiers rather than ten
+# identical members, including one who has barely engaged.
+ACTIVITY = {
+    #            app_opens, hotspot_views, alerts_ack, routes_planned, safer_routes, camera_linked
+    "MBR-1001": (26, 21, 11, 16, 6, True),
+    "MBR-1002": (18, 12, 6, 9, 3, True),
+    "MBR-1003": (9, 5, 2, 4, 1, False),
+    "MBR-1004": (31, 27, 14, 22, 8, True),
+    "MBR-1005": (14, 9, 4, 7, 2, True),
+    "MBR-1006": (22, 15, 8, 12, 4, False),
+    "MBR-1007": (28, 24, 12, 19, 7, True),
+    "MBR-1008": (5, 2, 1, 1, 0, False),
+    "MBR-1009": (20, 17, 9, 13, 5, True),
+    "MBR-1010": (12, 7, 3, 5, 2, False),
+}
+
 MEMBERS = [
     # (id, name, email, phone, policy, suburb, address, lat, lng, share)
     ("MBR-1001", "Thandiwe Nkosi", "thandiwe.nkosi@example.co.za", "+27 82 555 0142",
@@ -106,6 +126,7 @@ def build_documents():
 
     for (uid, name, email, phone, policy, suburb, address, lat, lng, share) in MEMBERS:
         doc = _base(uid, "member", name, email, phone)
+        opens, views, acks, planned, safer, camera = ACTIVITY[uid]
         doc["member_profile"] = {
             "policy_number": policy,
             "home_suburb": suburb,
@@ -116,6 +137,14 @@ def build_documents():
             "share_location": bool(share),
             "alert_radius_km": 10,
             "location_updated_at": None,
+            "activity": {
+                "app_opens": opens,
+                "hotspot_views": views,
+                "alerts_acknowledged": acks,
+                "routes_planned": planned,
+                "safer_routes_taken": safer,
+                "camera_linked": camera,
+            },
         }
         docs.append(doc)
 

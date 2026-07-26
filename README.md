@@ -6,26 +6,60 @@ for the problem statement, design decisions and tech stack, and
 
 ## Running it
 
-Two processes. Backend first:
+Two processes, two terminals. **Backend first** — Vite proxies `/api` to it, so
+the frontend shows connection errors without it.
+
+### One-time setup
 
 ```bash
-cd backend
-pip install -r requirements.txt
-python app.py            # http://localhost:5000
+# Backend: create a virtual environment and install into it
+python -m venv backend/.venv
+backend\.venv\Scripts\python -m pip install -r backend/requirements.txt   # Windows
+# source backend/.venv/bin/activate && pip install -r backend/requirements.txt   # macOS/Linux
+
+# Frontend
+npm --prefix frontend install
 ```
 
-Then the React app:
+This pulls TensorFlow (via DeepFace, for Phase 1 facial recognition), so the
+first install downloads several hundred MB and takes a while. It only happens
+once.
+
+If you use [uv](https://docs.astral.sh/uv/) instead of a system Python:
 
 ```bash
-cd frontend
-npm install
-npm run dev              # http://localhost:5173
+uv venv backend/.venv --python 3.12
+uv pip install --python backend/.venv -r backend/requirements.txt
 ```
 
-**Open <http://localhost:5173>** — Vite proxies `/api` to Flask, so there's no
-CORS setup and no API base URL to configure. The Flask server also still serves
-a standalone copy of the map at <http://localhost:5000> if you want the backend
-demo on its own.
+### Every time
+
+```bash
+# Terminal 1 — backend on :5000
+backend\.venv\Scripts\python backend/app.py
+
+# Terminal 2 — frontend on :5173
+npm --prefix frontend run dev
+```
+
+**Open <http://localhost:5173>.** Vite proxies `/api` to Flask, so there's no
+CORS setup and no API base URL to configure.
+
+Flask also serves a standalone copy of the hot-spot map at
+<http://localhost:5000> if you want to demo the backend on its own.
+
+### What needs what
+
+| Feature | Needs |
+|---|---|
+| Hot-spots, claims, routing, alerts, patrol, safety score | Cosmos + Blob credentials in `.env` — that's all |
+| `POST /api/v1/scan-face` | A local PostgreSQL with pgvector at `DATABASE_URL`, plus the DeepFace/TensorFlow install |
+
+Note that `backend/app.py` imports `psycopg2` and `services.recognition` (which
+imports DeepFace) **at module level**, so the whole API — including the map —
+won't start unless the ML stack is installed, even though nothing else uses it.
+Moving that import inside the `/scan-face` handler would let the rest of the app
+run without it.
 
 ## The three views
 
