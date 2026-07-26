@@ -1,5 +1,6 @@
 absl-py==2.5.0
 astunparse==1.6.3
+azure-ai-vision-imageanalysis==1.0.0
 azure-core==1.41.0
 azure-storage-blob==12.30.0
 azure-cosmos>=4.5.1

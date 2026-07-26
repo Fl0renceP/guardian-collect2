@@ -191,17 +191,24 @@ a {
   gap: 8px;
   flex-wrap: wrap;
 }
-/* The member role carries the logo lockup, six nav items and two identity
-   selects. Shed the least useful pieces in order — label, then the wordmark
-   (the badge alone still identifies the app) — before the row wraps. */
+/* The member role carries the logo lockup, seven nav items, two identity
+   selects and two utility buttons — the row has no slack. Anything that can be
+   inferred visually is hidden from sight but kept for screen readers, and the
+   wordmark drops next (the badge alone still identifies the app). */
 .appbar-inner select {
   max-width: 150px;
   text-overflow: ellipsis;
 }
-@media (max-width: 1240px) {
-  .appbar-inner .viewing-label {
-    display: none;
-  }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 @media (max-width: 1120px) {
   .brand-text {
@@ -277,6 +284,19 @@ a {
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 550;
+}
+/* The demo link leaves the app, so it reads as a utility rather than a peer of
+   the stakeholder tabs — dashed outline, never an active state. */
+a.btn.nav-external {
+  border-style: dashed;
+  text-decoration: none;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+a.btn.nav-external:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .nav a .badge {
   margin-left: 6px;

@@ -3,16 +3,18 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { ROLES, useSession } from '../session'
 import { api } from '../api'
 
+/* Labels are kept short deliberately — the member role carries the most tabs and
+   the app bar wraps to a second row past about eight. The page headings carry
+   the full wording. */
+
 const NAV_BY_ROLE = {
   member: [
     { to: '/', label: 'Hot-spots', end: true },
     { to: '/safety-score', label: 'Safety score' },
     { to: '/alerts', label: 'Alerts' },
-    { to: '/route', label: 'Plan a route' },
-    // Shortened from "Report an incident" — with seven member tabs the app bar
-    // wraps otherwise, and the page heading carries the full wording.
+    { to: '/route', label: 'Routes' },
     { to: '/report', label: 'Report' },
-    { to: '/my-claims', label: 'My claims' },
+    { to: '/my-claims', label: 'Claims' },
     { to: '/profile', label: 'Profile' },
   ],
   employee: [
@@ -123,7 +125,9 @@ export default function Layout() {
           <div className="spacer" />
 
           {/* Demo identity switcher. Stands in for authentication — see session.jsx. */}
-          <label className="tiny viewing-label" htmlFor="role-select" style={{ marginRight: -4 }}>
+          {/* Hidden visually — the two selects read as an identity switcher on
+              sight, and the row has no width to spare. Kept for screen readers. */}
+          <label className="sr-only" htmlFor="role-select">
             Viewing as
           </label>
           <select
@@ -183,6 +187,23 @@ export default function Layout() {
               ))}
             </select>
           ) : null}
+
+          {/* Facial recognition demo. Sits with the utilities rather than in the
+              nav: it's a presentation aid available to every role, it leaves the
+              SPA, and with eight member tabs the nav row has no space left.
+              Opens in a new tab so the presenter keeps their place. */}
+          <a
+            className="btn nav-external"
+            href="/test-scan"
+            target="_blank"
+            rel="noreferrer"
+            title="Facial recognition test — opens in a new tab"
+          >
+            Face scan
+            <span aria-hidden="true" style={{ marginLeft: 5, opacity: 0.7 }}>
+              ↗
+            </span>
+          </a>
 
           <button
             type="button"
