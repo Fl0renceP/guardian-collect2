@@ -51,6 +51,18 @@ SEED_PLATES = [
         "status": "verified",
         "owner_name": "Registered Resident",
         "blob_name": "seed_verified_plate.jpeg"
+    },
+    {
+        "plate_number": "CA 146-829",
+        "status": "suspect",
+        "owner_name": "Under Investigation",
+        "blob_name": "seed_suspect_plate2.jpeg"
+    },
+    {
+        "plate_number": "CAA 227-793",
+        "status": "offender",
+        "owner_name": "Stolen Vehicle - Alert",
+        "blob_name": "seed_offender_plate2.jpeg"
     }
 ]
 

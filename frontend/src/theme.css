@@ -1,0 +1,572 @@
+/* Guardian Collective design tokens, matched to the product mockups.
+
+   The identity is a teal -> blue -> violet -> magenta spectrum. Blue carries
+   primary actions (nav pills, buttons), magenta is the header rule and
+   secondary accent, and the full spectrum appears as a gradient on the wordmark
+   and progress bars.
+
+   Sequential ramps walk that same spectrum as **semantic heat** (cool = low,
+   hot = high), which is the documented exception to the one-hue rule and always
+   ships with a scale legend. The stops are chosen for *monotonic lightness* —
+   the mockup's five brand stops are all mid-lightness and unusable raw, so each
+   ramp is re-stepped (smallest lightness step 0.038 light / 0.046 dark, which
+   keeps adjacent bands distinguishable).
+
+   Contrast: --accent #2b73d4 gives 4.66:1 with white text (the mockup's own
+   #327fe1 measures 3.99:1 and would fail body text on a button, so it's used
+   only for large text and fills). Dark accent #5b9cf0 gives 5.97:1.
+
+   Status colours stay reserved for claim state and are never reused as series
+   colours; each always carries a text label so state never rests on colour. */
+
+:root {
+  color-scheme: light;
+  --surface-1: #ffffff;
+  --page: #f3f3f5;
+  --ink: #14161c;
+  --ink-2: #4d5461;
+  --ink-muted: #838b98;
+  --hairline: #e4e6ea;
+  --border: rgba(20, 22, 28, 0.1);
+  --accent: #2b73d4;
+  --accent-ink: #ffffff;
+  /* Magenta rule under the app bar, and the secondary accent. */
+  --rule: #e8368f;
+  --rule-strong: #c51a72;
+  --reward: #f2ac09;
+
+  /* The five brand stops, in fixed order. Used as a gradient, never as a
+     categorical series — see PatrolPlan for the series palette. */
+  --brand-1: #0fafb0;
+  --brand-2: #3286dd;
+  --brand-3: #6a57e1;
+  --brand-4: #b442ba;
+  --brand-5: #e5479b;
+  --brand-gradient: linear-gradient(
+    90deg,
+    var(--brand-1) 0%,
+    var(--brand-2) 27%,
+    var(--brand-3) 52%,
+    var(--brand-4) 78%,
+    var(--brand-5) 100%
+  );
+
+  /* Semantic heat, re-stepped for monotonic lightness on a light surface. */
+  --seq-100: #d3f0ec;
+  --seq-250: #8fd3dd;
+  --seq-400: #5b8ede;
+  --seq-550: #7a3fe0;
+  --seq-700: #a3126b;
+
+  /* Reserved status palette — claim state only. */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --good-wash: rgba(12, 163, 12, 0.1);
+  --warning-wash: rgba(250, 178, 25, 0.14);
+  --critical-wash: rgba(208, 59, 59, 0.1);
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) {
+    color-scheme: dark;
+    --surface-1: #1b1b32;
+    --page: #101021;
+    --ink: #ffffff;
+    --ink-2: #c3c9d6;
+    --ink-muted: #8d94a6;
+    --hairline: #2b2c47;
+    --border: rgba(255, 255, 255, 0.1);
+    --accent: #5b9cf0;
+    --rule: #ea4999;
+    --rule-strong: #f2609f;
+    --reward: #f4ba33;
+    /* Same hue walk, lightness rising so low values recede into the surface. */
+    --seq-100: #0e3147;
+    --seq-250: #1a5c8e;
+    --seq-400: #3d63cf;
+    --seq-550: #b25ae0;
+    --seq-700: #f6b8dc;
+    --good-wash: rgba(12, 163, 12, 0.18);
+    --warning-wash: rgba(250, 178, 25, 0.18);
+    --critical-wash: rgba(208, 59, 59, 0.2);
+    --shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --surface-1: #1b1b32;
+  --page: #101021;
+  --ink: #ffffff;
+  --ink-2: #c3c9d6;
+  --ink-muted: #8d94a6;
+  --hairline: #2b2c47;
+  --border: rgba(255, 255, 255, 0.1);
+  --accent: #5b9cf0;
+  --rule: #ea4999;
+  --rule-strong: #f2609f;
+  --reward: #f4ba33;
+  /* Same hue walk, lightness rising so low values recede into the surface. */
+  --seq-100: #0e3147;
+  --seq-250: #1a5c8e;
+  --seq-400: #3d63cf;
+  --seq-550: #b25ae0;
+  --seq-700: #f6b8dc;
+  --good-wash: rgba(12, 163, 12, 0.18);
+  --warning-wash: rgba(250, 178, 25, 0.18);
+  --critical-wash: rgba(208, 59, 59, 0.2);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+h1 {
+  font-size: 22px;
+  font-weight: 650;
+}
+h2 {
+  font-size: 17px;
+  font-weight: 650;
+}
+
+a {
+  color: inherit;
+}
+
+/* ---------- layout ---------- */
+.wrap {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 20px 20px 56px;
+}
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.muted {
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+.tiny {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+/* ---------- app bar ---------- */
+.appbar {
+  background: var(--surface-1);
+  /* The magenta rule from the mockups. Decorative only — it carries no meaning,
+     so its 3.92:1 against white is fine (nothing reads text off it). */
+  border-bottom: 2px solid var(--rule);
+}
+.appbar-inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* The member role carries the logo lockup, six nav items and two identity
+   selects. Shed the least useful pieces in order — label, then the wordmark
+   (the badge alone still identifies the app) — before the row wraps. */
+.appbar-inner select {
+  max-width: 150px;
+  text-overflow: ellipsis;
+}
+@media (max-width: 1240px) {
+  .appbar-inner .viewing-label {
+    display: none;
+  }
+}
+@media (max-width: 1120px) {
+  .brand-text {
+    display: none;
+  }
+}
+/* Logo lockup: a "GC" badge, the wordmark in ink, and the brand spectrum as an
+   underline bar. The gradient lives on the bar rather than the letters, so the
+   wordmark keeps full text contrast and still reads under forced-colors. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  color: inherit;
+}
+.brand-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--brand-gradient);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.brand-word {
+  font-size: 11.5px;
+  font-weight: 750;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  color: var(--ink);
+  line-height: 1;
+  white-space: nowrap;
+}
+.brand-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--brand-gradient);
+}
+@media (forced-colors: active), print {
+  .brand-badge,
+  .brand-bar {
+    background: var(--accent);
+  }
+}
+.nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.nav a {
+  text-decoration: none;
+  color: var(--ink-2);
+  padding: 6px 9px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.nav a:hover {
+  color: var(--ink);
+  background: var(--page);
+}
+.nav a.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 550;
+}
+.nav a .badge {
+  margin-left: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+.demo-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--hairline);
+}
+.demo-nav a {
+  text-decoration: none;
+  color: var(--ink-2);
+  padding: 6px 9px;
+  border-radius: 999px;
+  font-size: 13px;
+  white-space: nowrap;
+  border: 1px dashed var(--hairline);
+}
+.demo-nav a:hover {
+  color: var(--ink);
+  background: var(--page);
+  border-style: solid;
+}
+.spacer {
+  margin-left: auto;
+}
+
+/* ---------- controls ---------- */
+.btn {
+  font: inherit;
+  font-size: 13.5px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) {
+  color: var(--ink);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 550;
+}
+.btn-primary:hover:not(:disabled) {
+  color: var(--accent-ink);
+  filter: brightness(1.06);
+}
+.btn-good {
+  background: var(--good);
+  border-color: var(--good);
+  color: #fff;
+  font-weight: 550;
+}
+.btn-good:hover:not(:disabled) {
+  color: #fff;
+  filter: brightness(1.06);
+}
+.btn-danger {
+  background: transparent;
+  border-color: var(--critical);
+  color: var(--critical);
+  font-weight: 550;
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--critical-wash);
+  color: var(--critical);
+}
+
+select,
+input[type='text'],
+input[type='number'],
+input[type='date'],
+input[type='datetime-local'],
+input[type='search'],
+textarea {
+  font: inherit;
+  font-size: 14px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline);
+  background: var(--page);
+  color: var(--ink);
+  color-scheme: light dark;
+}
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+.btn:focus-visible,
+.nav a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.field > label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.field .hint {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+.field .err {
+  font-size: 12.5px;
+  color: var(--critical);
+  font-weight: 500;
+}
+.field.invalid input,
+.field.invalid select,
+.field.invalid textarea {
+  border-color: var(--critical);
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+/* ---------- status pill ---------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.pill-pending {
+  background: var(--warning-wash);
+  color: var(--ink);
+}
+.pill-pending .dot {
+  background: var(--warning);
+}
+.pill-approved {
+  background: var(--good-wash);
+  color: var(--ink);
+}
+.pill-approved .dot {
+  background: var(--good);
+}
+.pill-denied {
+  background: var(--critical-wash);
+  color: var(--ink);
+}
+.pill-denied .dot {
+  background: var(--critical);
+}
+
+/* ---------- banners ---------- */
+.banner {
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 13.5px;
+  border: 1px solid var(--border);
+}
+.banner-good {
+  background: var(--good-wash);
+}
+.banner-bad {
+  background: var(--critical-wash);
+}
+.banner-info {
+  background: var(--page);
+}
+
+/* ---------- map tooltip ---------- */
+.leaflet-container {
+  font: inherit;
+  background: var(--page);
+}
+.leaflet-tooltip.gc-tip {
+  background: var(--surface-1);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  padding: 9px 11px;
+}
+.leaflet-tooltip.gc-tip::before {
+  display: none;
+}
+/* The heat canvas is pure visual — it must not swallow pointer events aimed at
+   the hit-target markers sitting above it. */
+.leaflet-heatmap-layer {
+  pointer-events: none;
+}
+
+.tip {
+  min-width: 158px;
+}
+.tip .t-sub {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 3px;
+}
+.tip .t-val {
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.15;
+}
+.tip .t-val small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-2);
+  margin-left: 3px;
+}
+.tip .t-amt {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  margin-top: 1px;
+}
+.tip .t-approx {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  margin-top: 3px;
+  font-style: italic;
+}
+.tip .t-rows {
+  margin-top: 7px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 6px;
+}
+.tip .t-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+.tip .t-name {
+  color: var(--ink-2);
+}
+.tip .t-n {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font-weight: 550;
+}
+
+@media (max-width: 980px) {
+  .grid-4-tiles {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 780px) {
+  .grid-2,
+  .grid-3 {
+    grid-template-columns: 1fr;
+  }
+}

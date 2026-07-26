@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guardian Collective - Biometric Demos</title>
+  <style>
+    :root {
+      --bg:#f6f7f9; --panel:#ffffff; --fg:#16181d; --muted:#666c78; --line:#e2e5ea;
+      --accent:#1c4fd8; --accent-2:#0f3db6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:#131519; --panel:#1b1e24; --fg:#e9eaee; --muted:#9aa1ad; --line:#2b3038;
+        --accent:#8fb0ff; --accent-2:#aec4ff;
+      }
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; padding:28px 16px 56px;
+      font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
+      background:var(--bg); color:var(--fg);
+    }
+    .wrap { max-width:920px; margin:0 auto; }
+    h1 { font-size:24px; margin:0 0 6px; letter-spacing:-.01em; }
+    .sub { color:var(--muted); margin:0 0 22px; }
+    .grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+      gap:14px;
+    }
+    .demo {
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:18px;
+      display:flex;
+      flex-direction:column;
+      min-height:200px;
+    }
+    .demo h2 { margin:0 0 8px; font-size:19px; letter-spacing:-.01em; }
+    .demo p { margin:0 0 16px; color:var(--muted); font-size:13px; }
+    .tags { margin-bottom:14px; display:flex; gap:7px; flex-wrap:wrap; }
+    .tag {
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:3px 8px;
+      color:var(--muted);
+    }
+    a.btn {
+      margin-top:auto;
+      align-self:flex-start;
+      text-decoration:none;
+      font-weight:600;
+      font-size:13px;
+      background:var(--accent);
+      color:#fff;
+      padding:9px 12px;
+      border-radius:8px;
+      border:1px solid var(--accent);
+    }
+    a.btn:hover { background:var(--accent-2); border-color:var(--accent-2); }
+    .links {
+      margin-top:18px;
+      font-size:13px;
+      color:var(--muted);
+    }
+    .links a { color:var(--accent); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Biometric Demo Suite</h1>
+  <p class="sub">Choose one of the demo flows below. Each route remains available as a standalone page.</p>
+
+  <div class="grid">
+    <article class="demo">
+      <h2>Facial Recognition</h2>
+      <p>Upload a photo to check faces against the identity registry and return offender, suspect, or verified status.</p>
+      <div class="tags">
+        <span class="tag">Upload</span>
+        <span class="tag">Face Match</span>
+      </div>
+      <a class="btn" href="/test-scan">Open Facial Recognition Demo</a>
+    </article>
+
+    <article class="demo">
+      <h2>Image to Text</h2>
+      <p>Upload a plate image, extract text with Azure OCR, and resolve the plate against registered offender, suspect, or verified vehicles.</p>
+      <div class="tags">
+        <span class="tag">Upload</span>
+        <span class="tag">Azure OCR</span>
+      </div>
+      <a class="btn" href="/test-azure-plate">Open Image to Text Demo</a>
+    </article>
+
+    
+  </div>
+
+  <p class="links">Optional tools: <a href="/media">Media Analysis</a> · <a href="/test-plate">Legacy EasyOCR Plate Demo</a></p>
+</div>
+</body>
+</html>

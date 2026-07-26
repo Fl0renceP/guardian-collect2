@@ -48,6 +48,55 @@ def load_geocache():
     return _cache
 
 
+def ensure_suburb(suburb):
+    """Geocode one suburb on demand and persist it to the cache.
+
+    Called only when a claim is *approved*, never per map load — a newly
+    submitted suburb otherwise counts toward hot-spots but has nowhere to sit on
+    the map. Returns the cache entry, or None if it couldn't be resolved.
+
+    Failures are the caller's to swallow: an approval must not fail because
+    OpenStreetMap was slow.
+    """
+    suburb = (suburb or "").strip().upper()
+    if not suburb or suburb == "UNKNOWN":
+        return None
+
+    cache = load_geocache()
+    if suburb in cache:
+        return cache[suburb]
+
+    path = Config.GEOCACHE_PATH
+    raw = {}
+    if path.exists():
+        with open(path, encoding="utf-8") as handle:
+            raw = json.load(handle)
+    if suburb in raw:
+        # Already attempted and cached as a miss — don't re-ask on every approval.
+        return raw[suburb]
+
+    # Imported lazily: the geocoder is a script-side concern and pulls in requests.
+    import sys
+
+    sys.path.insert(0, str(Config.GEOCACHE_PATH.parent.parent / "scripts"))
+    import requests
+    from geocode_suburbs import geocode
+
+    session = requests.Session()
+    session.headers.update({"User-Agent": Config.NOMINATIM_USER_AGENT})
+    entry = geocode(session, suburb, use_variants=True)
+
+    raw[suburb] = entry
+    tmp = path.with_suffix(".json.tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(raw, handle, indent=1, sort_keys=True, ensure_ascii=False)
+    tmp.replace(path)
+
+    logger.info("Geocoded new suburb %s on approval: %s", suburb, "hit" if entry else "miss")
+    return entry
+
+
 def geocache_status():
     """Coverage summary, surfaced by /api/health so the team can see if geocoding is done."""
     path = Config.GEOCACHE_PATH
