@@ -1,12 +1,15 @@
 import os
+import json
 import logging
 import psycopg2
-from flask import Flask, request, jsonify, send_from_directory
+from queue import Empty
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
 
 from config import Config
 from routes.health_routes import health_bp
 from routes.hotspot_routes import hotspot_bp
 from services.claims_service import warm_cache
+from services.alert_delivery_service import alert_delivery_service
 from services.plate_recognition import process_incoming_plate_image  
 from services.recognition import process_incoming_face_image
 from azure.ai.vision.imageanalysis import ImageAnalysisClient
@@ -38,6 +41,127 @@ app.register_blueprint(hotspot_bp)
 def get_db_connection():
     """Establishes and returns a database connection using application config."""
     return psycopg2.connect(Config.DATABASE_URL)
+
+
+def _normalize_detection_status(raw_status):
+    status = (raw_status or "").strip().lower()
+    return status if status in {"verified", "suspect", "offender"} else None
+
+
+def _attach_face_alert_payload(result):
+    status = _normalize_detection_status(result.get("status"))
+    if not status or not result.get("is_known_user"):
+        result["alert_event"] = None
+        result["alerts"] = []
+        return result
+
+    person = result.get("person") or {}
+    event = alert_delivery_service.register_detection(
+        status=status,
+        entity_type="person",
+        entity={
+            "id": person.get("id"),
+            "name": person.get("full_name"),
+            "status": status,
+        },
+        source_endpoint="/api/v1/scan-face",
+        push_enabled=Config.PUSH_NOTIFICATIONS_ENABLED,
+        push_dry_run=Config.PUSH_NOTIFICATIONS_DRY_RUN,
+        push_min_level=Config.PUSH_MIN_LEVEL,
+    )
+    result["alert_event"] = event
+    result["alerts"] = [event] if event else []
+    return result
+
+
+def _attach_plate_alert_payload(result):
+    plate = result.get("plate") or {}
+    status = _normalize_detection_status(plate.get("status"))
+    if not status or not result.get("match_found"):
+        result["alert_event"] = None
+        result["alerts"] = []
+        return result
+
+    event = alert_delivery_service.register_detection(
+        status=status,
+        entity_type="vehicle",
+        entity={
+            "id": str(plate.get("id")) if plate.get("id") is not None else None,
+            "plate_number": plate.get("plate_number"),
+            "owner_name": plate.get("owner_name"),
+            "status": status,
+        },
+        source_endpoint="/api/v1/scan-plate",
+        push_enabled=Config.PUSH_NOTIFICATIONS_ENABLED,
+        push_dry_run=Config.PUSH_NOTIFICATIONS_DRY_RUN,
+        push_min_level=Config.PUSH_MIN_LEVEL,
+    )
+    result["alert_event"] = event
+    result["alerts"] = [event] if event else []
+    return result
+
+
+@app.get("/api/v1/alerts")
+def list_alerts():
+    """List recent alerts/push events filtered by audience and channel."""
+    audience = (request.args.get("audience") or "crime_prevention").strip().lower()
+    channel = (request.args.get("channel") or "alerts").strip().lower()
+    try:
+        limit = int(request.args.get("limit", "50"))
+    except ValueError:
+        return jsonify({"error": "limit must be an integer"}), 400
+
+    if audience not in {"member", "crime_prevention"}:
+        return jsonify({"error": "audience must be one of: member, crime_prevention"}), 400
+    if channel not in {"alerts", "push"}:
+        return jsonify({"error": "channel must be one of: alerts, push"}), 400
+
+    items = alert_delivery_service.list_events(audience=audience, channel=channel, limit=limit)
+    return jsonify(
+        {
+            "audience": audience,
+            "channel": channel,
+            "count": len(items),
+            "items": items,
+        }
+    )
+
+
+@app.get("/api/v1/alerts/stream")
+def stream_alerts():
+    """Server-Sent Events stream for live alert/push updates."""
+    audience = (request.args.get("audience") or "crime_prevention").strip().lower()
+    channel = (request.args.get("channel") or "alerts").strip().lower()
+
+    if audience not in {"member", "crime_prevention"}:
+        return jsonify({"error": "audience must be one of: member, crime_prevention"}), 400
+    if channel not in {"alerts", "push"}:
+        return jsonify({"error": "channel must be one of: alerts, push"}), 400
+
+    sub = alert_delivery_service.subscribe(audience=audience, channel=channel)
+
+    @stream_with_context
+    def generate():
+        try:
+            ready = {"audience": audience, "channel": channel, "ready": True}
+            yield f"event: ready\ndata: {json.dumps(ready)}\n\n"
+            while True:
+                try:
+                    event = alert_delivery_service.queue_get(sub, timeout_seconds=20)
+                    yield f"event: notification\ndata: {json.dumps(event)}\n\n"
+                except Empty:
+                    yield "event: heartbeat\ndata: {}\n\n"
+        finally:
+            alert_delivery_service.unsubscribe(sub)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.route("/")
@@ -90,6 +214,7 @@ def scan_face():
         if isinstance(result, tuple):
             return jsonify(result[0]), result[1]
 
+        result = _attach_face_alert_payload(result)
         return jsonify(result), 200
 
     except Exception as e:
@@ -121,6 +246,7 @@ def scan_plate():
         if isinstance(result, tuple):
             return jsonify(result[0]), result[1]
 
+        result = _attach_plate_alert_payload(result)
         return jsonify(result), 200
 
     except Exception as e:

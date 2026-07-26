@@ -23,6 +23,8 @@ Then open <http://localhost:5000> — the crime hot-spot map is the landing scre
 | `GET /api/filters` | Peril / item-type values and the dataset's date bounds |
 | `POST /api/claims/refresh` | Force an immediate re-read of the claims collection |
 | `GET /api/health` | Liveness + live claims source + geocode coverage |
+| `GET /api/v1/alerts` | Recent alert feed filtered by audience/channel |
+| `GET /api/v1/alerts/stream` | Live alert feed via Server-Sent Events (SSE) |
 
 Filters are AND-ed; `peril` and `item_type` accept comma-separated or repeated values:
 
@@ -30,53 +32,34 @@ Filters are AND-ed; `peril` and `item_type` accept comma-separated or repeated v
 /api/hotspots?peril=Hijack,Armed%20Robbery&item_type=Vehicle&date_from=2025-01-01
 ```
 
-## Predictive Route-Risk Alerts (Stored Data MVP)
+## Manual Scan Alerts And Demo Push Policy
 
-This repository now supports predictive route advisories without live streams.
+Face (`POST /api/v1/scan-face`) and plate (`POST /api/v1/scan-plate`) scans now
+emit a normalized `alert_event` plus `alerts[]` in the response when a known
+status is detected (`verified`, `suspect`, `offender`).
 
-- Endpoint: `POST /api/route-risk`
-- Purpose: score a proposed route using historical hot-spots and recency-weighted stored sightings.
-- Output: per-segment advisory levels (`low`, `medium`, `high`) plus a route summary.
+Delivery policy is audience-based:
 
-### What the score means
+- `member`
+  - alerts: `offender` only
+  - push: `offender` only
+- `crime_prevention`
+  - alerts: `suspect` and `offender`
+  - push: disabled
 
-The score is a risk forecast for each route segment, not real-time incident confirmation.
+This is implemented without creating external accounts/resources. Push is demo
+mode by default and can be toggled with environment flags.
 
-- `hotspot_score`: historical claim intensity and severity, proximity to route, and time-of-day alignment
-- `sighting_score`: stored suspect/offender detections weighted by recency and proximity
-- total: `0.65 * hotspot_score + 0.35 * sighting_score`
+### Alert feed endpoints
 
-### Request example
+- `GET /api/v1/alerts?audience=member|crime_prevention&channel=alerts|push&limit=50`
+- `GET /api/v1/alerts/stream?audience=member|crime_prevention&channel=alerts|push`
 
-```json
-{
-  "departure_time_utc": "2026-07-25T18:15:00Z",
-  "route_points": [
-    {"lat": -25.8612, "lng": 28.1910},
-    {"lat": -25.9500, "lng": 28.1700},
-    {"lat": -25.9990, "lng": 28.1269}
-  ],
-  "perils": ["Theft", "Hijack"],
-  "item_types": ["Vehicle"],
-  "date_from": "2026-01-01",
-  "date_to": "2026-07-25"
-}
-```
+### Push env flags
 
-### Response highlights
-
-- `summary_alert_level`: highest advisory level on the route
-- `alerts[]`: per-route-point advisories with message and context
-- `disclaimer`: explicitly marks output as predictive and non-real-time
-
-### Environment tuning
-
-Set in `.env` (all optional):
-
-- `ROUTE_RISK_HOTSPOT_RADIUS_KM` (default `2.0`)
-- `ROUTE_RISK_SIGHTING_RADIUS_KM` (default `1.2`)
-- `ROUTE_RISK_RECENT_SIGHTING_HOURS` (default `72`)
-- `ROUTE_RISK_COOLDOWN_POINTS` (default `2`)
+- `PUSH_NOTIFICATIONS_ENABLED` (default `false`)
+- `PUSH_NOTIFICATIONS_DRY_RUN` (default `true`)
+- `PUSH_MIN_LEVEL` (`low` | `medium` | `high`, default `medium`)
 
 ## Where claims data comes from
 

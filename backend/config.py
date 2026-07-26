@@ -18,6 +18,12 @@ def _clean(value):
     return value.strip().strip('"').strip("'") if isinstance(value, str) else value
 
 
+def _as_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 class Config:
 
     # 1. PostgreSQL Database with pgvector enabled
@@ -105,10 +111,7 @@ class Config:
     # (a suburb name that also exists in another country).
     SA_BOUNDS = {"min_lat": -35.5, "max_lat": -21.5, "min_lng": 15.5, "max_lng": 33.5}
 
-    # 6. Predictive route-risk alerts (stored-data MVP)
-    ROUTE_RISK_HOTSPOT_RADIUS_KM = float(os.getenv("ROUTE_RISK_HOTSPOT_RADIUS_KM", "2.0"))
-    ROUTE_RISK_SIGHTING_RADIUS_KM = float(os.getenv("ROUTE_RISK_SIGHTING_RADIUS_KM", "1.2"))
-    ROUTE_RISK_RECENT_SIGHTING_HOURS = float(
-        os.getenv("ROUTE_RISK_RECENT_SIGHTING_HOURS", "72")
-    )
-    ROUTE_RISK_COOLDOWN_POINTS = int(os.getenv("ROUTE_RISK_COOLDOWN_POINTS", "2"))
+    # 6. Demo push controls (no external resource required for dry-run mode)
+    PUSH_NOTIFICATIONS_ENABLED = _as_bool(os.getenv("PUSH_NOTIFICATIONS_ENABLED"), default=True)
+    PUSH_NOTIFICATIONS_DRY_RUN = _as_bool(os.getenv("PUSH_NOTIFICATIONS_DRY_RUN"), default=True)
+    PUSH_MIN_LEVEL = _clean(os.getenv("PUSH_MIN_LEVEL", "medium")).lower()
