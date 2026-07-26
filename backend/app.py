@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import psycopg2
 from flask import Flask, request, jsonify, send_from_directory
@@ -43,6 +44,12 @@ def get_db_connection():
 @app.route("/")
 def home():
     return jsonify({"message": "Guardian Collective API is running"}), 200
+
+
+@app.route("/demos", methods=["GET"])
+def demos_page():
+    """Consolidated entry-point linking the biometric demo pages."""
+    return send_from_directory(app.static_folder, "demos.html")
 
 
 @app.route("/test-scan", methods=["GET"])
@@ -150,24 +157,72 @@ def extract_text_from_bytes(image_bytes: bytes) -> str:
         logger.error(f"Azure OCR Error: {e}")
         return ""
 
+
+def clean_plate_text(text: str) -> str:
+    """Normalise plate text so punctuation variants still match the registry."""
+    return re.sub(r"[^A-Za-z0-9]", "", text or "").upper()
+
 @app.route("/api/v1/scan-plate-azure", methods=["POST"])
 def scan_plate_azure():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+
     image_bytes = file.read()
 
     # Extract text using Azure Vision
     raw_text = extract_text_from_bytes(image_bytes)
-    
-    # Clean string (remove spaces/special characters for database matching)
-    cleaned_plate = "".join([c for c in raw_text if c.isalnum()]).upper()
+    cleaned_plate = clean_plate_text(raw_text)
 
-    return jsonify({
-        "raw_text": raw_text,
-        "cleaned_plate": cleaned_plate
-    }), 200
+    if not cleaned_plate:
+        return jsonify({"error": "No text detected in image"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT p.id, p.plate_number, p.status, p.owner_name, f.image_url
+            FROM vehicle_plates p
+            LEFT JOIN vehicle_plate_images f ON p.id = f.plate_id
+            WHERE regexp_replace(upper(p.plate_number), '[^A-Z0-9]', '', 'g') = %s
+            ORDER BY f.created_at DESC NULLS LAST
+            LIMIT 1;
+            """,
+            (cleaned_plate,),
+        )
+        match = cursor.fetchone()
+
+        if match:
+            return jsonify({
+                "match_found": True,
+                "raw_text": raw_text,
+                "extracted_text": cleaned_plate,
+                "plate": {
+                    "id": match[0],
+                    "plate_number": match[1],
+                    "status": match[2],
+                    "owner_name": match[3],
+                    "image_url": match[4],
+                },
+            }), 200
+
+        return jsonify({
+            "match_found": False,
+            "raw_text": raw_text,
+            "extracted_text": cleaned_plate,
+            "message": f"Plate '{cleaned_plate}' scanned but not flagged in database.",
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error processing Azure plate scan: {e}")
+        return jsonify({"error": "Internal processing error during plate scan"}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
 if __name__ == "__main__":
     # Warm up claims cache on application boot

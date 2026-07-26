@@ -44,7 +44,9 @@ def process_incoming_plate_image(image_bytes: bytes, db_conn):
                 SELECT p.id, p.plate_number, p.status, p.owner_name, f.image_url
                 FROM vehicle_plates p
                 LEFT JOIN vehicle_plate_images f ON p.id = f.plate_id
-                WHERE p.plate_number = %s;
+                WHERE regexp_replace(upper(p.plate_number), '[^A-Z0-9]', '', 'g') = %s
+                ORDER BY f.created_at DESC NULLS LAST
+                LIMIT 1;
             """, (candidate,))
             
             match = cursor.fetchone()
