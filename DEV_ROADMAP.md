@@ -28,9 +28,9 @@ Goal: file upload of an image → detect face → compare against 3 seeded faces
 ## Phase 2 — Claims data pipeline (can start in parallel once Phase 0 is done)
 - [x] Claims ingested into **Azure Cosmos DB** (`guardian-db` / `insurance-data`, 15,712 docs) and read live by `services/claims_service.py` — the hot-spot map picks up new claims without a redeploy. CSV retained as an offline fallback only.
 - [x] Distinct `SUBURB` values geocoded and cached — `scripts/geocode_suburbs.py` → `backend/data/suburb_geocache.json` (Nominatim, not Azure Maps; see PROJECT_CONTEXT §6)
-- [ ] Member claim submission endpoint (basic form → Cosmos doc with `status: "pending"`)
-- [ ] Discovery employee approve/deny endpoint (flip `status` to `"approved"`, then call `claims_service.invalidate_cache()`)
-      — the read side is already done: pending claims are excluded from hot-spots and approved ones counted, verified end to end against the live container.
+- [x] Member claim submission endpoint — `POST /api/claims` (multipart), writes a Cosmos doc with `status: "pending"`; photo/video to Blob Storage
+- [x] Discovery employee approve/deny endpoints — `POST /api/claims/<id>/approve` and `/deny`; approval joins the dataset and the hot-spot map, denial stores a reason shown to the member
+- [x] Member and employee React views for both flows (see Phase 5)
 
 ## Phase 3 — Hot-spot analytics + map
 - [x] `GET /api/hotspots` endpoint, filterable by crime category, item type and date range (+ `GET /api/filters` so the UI never hardcodes peril names)
@@ -40,11 +40,24 @@ Goal: file upload of an image → detect face → compare against 3 seeded faces
 
 ## Phase 4 — Alerts + route optimization
 - [ ] Replace the Phase 1 `send_alert()` stub with real delivery: Azure Function trigger → Firebase Cloud Messaging
-- [ ] Alert routing logic: members only get `offender` alerts; Crime Prevention Units get `offender` and `suspect` alerts
-- [ ] Azure Maps Route API wired up for patrol/response route suggestions between active hot-spots or toward an alert location
+- [x] Alert routing logic: members only get `offender` alerts; Crime Prevention Units get `offender` and `suspect` alerts — implemented in `alerts_service.audience_for`; every alert source passes through it, so wiring `/api/detect` in needs no changes to the rule
+- [x] **Member route optimisation** — `GET /api/risk` + `POST /api/routes/compare`, and the "Plan a route" view: fastest vs risk-avoiding route by travel mode and departure time, via Valhalla `exclude_polygons` (not Azure Maps — no key; see PROJECT_CONTEXT §6)
+- [x] **Crime Prevention Unit patrol routing** — `POST /api/patrol/plan` + the "Patrol planning" view: risk cells in the unit's area, split across vehicles by k-means, ordered into loops (nearest-neighbour + 2-opt), real road paths from Valhalla. Headline metric is risk covered per km driven
+- [ ] Upgrade patrol planning from the heuristic to a real VRP solve (VROOM or OR-Tools) once shift lengths, time windows or vehicle capabilities matter
+- [x] **Crime Prevention Unit alerts** — `GET /api/alerts` + the "Alerts" view, with the offender/suspect audience split enforced in `alerts_service.audience_for` so it's already correct when detections arrive
+- [ ] **Live motion alerts** — `watchPosition` in the browser, evaluate the current H3 cell client-side (h3-js) so no location trail leaves the device, alert on entering an elevated cell
+- [ ] Wire live/predicted alerts from Azure Functions into the risk surface alongside historical claims
+
+## Phase 2b — User directory
+- [x] Cosmos `users` container (partition key `/role`) holding all three stakeholder types; seeded with 10 members, 10 Discovery employees, 5 Crime Prevention companies via `scripts/seed_users.py`
+- [x] Optional, opt-in member home location — scopes the alerts feed and seeds the route planner's origin; withdrawing consent deletes the coordinates
+- [ ] **Authentication** — the `auth` block on each user document is a placeholder; nothing verifies identity yet. Biggest outstanding gap
+- [ ] Containers still to add for a full audit trail: `claim_events` (`/incident_id`), `alerts` (`/recipient_id`), `patrol_runs` (`/unit_id`)
 
 ## Phase 5 — Integration, polish, demo prep
-- [ ] Frontend dashboard pulling from all endpoints (hotspot map, alerts feed, patrol routes, claims status)
+- [x] React 18 + Vite app in `frontend/` — hot-spot map, member claim submission, member claims status, employee review queue. Vite proxies `/api` to Flask (no CORS setup).
+- [ ] Frontend dashboard pulling from the remaining endpoints (alerts feed, patrol routes)
+- [ ] **Replace the demo identity switcher with real auth** — `members_service.py` and `session.jsx` currently trust a UI-selected identity; this is the biggest known gap
 - [ ] AI-generated weekly briefing via Azure AI Foundry (nice-to-have if time allows)
 - [ ] End-to-end run-through of the full demo flow, timed
 - [ ] Fallback plan: if any Phase 2-4 component isn't ready, Phase 1's standalone facial recognition demo is still a complete, presentable story on its own

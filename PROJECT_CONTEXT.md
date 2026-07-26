@@ -98,7 +98,7 @@ Use the `face_recognition` Python library (dlib-based) for face detection + 128-
 | Image storage | Azure Blob Storage (store image files; keep DB rows lean) |
 | Claims OCR / plates | Azure AI Vision Read/OCR API |
 | Maps / hotspots | **Leaflet + leaflet.heat**, OpenStreetMap (CARTO) tiles for rendering; **Nominatim** for one-time suburb geocoding — no API key, see note below |
-| Routing | Azure Maps Route API (still the plan for Phase 4 patrol routes) |
+| Routing | **Valhalla** (OpenStreetMap, public FOSSGIS instance — no key) with `exclude_polygons` for risk-avoiding routes; **H3** for the travel-risk surface |
 | Alerts | Azure Functions (trigger logic) + Firebase Cloud Messaging (push delivery) |
 | AI-generated briefings | Azure AI Foundry (agent/prompt flow) |
 | Frontend | React 18 + Vite |
@@ -124,19 +124,42 @@ backend/
     health_routes.py
   services/
     face_service.py    # detection + embedding + matching + alert logic
-    claims_service.py  # claims CSV load + hot-spot aggregation
+    claims_service.py  # claims load, hot-spot aggregation, submission + review
     geocode_service.py # read access to the suburb geocode cache
+    storage_service.py # claim media -> private Blob container, SAS read URLs
+    users_service.py   # Cosmos `users` container: members/employees/units + opt-in location
+    members_service.py # compatibility shim over users_service — prefer users_service
+    risk_service.py    # H3 travel-risk surface (where x when)
+    routing_service.py # Valhalla routing + risk-avoiding alternative
+    alerts_service.py  # alert feed + offender/suspect audience routing
+    patrol_service.py  # CPU patrol loops (coverage/allocation, not shortest path)
   scripts/
     geocode_suburbs.py # one-time (resumable) Nominatim geocoder
   static/
-    index.html      # hot-spot heatmap — the app's landing screen
+    index.html      # standalone hot-spot heatmap served by Flask
   data/
     suburb_geocache.json  # suburb -> lat/lng, committed so nobody re-runs geocoding
   seed_data.py       # populate 3 test faces (offender, suspect, verified)
   requirements.txt
   .env.example
-frontend/
-  src/               # React app (owner: TBD per TEAM_ROLES.md)
+frontend/            # React 18 + Vite (owner: Tadiwa; claims flows: Keziah)
+  vite.config.js     # proxies /api -> Flask :5000, so no CORS setup
+  src/
+    main.jsx         # routes
+    api.js           # fetch wrapper + shared formatters
+    session.jsx      # current role/identity — STANDS IN FOR AUTH, see §9
+    theme.css        # design tokens (shared palette with the backend map)
+    components/
+      Layout.jsx     # app bar, nav, role switcher, theme toggle
+      StatusPill.jsx
+    views/
+      HotspotMap.jsx   # heatmap (Leaflet driven imperatively via refs)
+      SafeRoute.jsx    # member: fastest vs risk-avoiding route
+      SubmitClaim.jsx  # member: report an incident
+      MyClaims.jsx     # member: status + decline reasons
+      ReviewQueue.jsx  # employee: approve / decline
+      AlertsFeed.jsx   # CPU: alerts in the unit's operating area
+      PatrolPlan.jsx   # CPU: per-vehicle patrol loops
 docs/
   PROJECT_CONTEXT.md   # this file
   DEV_ROADMAP.md
@@ -161,7 +184,18 @@ See `docs/DATA_SCHEMA.md` for full column-level detail on:
 - Claims are read from **Cosmos DB**, not the CSV — `services/claims_service.py` is the only place that touches either. The CSV remains as an offline fallback; don't add a second reader for it.
 - Claims documents still carry no lat/long, so suburb names are resolved through the committed geocode cache (`backend/data/suburb_geocache.json`); don't add per-request geocoding.
 - **A claim with a `status` field only counts toward hot-spots once approved.** Absence of `status` means "historical, already part of the dataset". If you add claim submission, write `status: "pending"` and flip it on approval — that's what keeps unverified member submissions off the map.
-- After any claim write, call `claims_service.invalidate_cache()` so the map reflects it instead of waiting out the snapshot TTL.
+- After any claim write, call `claims_service.apply_to_snapshot(doc)` **and** `invalidate_cache()` — the first makes the very next read correct, the second lets a background refresh reconcile. Invalidating alone is not enough: stale-while-revalidate would keep serving the pre-write snapshot.
+- **A member's home location is optional and opt-in.** Always read it through `users_service.member_home()` — that function is the single place `share_location` is enforced. Never read `home_lat` off a profile directly, and never treat stored coordinates as permission to use them. Turning sharing off must delete the coordinates, not just hide them.
+- **There is no authentication.** `services/users_service.py` and `frontend/src/session.jsx` supply a demo identity that the API trusts. The `auth` block on each user document is a placeholder and is stripped before any response. Don't build anything that assumes `member_id`/`employee_id` is verified — swapping in a real auth provider is a known outstanding task (see `DEV_ROADMAP.md` Phase 5).
+- Claim media lives in a **private** Blob container and is served through short-lived per-request SAS URLs (`services/storage_service.py`). Never make the container public or persist a signed URL on the claim document.
+- Door-camera consent is opt-in, per-incident, and timestamped. Don't default it to true, don't infer it, and don't reuse one incident's consent for another.
+- **Never present the travel-risk surface as street-level.** Claims are located to suburb centroids, so risk is binned to ~5 km² H3 cells. "This area has more evening hijack claims" is supported; "avoid this road" is not.
+- The risk surface separates *where* (smoothed spatial density) from *when* (a single pooled hour/day profile) because claims are far too sparse per suburb to estimate both together. Don't refactor it into per-cell-per-hour counts — that's noise, not signal.
+- Risk scores normalise against a **fixed** reference peak, not the current moment's peak. Normalising per query cancels the time multiplier out algebraically and makes every hour look identical.
+- **Don't loosen `ROUTE_MIN_RISK_REDUCTION` to make demos look better.** Suggesting detours on noise is how this feature turns into an app that tells people to avoid particular neighbourhoods — a real redlining risk in the South African context.
+- **All alerts go through `alerts_service.audience_for`.** Members see `offender` only; Crime Prevention Units see `offender` and `suspect`. Don't bypass it when adding a new alert source, and don't widen the member set — that rule is the whole reason members don't get false-alarm fatigue.
+- **Don't stub the unwired alert feeds with fake data.** `_detection_alerts` and `_predicted_alerts` return empty on purpose until Phase 1 and Azure Functions exist. An alerts panel that invents offender sightings is worse than an empty one, and the UI already labels which feeds are live.
+- CPU patrol planning is a **coverage/allocation** problem, not shortest-path. Don't refactor it to reuse `routing_service.compare_routes` — they answer different questions.
 - Keep commit messages descriptive; open a PR against `main` rather than pushing directly once more than one person is working in the repo.
 
 ## 10. Open questions (raised by the team, still unresolved)
@@ -169,4 +203,4 @@ See `docs/DATA_SCHEMA.md` for full column-level detail on:
 - Preferred output format for the hot-spot map: internal ops tool, member-facing app, or both? (Current working assumption: both, with different feature depth — see prior team discussion.)
 - How does this connect to Discovery Insure's existing claims workflows, if at all — assumed simulated/standalone for the hackathon.
 - Is there an existing security-company/SAPS data partnership to assume, or is that integration being designed from scratch? Assumed from scratch, seeded with test data for the demo.
-- Permission to use Discovery's branding/badges — assume no until confirmed; use generic "Guardian Collective" branding for the demo.
+- Permission to use Discovery's branding/badges — assume no until confirmed. **Decision taken:** the product keeps its own "Guardian Collective" name and mark, but the *colour palette* is drawn from Discovery Bank's interface (magenta → violet over near-black surfaces) so the demo reads as at-home in Discovery's design language. No Discovery logo, wordmark or badge is used anywhere. If a judge or sponsor objects to even the palette, swapping it back is a single edit to `frontend/src/theme.css` — nothing else depends on the hues.
