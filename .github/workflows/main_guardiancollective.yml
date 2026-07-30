@@ -49,10 +49,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: python-app
+          retention-days: 3
           path: |
-            .
+            backend/**
             frontend/dist/**
             !backend/antenv/**
+            !**/node_modules/**
+            !**/__pycache__/**
+            !.git/**
 
       # 🚫 Opting Out of Oryx Build
       # If you prefer to disable the Oryx build process during deployment, follow these steps:
