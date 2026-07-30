@@ -84,16 +84,6 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_CF3365AA09E143E4BFF874085D8CAF4D }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_9D2734D5337F4802A464CF0B0E6D1601 }}
 
-      - name: Configure Azure startup command (optional)
-        if: ${{ secrets.AZURE_RESOURCE_GROUP != '' }}
-        uses: azure/cli@v2
-        with:
-          inlineScript: |
-            az webapp config set \
-              --name GuardianCollective \
-              --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-              --startup-file "gunicorn --bind=0.0.0.0 --timeout 600 backend.app:app"
-
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
