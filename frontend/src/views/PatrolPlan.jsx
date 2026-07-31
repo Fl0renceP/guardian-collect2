@@ -188,10 +188,7 @@ export default function PatrolPlan() {
         base, for the shift you're planning.
       </p>
 
-      <div
-        className="card"
-        style={{ padding: 14, marginBottom: 16, display: 'flex', gap: 24, flexWrap: 'wrap' }}
-      >
+      <div className="card filters">
         <div className="field" style={{ gap: 7 }}>
           <span className="tiny" style={{ fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Vehicles on shift
@@ -201,8 +198,7 @@ export default function PatrolPlan() {
               <button
                 key={n}
                 type="button"
-                className={`btn${vehicles === n ? ' btn-primary' : ''}`}
-                style={{ borderRadius: 999, padding: '4px 13px' }}
+                className={`btn btn-chip${vehicles === n ? ' btn-primary' : ''}`}
                 onClick={() => setVehicles(n)}
               >
                 {n}
@@ -277,23 +273,10 @@ export default function PatrolPlan() {
       <div className="card" style={{ overflow: 'hidden', marginBottom: 16 }}>
         <div
           ref={containerRef}
-          style={{
-            height: 520,
-            background: 'var(--page)',
-            opacity: loading ? 0.55 : 1,
-            transition: 'opacity 120ms ease',
-          }}
+          className="map-canvas map-md"
+          style={{ opacity: loading ? 0.55 : 1 }}
         />
-        <div
-          style={{
-            display: 'flex',
-            gap: 16,
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            borderTop: '1px solid var(--hairline)',
-            padding: '11px 15px',
-          }}
-        >
+        <div className="map-footer">
           {(plan?.routes || []).map((route, index) => (
             <span key={route.vehicle} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <span
@@ -313,45 +296,49 @@ export default function PatrolPlan() {
       </div>
 
       {plan?.routes?.length ? (
-        <div className="card" style={{ overflowX: 'auto' }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13.5 }}>
-            <caption className="muted" style={{ textAlign: 'left', padding: '14px 15px' }}>
-              Stops are ordered into a loop from base and back. Distances and times are real road
-              distances from OpenStreetMap, not straight lines.
-            </caption>
-            <thead>
-              <tr>
-                <Th>Vehicle</Th>
-                <Th num>Stops</Th>
-                <Th num>Distance</Th>
-                <Th num>Driving time</Th>
-                <Th num>Risk covered</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {plan.routes.map((route, index) => (
-                <tr key={route.vehicle}>
-                  <Td>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <span
-                        style={{
-                          width: 14,
-                          height: 4,
-                          borderRadius: 2,
-                          background: palette[index % palette.length],
-                        }}
-                      />
-                      Vehicle {route.vehicle}
-                    </span>
-                  </Td>
-                  <Td num>{route.stops.length}</Td>
-                  <Td num>{route.distance_km != null ? `${route.distance_km} km` : '—'}</Td>
-                  <Td num>{route.duration_min != null ? `${Math.round(route.duration_min)} min` : '—'}</Td>
-                  <Td num>{route.risk_covered.toFixed(2)}</Td>
+        <div className="card">
+          <p className="muted table-note" id="patrol-table-note">
+            Stops are ordered into a loop from base and back. Distances and times are real road
+            distances from OpenStreetMap, not straight lines.
+          </p>
+          <div className="table-wrap">
+            <table className="data-table" aria-describedby="patrol-table-note">
+              <thead>
+                <tr>
+                  <Th>Vehicle</Th>
+                  <Th num>Stops</Th>
+                  <Th num>Distance</Th>
+                  <Th num>Driving time</Th>
+                  <Th num>Risk covered</Th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {plan.routes.map((route, index) => (
+                  <tr key={route.vehicle}>
+                    <Td>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          style={{
+                            width: 14,
+                            height: 4,
+                            borderRadius: 2,
+                            background: palette[index % palette.length],
+                          }}
+                        />
+                        Vehicle {route.vehicle}
+                      </span>
+                    </Td>
+                    <Td num>{route.stops.length}</Td>
+                    <Td num>{route.distance_km != null ? `${route.distance_km} km` : '—'}</Td>
+                    <Td num>
+                      {route.duration_min != null ? `${Math.round(route.duration_min)} min` : '—'}
+                    </Td>
+                    <Td num>{route.risk_covered.toFixed(2)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
 
@@ -368,46 +355,14 @@ export default function PatrolPlan() {
 
 function Tile({ k, v, m }) {
   return (
-    <div className="card" style={{ padding: '13px 15px' }}>
-      <div
-        className="tiny"
-        style={{ fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}
-      >
-        {k}
-      </div>
-      <div style={{ fontSize: 27, fontWeight: 650, letterSpacing: '-0.02em', lineHeight: 1.15 }}>{v}</div>
-      {m ? <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{m}</div> : null}
+    <div className="card tile">
+      <div className="tiny tile-k">{k}</div>
+      <div className="tile-v">{v}</div>
+      {m ? <div className="muted tile-m">{m}</div> : null}
     </div>
   )
 }
 
-const Th = ({ children, num: isNum }) => (
-  <th
-    style={{
-      textAlign: isNum ? 'right' : 'left',
-      padding: '8px 14px',
-      borderBottom: '1px solid var(--hairline)',
-      fontSize: 11,
-      fontWeight: 650,
-      letterSpacing: '0.05em',
-      textTransform: 'uppercase',
-      color: 'var(--ink-muted)',
-      whiteSpace: 'nowrap',
-    }}
-  >
-    {children}
-  </th>
-)
+const Th = ({ children, num: isNum }) => <th className={isNum ? 'num' : undefined}>{children}</th>
 
-const Td = ({ children, num: isNum }) => (
-  <td
-    style={{
-      textAlign: isNum ? 'right' : 'left',
-      padding: '9px 14px',
-      borderBottom: '1px solid var(--hairline)',
-      fontVariantNumeric: isNum ? 'tabular-nums' : 'normal',
-    }}
-  >
-    {children}
-  </td>
-)
+const Td = ({ children, num: isNum }) => <td className={isNum ? 'num' : undefined}>{children}</td>

@@ -267,7 +267,7 @@ export default function SafeRoute() {
         travel-related claims at your time of travel.
       </p>
 
-      <div className="card" style={{ padding: 14, marginBottom: 16, display: 'flex', gap: 22, flexWrap: 'wrap' }}>
+      <div className="card filters">
         <div className="field" style={{ gap: 7 }}>
           <span className="tiny" style={{ fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Start &amp; destination
@@ -302,8 +302,7 @@ export default function SafeRoute() {
               <button
                 key={m.id}
                 type="button"
-                className={`btn${mode === m.id ? ' btn-primary' : ''}`}
-                style={{ borderRadius: 999, padding: '4px 12px' }}
+                className={`btn btn-chip${mode === m.id ? ' btn-primary' : ''}`}
                 onClick={() => setMode(m.id)}
               >
                 {m.label}
@@ -377,24 +376,13 @@ export default function SafeRoute() {
       <div className="card" style={{ overflow: 'hidden', marginBottom: 16 }}>
         <div
           ref={containerRef}
+          className="map-canvas map-md"
           style={{
-            height: 520,
-            background: 'var(--page)',
             opacity: loading ? 0.55 : 1,
-            transition: 'opacity 120ms ease',
             cursor: picking ? 'crosshair' : 'grab',
           }}
         />
-        <div
-          style={{
-            display: 'flex',
-            gap: 18,
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            borderTop: '1px solid var(--hairline)',
-            padding: '11px 15px',
-          }}
-        >
+        <div className="map-footer">
           <LegendLine color={theme === 'dark' ? '#d95926' : '#eb6834'} weight={6} label="Recommended" />
           <LegendLine color="#898781" weight={3} dashed label="Alternative" />
           <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -413,39 +401,41 @@ export default function SafeRoute() {
       </div>
 
       {result ? (
-        <div className="card" style={{ overflowX: 'auto' }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13.5 }}>
-            <caption className="muted" style={{ textAlign: 'left', padding: '14px 15px' }}>
-              Exposure is the average travel-claim density along the route at this time, on a 0–1
-              scale. It compares routes — it is not a probability of anything happening.
-            </caption>
-            <thead>
-              <tr>
-                <Th>Route</Th>
-                <Th num>Distance</Th>
-                <Th num>Time</Th>
-                <Th num>Exposure</Th>
-                <Th num>Worst point</Th>
-                <Th num>Share in elevated areas</Th>
-              </tr>
-            </thead>
-            <tbody>
-              <RouteRow
-                label="Fastest"
-                route={result.fastest}
-                recommended={rec === 'fastest'}
-                accent={theme === 'dark' ? '#d95926' : '#eb6834'}
-              />
-              {result.safer ? (
+        <div className="card">
+          <p className="muted table-note" id="route-table-note">
+            Exposure is the average travel-claim density along the route at this time, on a 0–1
+            scale. It compares routes — it is not a probability of anything happening.
+          </p>
+          <div className="table-wrap">
+            <table className="data-table" aria-describedby="route-table-note">
+              <thead>
+                <tr>
+                  <Th>Route</Th>
+                  <Th num>Distance</Th>
+                  <Th num>Time</Th>
+                  <Th num>Exposure</Th>
+                  <Th num>Worst point</Th>
+                  <Th num>Share in elevated areas</Th>
+                </tr>
+              </thead>
+              <tbody>
                 <RouteRow
-                  label={`Avoiding ${result.safer.avoided_cells} area${result.safer.avoided_cells === 1 ? '' : 's'}`}
-                  route={result.safer}
-                  recommended={rec === 'safer'}
+                  label="Fastest"
+                  route={result.fastest}
+                  recommended={rec === 'fastest'}
                   accent={theme === 'dark' ? '#d95926' : '#eb6834'}
                 />
-              ) : null}
-            </tbody>
-          </table>
+                {result.safer ? (
+                  <RouteRow
+                    label={`Avoiding ${result.safer.avoided_cells} area${result.safer.avoided_cells === 1 ? '' : 's'}`}
+                    route={result.safer}
+                    recommended={rec === 'safer'}
+                    accent={theme === 'dark' ? '#d95926' : '#eb6834'}
+                  />
+                ) : null}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
 
@@ -502,33 +492,6 @@ function LegendLine({ color, weight, dashed, label }) {
   )
 }
 
-const Th = ({ children, num: isNum }) => (
-  <th
-    style={{
-      textAlign: isNum ? 'right' : 'left',
-      padding: '8px 14px',
-      borderBottom: '1px solid var(--hairline)',
-      fontSize: 11,
-      fontWeight: 650,
-      letterSpacing: '0.05em',
-      textTransform: 'uppercase',
-      color: 'var(--ink-muted)',
-      whiteSpace: 'nowrap',
-    }}
-  >
-    {children}
-  </th>
-)
+const Th = ({ children, num: isNum }) => <th className={isNum ? 'num' : undefined}>{children}</th>
 
-const Td = ({ children, num: isNum }) => (
-  <td
-    style={{
-      textAlign: isNum ? 'right' : 'left',
-      padding: '9px 14px',
-      borderBottom: '1px solid var(--hairline)',
-      fontVariantNumeric: isNum ? 'tabular-nums' : 'normal',
-    }}
-  >
-    {children}
-  </td>
-)
+const Td = ({ children, num: isNum }) => <td className={isNum ? 'num' : undefined}>{children}</td>

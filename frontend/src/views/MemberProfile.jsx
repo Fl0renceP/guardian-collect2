@@ -184,7 +184,7 @@ export default function MemberProfile() {
         </p>
       </div>
 
-      <section className="card" style={{ padding: 18, marginBottom: 16 }}>
+      <section className="card panel" style={{ marginBottom: 16 }}>
         <h2>Home location</h2>
         <p className="muted" style={{ margin: '4px 0 14px' }}>
           Click the map to place your home, or move the pin. We store the point you place — not a
@@ -232,11 +232,10 @@ export default function MemberProfile() {
 
         <div
           ref={containerRef}
+          className="map-canvas map-sm"
           style={{
-            height: 380,
             borderRadius: 'var(--radius-sm)',
             border: '1px solid var(--border)',
-            background: 'var(--page)',
             cursor: 'crosshair',
           }}
         />
