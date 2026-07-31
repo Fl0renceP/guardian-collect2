@@ -7,6 +7,7 @@ from pathlib import Path
 import psycopg2
 
 from flask import Flask, jsonify, request, send_from_directory, abort
+from flask_cors import CORS
 
 from config import Config
 
@@ -132,6 +133,23 @@ def create_app(config_object=Config):
     )
 
     app.config.from_object(config_object)
+
+    # Enable CORS for all routes (allows Vercel deployment to communicate with Railway API)
+    allowed_origins = [
+        "https://guardian-collect2.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
+    # Optionally pull additional origins from environment variable if present
+    custom_origin = os.environ.get("ALLOWED_ORIGIN")
+    if custom_origin:
+        allowed_origins.append(custom_origin)
+
+    CORS(
+        app,
+        resources={r"/*": {"origins": allowed_origins}},
+        supports_credentials=True,
+    )
 
     # Register all routes
     app.register_blueprint(health_bp)
