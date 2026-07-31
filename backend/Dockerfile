@@ -27,4 +27,4 @@ COPY . .
 EXPOSE 8080
 
 # Start Gunicorn with timeout for DeepFace model loading
-CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --timeout 120"]
+CMD ["sh", "-c", "python -m gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --timeout 120"]
