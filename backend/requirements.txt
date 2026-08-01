@@ -63,9 +63,9 @@ setuptools==83.0.0
 six==1.17.0
 soupsieve==2.9.1
 sympy==1.14.0
-tensorflow==2.21.0
+tensorflow==2.19.0
 termcolor==3.3.0
-tf_keras==2.21.0
+tf_keras==2.19.0
 tqdm==4.69.1
 typing_extensions==4.16.0
 tzdata==2026.3
