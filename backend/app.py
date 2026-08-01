@@ -215,6 +215,12 @@ def create_app(config_object=Config):
             return jsonify({"error": "No selected file"}), 400
 
         image_bytes = file.read()
+        logger.info(
+            "scan-face request received: filename=%s bytes=%s remote=%s",
+            file.filename,
+            len(image_bytes),
+            request.remote_addr,
+        )
         conn = get_db_connection()
         try:
             from services.recognition import process_incoming_face_image
@@ -230,6 +236,13 @@ def create_app(config_object=Config):
                 return jsonify(result[0]), result[1]
 
             result = _attach_face_alert(result)
+            logger.info(
+                "scan-face result: success=%s known=%s status=%s distance=%s",
+                result.get("success"),
+                result.get("is_known_user"),
+                result.get("status"),
+                result.get("match_distance"),
+            )
             return jsonify(result), 200
         except Exception as e:
             logger.error(f"Error processing facial scan: {e}")
