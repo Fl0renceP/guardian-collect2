@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Oxanium:wght@600;700&family=Sora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
 /* Guardian Collective design tokens, matched to the product mockups.
 
    The identity is a teal -> blue -> violet -> magenta spectrum. Blue carries
@@ -65,6 +67,9 @@
   --good-wash: rgba(12, 163, 12, 0.1);
   --warning-wash: rgba(250, 178, 25, 0.14);
   --critical-wash: rgba(208, 59, 59, 0.1);
+  --grid-line-a: rgba(50, 127, 225, 0.16);
+  --grid-line-b: rgba(232, 54, 143, 0.12);
+  --minor-accent: color-mix(in srgb, var(--rule) 34%, var(--ink-muted));
 
   --radius: 12px;
   --radius-sm: 8px;
@@ -94,6 +99,9 @@
     --good-wash: rgba(12, 163, 12, 0.18);
     --warning-wash: rgba(250, 178, 25, 0.18);
     --critical-wash: rgba(208, 59, 59, 0.2);
+    --grid-line-a: rgba(90, 156, 255, 0.22);
+    --grid-line-b: rgba(243, 106, 177, 0.18);
+    --minor-accent: color-mix(in srgb, var(--rule) 42%, var(--ink-muted));
     --shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
   }
 }
@@ -120,7 +128,16 @@
   --good-wash: rgba(12, 163, 12, 0.18);
   --warning-wash: rgba(250, 178, 25, 0.18);
   --critical-wash: rgba(208, 59, 59, 0.2);
+  --grid-line-a: rgba(90, 156, 255, 0.22);
+  --grid-line-b: rgba(243, 106, 177, 0.18);
+  --minor-accent: color-mix(in srgb, var(--rule) 42%, var(--ink-muted));
   --shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme='dark'] .wrap::after,
+:root:where(:not([data-theme='light'])) .wrap::after {
+  opacity: 0.78;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.94), rgba(0, 0, 0, 0.26));
 }
 
 * {
@@ -129,9 +146,12 @@
 
 body {
   margin: 0;
-  background: var(--page);
+  background:
+    radial-gradient(circle at 12% -8%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 38%),
+    radial-gradient(circle at 84% -14%, color-mix(in srgb, var(--rule) 12%, transparent), transparent 42%),
+    var(--page);
   color: var(--ink);
-  font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font: 15px/1.5 'Source Sans 3', 'Segoe UI', sans-serif;
 }
 
 h1,
@@ -141,11 +161,15 @@ h3 {
   letter-spacing: -0.01em;
 }
 h1 {
-  font-size: 22px;
-  font-weight: 650;
+  font-family: 'Sora', 'Source Sans 3', 'Segoe UI', sans-serif;
+  font-size: clamp(30px, 3.8vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  line-height: 1.05;
 }
 h2 {
-  font-size: 17px;
+  font-family: 'Sora', 'Source Sans 3', 'Segoe UI', sans-serif;
+  font-size: 18px;
   font-weight: 650;
 }
 
@@ -155,32 +179,106 @@ a {
 
 /* ---------- layout ---------- */
 .wrap {
+  position: relative;
+  isolation: isolate;
   max-width: 1240px;
   margin: 0 auto;
   padding: 20px 20px 56px;
 }
 
+.wrap::before {
+  content: '';
+  position: absolute;
+  inset: 0 12px 0;
+  border-radius: 26px;
+  z-index: -1;
+  opacity: 0.7;
+  background:
+    radial-gradient(circle at 22% 30%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 44%),
+    radial-gradient(circle at 78% 22%, color-mix(in srgb, var(--rule) 20%, transparent), transparent 43%),
+    linear-gradient(116deg, color-mix(in srgb, var(--surface-1) 86%, var(--page)), var(--surface-1));
+}
+
+.wrap::after {
+  content: '';
+  position: absolute;
+  inset: 6px 12px 6px;
+  border-radius: 24px;
+  z-index: -1;
+  opacity: 0.72;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      var(--grid-line-a) 0 1px,
+      rgba(255, 255, 255, 0) 1px 24px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      var(--grid-line-b) 0 1px,
+      rgba(255, 255, 255, 0) 1px 24px
+    );
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.96), rgba(0, 0, 0, 0.18));
+  animation: shell-grid-drift 7.8s linear infinite, shell-grid-breathe 5.6s ease-in-out infinite;
+}
+
+.wrap > h1:first-child {
+  display: inline-block;
+  margin-bottom: 6px;
+}
+
+.wrap > h1:first-child::after {
+  content: '';
+  display: block;
+  width: min(220px, 80%);
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: var(--brand-gradient);
+}
+
+.wrap > h1 + .muted {
+  margin-top: 2px;
+  font-size: 16px;
+  max-width: 900px;
+}
+
 .card {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 94%, var(--page)), var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 16px;
+  box-shadow: 0 10px 24px rgba(18, 24, 37, 0.06);
+  backdrop-filter: saturate(1.03);
+}
+
+.wrap > * + .card,
+.wrap > .card + * {
+  margin-top: 0;
+}
+
+.card > h2:first-child {
+  margin-bottom: 2px;
+}
+
+.card table caption {
+  font-size: 13px;
 }
 
 .muted {
   color: var(--ink-2);
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .tiny {
-  color: var(--ink-muted);
+  color: var(--minor-accent);
   font-size: 12px;
 }
 
 /* ---------- app bar ---------- */
 .appbar {
-  background: var(--surface-1);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 92%, var(--page)), var(--surface-1));
   /* The magenta rule from the mockups. Decorative only — it carries no meaning,
      so its 3.92:1 against white is fine (nothing reads text off it). */
   border-bottom: 2px solid var(--rule);
+  box-shadow: 0 8px 20px rgba(23, 30, 46, 0.05);
 }
 .appbar-inner {
   max-width: 1240px;
@@ -241,14 +339,26 @@ a {
   font-weight: 750;
   letter-spacing: 0.055em;
   text-transform: uppercase;
-  color: var(--ink);
+  color: inherit;
+  display: inline-flex;
   line-height: 1;
   white-space: nowrap;
 }
 .brand-bar {
-  height: 3px;
-  border-radius: 2px;
-  background: var(--brand-gradient);
+  height: 4px;
+  border-radius: 999px;
+  background-image: linear-gradient(
+    90deg,
+    var(--brand-1) 0%,
+    var(--brand-2) 24%,
+    var(--brand-3) 49%,
+    var(--brand-2) 76%,
+    var(--brand-1) 100%
+  );
+  background-size: 180% 100%;
+  background-position: 0% 50%;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--brand-2) 28%, transparent);
+  animation: brand-bar-shift 5s ease-in-out infinite alternate;
 }
 @media (forced-colors: active), print {
   .brand-badge,
@@ -268,15 +378,28 @@ a {
   border-radius: 999px;
   font-size: 13.5px;
   white-space: nowrap;
+  position: relative;
 }
 .nav a:hover {
   color: var(--ink);
   background: var(--page);
 }
 .nav a.active {
-  background: var(--accent);
+  background: linear-gradient(112deg, var(--accent), color-mix(in srgb, var(--accent) 62%, var(--rule)));
   color: var(--accent-ink);
   font-weight: 550;
+  box-shadow: 0 8px 14px color-mix(in srgb, var(--accent) 36%, transparent);
+}
+
+.nav a.active::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, #ffffff 30%);
+  opacity: 0.55;
+  pointer-events: none;
+  animation: nav-tab-pulse 1.9s ease-in-out infinite;
 }
 .nav a .badge {
   margin-left: 6px;
@@ -306,6 +429,16 @@ a {
   background: var(--page);
   border-style: solid;
 }
+.demo-nav .lab-link {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--rule) 42%, var(--hairline));
+  font-weight: 650;
+}
+.demo-nav .lab-link.active {
+  color: var(--accent-ink);
+  background: linear-gradient(110deg, var(--rule), color-mix(in srgb, var(--rule) 60%, var(--accent)));
+  border-color: transparent;
+}
 .spacer {
   margin-left: auto;
 }
@@ -317,19 +450,22 @@ a {
   padding: 7px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--surface-1);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 88%, var(--page)), var(--surface-1));
   color: var(--ink-2);
   cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
 }
 .btn:hover:not(:disabled) {
   color: var(--ink);
+  transform: translateY(-1px);
+  box-shadow: 0 7px 14px rgba(22, 32, 54, 0.08);
 }
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 .btn-primary {
-  background: var(--accent);
+  background: linear-gradient(114deg, var(--accent), color-mix(in srgb, var(--accent) 60%, var(--rule)));
   border-color: var(--accent);
   color: var(--accent-ink);
   font-weight: 550;
@@ -401,7 +537,7 @@ textarea {
 }
 .field .hint {
   font-size: 12px;
-  color: var(--ink-muted);
+  color: var(--minor-accent);
 }
 .field .err {
   font-size: 12.5px;
@@ -568,5 +704,181 @@ textarea {
   .grid-2,
   .grid-3 {
     grid-template-columns: 1fr;
+  }
+
+  .wrap::before {
+    inset: 0 8px auto;
+    height: 180px;
+  }
+
+  .wrap::after {
+    inset: 6px 8px auto;
+    height: 186px;
+    background-size: auto;
+  }
+
+  .wrap > h1 + .muted {
+    font-size: 14px;
+  }
+}
+
+/* ---------- loading graphic ---------- */
+.loading-graphic {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 88%, var(--page)), var(--surface-1));
+  color: var(--ink-2);
+}
+
+.loading-graphic.compact {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.loading-graphic-mark {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+}
+
+.loading-ring {
+  position: absolute;
+  border-radius: 50%;
+  border-style: solid;
+  border-color: transparent;
+}
+
+.loading-ring-a {
+  width: 30px;
+  height: 30px;
+  border-width: 2px;
+  border-top-color: #327fe1;
+  border-right-color: #327fe1;
+  animation: loading-spin 1.05s linear infinite;
+}
+
+.loading-ring-b {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+  border-bottom-color: #e8368f;
+  border-left-color: #e8368f;
+  animation: loading-spin-reverse 0.9s linear infinite;
+}
+
+.loading-core {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #327fe1, #e8368f);
+  animation: loading-pulse 1.4s ease-in-out infinite;
+}
+
+.loading-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  font-family: 'Space Grotesk', 'Source Sans 3', sans-serif;
+}
+
+.safety-miles-brand {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 104px;
+  margin-bottom: 6px;
+}
+
+.safety-miles-logo {
+  display: block;
+  width: auto;
+  height: 92px;
+  max-width: 520px;
+  object-fit: contain;
+}
+
+.safety-miles-fallback {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+@keyframes shell-grid-drift {
+  0% {
+    background-position: 0 0, 0 0;
+  }
+  100% {
+    background-position: 24px 0, 0 24px;
+  }
+}
+
+@keyframes shell-grid-breathe {
+  0%,
+  100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.98;
+  }
+}
+
+@keyframes nav-tab-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.055);
+    opacity: 0.9;
+  }
+}
+
+
+@keyframes brand-bar-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 180% 50%;
+  }
+}
+
+@keyframes loading-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loading-spin-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes loading-pulse {
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
   }
 }

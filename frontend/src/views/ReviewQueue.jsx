@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, formatDate, formatDateTime, money, num } from '../api'
+import LoadingGraphic from '../components/LoadingGraphic'
 import { useSession } from '../session'
 import StatusPill from '../components/StatusPill'
 import { MediaStrip } from './MyClaims'
@@ -104,7 +105,7 @@ export default function ReviewQueue() {
     }
   }
 
-  if (!employee) return <p className="muted">Loading…</p>
+  if (!employee) return <LoadingGraphic label="Loading assessor profile…" />
 
   return (
     <>
@@ -144,7 +145,7 @@ export default function ReviewQueue() {
         </div>
       ) : null}
 
-      {loading && !claims.length ? <p className="muted">Loading…</p> : null}
+      {loading && !claims.length ? <LoadingGraphic label="Loading review queue…" /> : null}
 
       {!loading && !claims.length ? (
         <div className="card" style={{ padding: 28, textAlign: 'center' }}>

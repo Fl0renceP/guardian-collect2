@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, formatDateTime, num } from '../api'
+import LoadingGraphic from '../components/LoadingGraphic'
 import { useSession } from '../session'
 
 /* Crime Prevention Unit alert feed.
@@ -76,7 +77,7 @@ export default function AlertsFeed() {
     return () => clearInterval(timer)
   }, [load])
 
-  if (isMember ? !member : !unit) return <p className="muted">Loading…</p>
+  if (isMember ? !member : !unit) return <LoadingGraphic label="Loading audience…" />
 
   const all = data?.alerts || []
   const shown = severities.length ? all.filter((a) => severities.includes(a.severity)) : all
@@ -199,7 +200,7 @@ export default function AlertsFeed() {
         </div>
       ) : null}
 
-      {loading && !data ? <p className="muted">Loading alerts…</p> : null}
+      {loading && !data ? <LoadingGraphic label="Loading alerts…" /> : null}
 
       {data && !sorted.length ? (
         <div className="card" style={{ padding: 28, textAlign: 'center' }}>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { ROLES, useSession } from '../session'
 import { api } from '../api'
+import GradientText from './GradientText'
 
 const NAV_BY_ROLE = {
   member: [
@@ -104,7 +105,16 @@ export default function Layout() {
               GC
             </span>
             <span className="brand-text">
-              <span className="brand-word">Guardian Collective</span>
+              <GradientText
+                className="brand-word"
+                colors={['#0fafb0', '#3286dd', '#6a57e1', '#3286dd', '#0fafb0']}
+                animationSpeed={5}
+                pauseOnHover={false}
+                yoyo={true}
+                showBorder={false}
+              >
+                Guardian Collective
+              </GradientText>
               <span className="brand-bar" aria-hidden="true" />
             </span>
           </NavLink>

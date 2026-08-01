@@ -38,6 +38,193 @@ _cache_lock = threading.Lock()
 _container_lock = threading.Lock()
 
 
+def _fallback_users():
+    """Minimal local directory used when Cosmos is unavailable in dev.
+
+    IDs intentionally match the legacy seeded identities so existing claims and
+    reviewer references still resolve.
+    """
+    return [
+        {
+            "id": "MBR-1001",
+            "user_id": "MBR-1001",
+            "role": "member",
+            "full_name": "Thandiwe Nkosi",
+            "email": "thandiwe.nkosi@example.co.za",
+            "phone": "+27 82 555 0142",
+            "status": "active",
+            "member_profile": {
+                "policy_number": "DI-4471-2291",
+                "home_suburb": "BRYANSTON",
+                "home_address": "14 Coleraine Drive, Bryanston",
+                "home_lat": -26.0600,
+                "home_lng": 28.0200,
+                "share_location": True,
+                "alert_radius_km": 10,
+                "location_updated_at": None,
+                "activity": {
+                    "app_opens": 26,
+                    "hotspot_views": 21,
+                    "alerts_acknowledged": 11,
+                    "routes_planned": 16,
+                    "safer_routes_taken": 6,
+                    "camera_linked": True,
+                },
+            },
+        },
+        {
+            "id": "MBR-1002",
+            "user_id": "MBR-1002",
+            "role": "member",
+            "full_name": "Riaan van der Merwe",
+            "email": "riaan.vdm@example.co.za",
+            "phone": "+27 83 555 0198",
+            "status": "active",
+            "member_profile": {
+                "policy_number": "DI-4471-8830",
+                "home_suburb": "DURBANVILLE",
+                "home_address": "8 Wellington Road, Durbanville",
+                "home_lat": -33.8300,
+                "home_lng": 18.6500,
+                "share_location": True,
+                "alert_radius_km": 10,
+                "location_updated_at": None,
+                "activity": {
+                    "app_opens": 18,
+                    "hotspot_views": 12,
+                    "alerts_acknowledged": 6,
+                    "routes_planned": 9,
+                    "safer_routes_taken": 3,
+                    "camera_linked": True,
+                },
+            },
+        },
+        {
+            "id": "MBR-1003",
+            "user_id": "MBR-1003",
+            "role": "member",
+            "full_name": "Ayanda Dlamini",
+            "email": "ayanda.dlamini@example.co.za",
+            "phone": "+27 71 555 0077",
+            "status": "active",
+            "member_profile": {
+                "policy_number": "DI-4471-1046",
+                "home_suburb": "MORNINGSIDE",
+                "home_address": None,
+                "home_lat": None,
+                "home_lng": None,
+                "share_location": False,
+                "alert_radius_km": 10,
+                "location_updated_at": None,
+                "activity": {
+                    "app_opens": 9,
+                    "hotspot_views": 5,
+                    "alerts_acknowledged": 2,
+                    "routes_planned": 4,
+                    "safer_routes_taken": 1,
+                    "camera_linked": False,
+                },
+            },
+        },
+        {
+            "id": "EMP-201",
+            "user_id": "EMP-201",
+            "role": "employee",
+            "full_name": "Sipho Maseko",
+            "email": "sipho.maseko@discovery.co.za",
+            "phone": None,
+            "status": "active",
+            "employee_profile": {
+                "employee_number": "EMP-201",
+                "job_title": "Claims Assessor",
+                "permissions": ["claims.review"],
+            },
+        },
+        {
+            "id": "EMP-202",
+            "user_id": "EMP-202",
+            "role": "employee",
+            "full_name": "Lerato Mahlangu",
+            "email": "lerato.mahlangu@discovery.co.za",
+            "phone": None,
+            "status": "active",
+            "employee_profile": {
+                "employee_number": "EMP-202",
+                "job_title": "Senior Claims Assessor",
+                "permissions": ["claims.review", "claims.escalate"],
+            },
+        },
+        {
+            "id": "CPU-301",
+            "user_id": "CPU-301",
+            "role": "cpu",
+            "full_name": "Sandton Armed Response",
+            "email": "ops@sandtonarmed.co.za",
+            "phone": "+27 11 555 0300",
+            "status": "active",
+            "unit_profile": {
+                "kind": "Armed response",
+                "base_suburb": "SANDTON",
+                "base_lat": -26.1076,
+                "base_lng": 28.0567,
+                "vehicles": 4,
+                "radius_km": 25,
+            },
+        },
+        {
+            "id": "CPU-302",
+            "user_id": "CPU-302",
+            "role": "cpu",
+            "full_name": "Cape Town Metro Response",
+            "email": "control@ctmetro.co.za",
+            "phone": "+27 21 555 0311",
+            "status": "active",
+            "unit_profile": {
+                "kind": "Armed response",
+                "base_suburb": "CAPE TOWN CITY CENTRE",
+                "base_lat": -33.9249,
+                "base_lng": 18.4241,
+                "vehicles": 3,
+                "radius_km": 30,
+            },
+        },
+        {
+            "id": "CPU-303",
+            "user_id": "CPU-303",
+            "role": "cpu",
+            "full_name": "SAPS Pretoria Central",
+            "email": "pretoria.central@saps.gov.za",
+            "phone": "+27 12 555 0322",
+            "status": "active",
+            "unit_profile": {
+                "kind": "SAPS",
+                "base_suburb": "PRETORIA CENTRAL",
+                "base_lat": -25.7479,
+                "base_lng": 28.2293,
+                "vehicles": 5,
+                "radius_km": 30,
+            },
+        },
+        {
+            "id": "CPU-304",
+            "user_id": "CPU-304",
+            "role": "cpu",
+            "full_name": "Durban Coastal Response",
+            "email": "ops@durbancoastal.co.za",
+            "phone": "+27 31 555 0333",
+            "status": "active",
+            "unit_profile": {
+                "kind": "Armed response",
+                "base_suburb": "DURBAN CENTRAL",
+                "base_lat": -29.8587,
+                "base_lng": 31.0218,
+                "vehicles": 3,
+                "radius_km": 25,
+            },
+        },
+    ]
+
+
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -78,7 +265,15 @@ def _load(force=False):
         return _cache
 
     # Resolve the container before taking the cache lock — it takes its own.
-    container = _users_container()
+    try:
+        container = _users_container()
+    except CosmosUnavailable as exc:
+        logger.warning("Users storage unavailable (%s). Using local fallback directory.", exc)
+        with _cache_lock:
+            if _cache is None or force:
+                _cache = _fallback_users()
+                _cache_at = time.monotonic()
+            return _cache
 
     with _cache_lock:
         if not force and _cache is not None and (
@@ -96,7 +291,10 @@ def _load(force=False):
             if _cache is not None:
                 logger.exception("Users refresh failed — serving the previous snapshot.")
                 return _cache
-            raise CosmosUnavailable(f"could not read users: {exc}") from exc
+            logger.exception("Users read failed — using local fallback directory.")
+            _cache = _fallback_users()
+            _cache_at = time.monotonic()
+            return _cache
 
         _cache = users
         _cache_at = time.monotonic()

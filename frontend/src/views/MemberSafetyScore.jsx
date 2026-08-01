@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, num } from '../api'
+import LoadingGraphic from '../components/LoadingGraphic'
 import { useSession } from '../session'
 
 /* Guardian Safety Score — the member's reward dashboard.
@@ -27,12 +28,15 @@ const TIER_PILL = {
   Platinum: 'pill-approved',
 }
 
+const MILES_LOGO_SRC = '/discovery-miles-logo.png?v=4'
+
 export default function MemberSafetyScore() {
   const { member } = useSession()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [open, setOpen] = useState(null)
+  const [showMilesLogo, setShowMilesLogo] = useState(true)
 
   const load = useCallback(() => {
     if (!member) return
@@ -49,8 +53,8 @@ export default function MemberSafetyScore() {
 
   useEffect(load, [load])
 
-  if (!member) return <p className="muted">Loading…</p>
-  if (loading && !data) return <p className="muted">Working out your score…</p>
+  if (!member) return <LoadingGraphic label="Loading profile…" />
+  if (loading && !data) return <LoadingGraphic label="Working out your score…" />
   if (error)
     return (
       <div className="banner banner-bad" role="alert">
@@ -89,7 +93,19 @@ export default function MemberSafetyScore() {
             </span>
           </div>
 
-          <div style={{ textAlign: 'right', minWidth: 170 }}>
+          <div className="safety-miles" style={{ textAlign: 'right', minWidth: 170 }}>
+            <div className="safety-miles-brand">
+              {showMilesLogo ? (
+                <img
+                  src={MILES_LOGO_SRC}
+                  alt="Discovery Miles"
+                  className="safety-miles-logo"
+                  onError={() => setShowMilesLogo(false)}
+                />
+              ) : (
+                <span className="safety-miles-fallback">Discovery Miles</span>
+              )}
+            </div>
             <div
               style={{
                 fontSize: 36,

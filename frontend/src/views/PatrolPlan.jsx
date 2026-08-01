@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import { api, num } from '../api'
+import LoadingGraphic from '../components/LoadingGraphic'
 import { useSession } from '../session'
 
 /* Patrol planning for a Crime Prevention Unit.
@@ -175,7 +176,7 @@ export default function PatrolPlan() {
     }
   }, [plan, theme])
 
-  if (!unit) return <p className="muted">Loading unit…</p>
+  if (!unit) return <LoadingGraphic label="Loading unit…" />
 
   const coverage = plan?.coverage
   const palette = VEHICLE_COLORS[theme]
