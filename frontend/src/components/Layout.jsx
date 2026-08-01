@@ -26,9 +26,17 @@ const NAV_BY_ROLE = {
   ],
 }
 
+const RAW_DEMO_BASE =
+  (import.meta.env.VITE_DEMO_BASE_URL || import.meta.env.VITE_API_BASE_URL || '').trim()
+const DEMO_BASE = RAW_DEMO_BASE
+  ? RAW_DEMO_BASE.replace(/\/+$/, '').replace(/\/api$/, '')
+  : ''
+
+const demoHref = (path) => (DEMO_BASE ? `${DEMO_BASE}${path}` : path)
+
 const DEMO_LINKS = [
-  { href: '/test-scan', label: 'Face demo' },
-  { href: '/test-azure-plate', label: 'Image to Text demo' },
+  { href: demoHref('/test-scan'), label: 'Face demo' },
+  { href: demoHref('/test-azure-plate'), label: 'Image to Text demo' },
 ]
 
 function currentTheme() {
