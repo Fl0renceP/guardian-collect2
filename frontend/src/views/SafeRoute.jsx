@@ -7,13 +7,16 @@ import { useSession } from '../session'
 
    Colour reasoning: the risk cells keep the sequential magenta->violet ramp used
    by the hot-spot map, because they encode the same thing (magnitude) and should
-   read the same way. The routes therefore must not share that hue family —
-   a magenta line over magenta cells would be unreadable, which is why the
-   recommended route stays orange even though magenta is now the brand accent.
-   Beyond that the routes use **emphasis**: the recommended one is drawn thick
-   and saturated, the alternative thin and grey. That matches what the screen is
-   actually saying (one of these is advised) and keeps identity off colour alone,
-   since both are labelled in the legend and the comparison table. */
+   read the same way. The routes therefore must not share that hue family — a
+   magenta line over magenta cells would be unreadable.
+
+   The two routes are identified by hue: red is the plain fastest road route,
+   the one any standard navigation app would send you along, and green is ours.
+   Red and green are of course the one pair a colourblind reader can't separate,
+   so hue is never the only signal — **emphasis** carries the recommendation
+   independently. The advised route is drawn thick and solid, the other thin and
+   dashed, and both are named in the legend and the comparison table. Turn the
+   colour off entirely and the screen still reads. */
 
 const MODES = [
   { id: 'auto', label: 'Driving' },
@@ -27,6 +30,13 @@ const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 // on first load rather than an empty map.
 const DEFAULT_ORIGIN = { lat: -25.7479, lng: 28.2293, label: 'Pretoria' }
 const DEFAULT_DEST = { lat: -26.2041, lng: 28.0473, label: 'Johannesburg CBD' }
+
+/* Red = the standard fastest route, green = ours. Stepped separately for the
+   dark basemap, where the light-surface pair goes muddy. */
+const ROUTE_COLORS = {
+  light: { fastest: '#d92b2b', safer: '#0f8f4a' },
+  dark: { fastest: '#f2635f', safer: '#35b877' },
+}
 
 const RISK_STEPS = [
   { min: 0.85, color: '#a3126b' },
@@ -210,8 +220,7 @@ export default function SafeRoute() {
     layer.clearLayers()
     pins.clearLayers()
 
-    const accent = theme === 'dark' ? '#d95926' : '#eb6834'
-    const muted = theme === 'dark' ? '#898781' : '#898781'
+    const palette = ROUTE_COLORS[theme]
 
     const drawn = []
     if (result?.fastest) drawn.push({ ...result.fastest, key: 'fastest' })
@@ -224,26 +233,30 @@ export default function SafeRoute() {
       .forEach((route) => {
         const recommended = route.key === result?.recommendation
         L.polyline(route.coordinates, {
-          color: recommended ? accent : muted,
+          color: palette[route.key],
           weight: recommended ? 6 : 3.5,
-          opacity: recommended ? 0.95 : 0.75,
+          opacity: recommended ? 0.95 : 0.8,
           dashArray: recommended ? null : '6 6',
         }).addTo(layer)
       })
 
-    const pin = (point, label, color) =>
+    // Start and destination are told apart by fill, not hue — the routes own
+    // red and green now, and a green start pin on a green line disappears.
+    const ink = theme === 'dark' ? '#ffffff' : '#14161c'
+    const face = theme === 'dark' ? '#101021' : '#ffffff'
+    const pin = (point, label, solid) =>
       L.circleMarker([point.lat, point.lng], {
         radius: 7,
-        color: '#fff',
-        weight: 2,
-        fillColor: color,
+        color: solid ? face : ink,
+        weight: solid ? 2 : 3,
+        fillColor: solid ? ink : face,
         fillOpacity: 1,
       })
         .bindTooltip(label, { direction: 'top' })
         .addTo(pins)
 
-    pin(origin, 'Start', '#0ca30c')
-    pin(destination, 'Destination', '#d03b3b')
+    pin(origin, 'Start', true)
+    pin(destination, 'Destination', false)
 
     if (drawn.length) {
       const bounds = L.latLngBounds(drawn.flatMap((r) => r.coordinates))
@@ -263,8 +276,8 @@ export default function SafeRoute() {
     <>
       <h1>Plan a safer route</h1>
       <p className="muted" style={{ margin: '2px 0 16px' }}>
-        Compares the fastest way there against one that avoids areas with more
-        travel-related claims at your time of travel.
+        Puts the fastest route — the one a standard navigation app sends you along — next to one
+        that avoids areas with more travel-related claims at your time of travel.
       </p>
 
       <div className="card filters">
@@ -383,8 +396,22 @@ export default function SafeRoute() {
           }}
         />
         <div className="map-footer">
-          <LegendLine color={theme === 'dark' ? '#d95926' : '#eb6834'} weight={6} label="Recommended" />
-          <LegendLine color="#898781" weight={3} dashed label="Alternative" />
+          {/* The legend mirrors the map exactly, dashes included, so "which one
+              is advised" is readable from the lines themselves. */}
+          <LegendLine
+            color={ROUTE_COLORS[theme].fastest}
+            weight={rec === 'fastest' ? 6 : 3}
+            dashed={rec !== 'fastest'}
+            label="Fastest route"
+          />
+          {result?.safer ? (
+            <LegendLine
+              color={ROUTE_COLORS[theme].safer}
+              weight={rec === 'safer' ? 6 : 3}
+              dashed={rec !== 'safer'}
+              label="Safest route"
+            />
+          ) : null}
           <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
             <span style={{ display: 'flex', gap: 2 }}>
               {RISK_STEPS.slice().reverse().map((s) => (
@@ -403,8 +430,10 @@ export default function SafeRoute() {
       {result ? (
         <div className="card">
           <p className="muted table-note" id="route-table-note">
-            Exposure is the average travel-claim density along the route at this time, on a 0–1
-            scale. It compares routes — it is not a probability of anything happening.
+            The fastest route is the plain shortest-time road route, the same one a standard
+            navigation app would give you. Exposure is the average travel-claim density along the
+            route at this time, on a 0–1 scale — it compares routes, it is not a probability of
+            anything happening.
           </p>
           <div className="table-wrap">
             <table className="data-table" aria-describedby="route-table-note">
@@ -420,17 +449,19 @@ export default function SafeRoute() {
               </thead>
               <tbody>
                 <RouteRow
-                  label="Fastest"
+                  label="Fastest route"
+                  note="standard navigation"
                   route={result.fastest}
                   recommended={rec === 'fastest'}
-                  accent={theme === 'dark' ? '#d95926' : '#eb6834'}
+                  color={ROUTE_COLORS[theme].fastest}
                 />
                 {result.safer ? (
                   <RouteRow
-                    label={`Avoiding ${result.safer.avoided_cells} area${result.safer.avoided_cells === 1 ? '' : 's'}`}
+                    label="Safest route"
+                    note={`avoids ${result.safer.avoided_cells} area${result.safer.avoided_cells === 1 ? '' : 's'}`}
                     route={result.safer}
                     recommended={rec === 'safer'}
-                    accent={theme === 'dark' ? '#d95926' : '#eb6834'}
+                    color={ROUTE_COLORS[theme].safer}
                   />
                 ) : null}
               </tbody>
@@ -450,7 +481,7 @@ export default function SafeRoute() {
   )
 }
 
-function RouteRow({ label, route, recommended, accent }) {
+function RouteRow({ label, note, route, recommended, color }) {
   return (
     <tr style={{ background: recommended ? 'var(--page)' : 'transparent' }}>
       <Td>
@@ -460,11 +491,12 @@ function RouteRow({ label, route, recommended, accent }) {
               width: 14,
               height: recommended ? 4 : 2,
               borderRadius: 2,
-              background: recommended ? accent : '#898781',
+              background: color,
+              flex: 'none',
             }}
           />
           <span style={{ fontWeight: recommended ? 650 : 400 }}>{label}</span>
-          {recommended ? <span className="tiny">recommended</span> : null}
+          <span className="tiny">{recommended ? 'recommended' : note}</span>
         </span>
       </Td>
       <Td num>{route.distance_km} km</Td>
