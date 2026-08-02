@@ -6,67 +6,47 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const SCAN_INTERVAL_MS = 1500
 const HISTORY_LIMIT = 30
 const MODEL_LABEL = 'Facenet512 / Cosine'
+const MEDIAPIPE_WASM_ROOT =
+  import.meta.env.VITE_MEDIAPIPE_WASM_ROOT || 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+const MEDIAPIPE_MODEL_PATH =
+  import.meta.env.VITE_MEDIAPIPE_MODEL_PATH ||
+  'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite'
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
-
-const toTitle = (value) =>
-  (value || '')
-    .toLowerCase()
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (ch) => ch.toUpperCase())
-
-const toConfidencePct = (distance) => {
-  if (typeof distance !== 'number') return null
-  return clamp((1 - distance) * 100, 0, 100)
-}
-
-const parsePoseFromUrl = (url) => {
-  if (!url) return 'Unknown Pose'
-  const name = url.split('/').pop() || ''
-  const stripped = name.replace(/\.[a-zA-Z0-9]+$/, '')
-  const parts = stripped.split('_').filter(Boolean)
-  if (parts.length < 2) return 'Unknown Pose'
-  return toTitle(parts.slice(1).join(' '))
-}
 
 const formatTimestamp = (iso) => {
   if (!iso) return '-'
   const d = new Date(iso)
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mi = String(d.getMinutes()).padStart(2, '0')
-  const ss = String(d.getSeconds()).padStart(2, '0')
-  const ms = String(d.getMilliseconds()).padStart(3, '0')
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}.${ms}`
+  return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString()
 }
 
-const toneFromMatch = ({ hasFace, isAnalyzing, matchResult }) => {
-  if (!hasFace) return 'idle'
-  if (isAnalyzing) return 'scanning'
-  if (matchResult?.isKnownUser && matchResult?.isAlert) return 'flagged'
-  if (matchResult?.isKnownUser && matchResult?.status === 'verified') return 'verified'
-  if (matchResult?.isKnownUser) return 'monitored'
-  if (matchResult?.success && matchResult?.isKnownUser === false) return 'unregistered'
-  return 'scanning'
+const toneClassFromResult = ({ hasFace, isAnalyzing, matchResult }) => {
+  if (!hasFace) return 'unknown'
+  if (isAnalyzing) return 'unknown'
+  if (matchResult?.isAlert) return 'alert'
+  if (matchResult?.isKnownUser) return 'ok'
+  return 'unknown'
 }
 
-const toneStyle = (tone) => {
-  switch (tone) {
-    case 'verified':
-      return { color: '#22c55e', dashed: false, label: 'VERIFIED MEMBER' }
-    case 'flagged':
-      return { color: '#ef4444', dashed: false, label: 'FLAGGED' }
-    case 'monitored':
-      return { color: '#f97316', dashed: false, label: 'MONITORED' }
-    case 'unregistered':
-      return { color: '#f59e0b', dashed: true, label: 'UNREGISTERED' }
-    case 'idle':
-      return { color: '#64748b', dashed: true, label: 'NO TARGET' }
-    default:
-      return { color: '#22d3ee', dashed: true, label: 'SCANNING' }
-  }
+const toneLabelFromResult = ({ hasFace, isAnalyzing, matchResult }) => {
+  if (!hasFace) return 'NO TARGET'
+  if (isAnalyzing) return 'SCANNING'
+  if (matchResult?.isAlert) return 'FLAGGED'
+  if (matchResult?.isKnownUser) return 'RECOGNISED'
+  return 'UNREGISTERED'
+}
+
+const toConfidencePct = (distance) => {
+  if (typeof distance !== 'number') return 0
+  return clamp(Math.round((1 - distance / 0.6) * 100), 0, 100)
+}
+
+const parsePoseFromUrl = (url) => {
+  if (!url) return '-'
+  const name = url.split('/').pop() || ''
+  const stripped = name.replace(/\.[a-zA-Z0-9]+$/, '')
+  const parts = stripped.split('_').filter(Boolean)
+  return parts.length < 2 ? '-' : parts.slice(1).join(' ')
 }
 
 const captureCrop = (video, bbox) => {
@@ -86,16 +66,36 @@ const captureCrop = (video, bbox) => {
   c.height = 180
   const g = c.getContext('2d')
   g.drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height)
-  return c.toDataURL('image/jpeg', 0.84)
+  return c.toDataURL('image/jpeg', 0.8)
 }
 
-const drawReticle = (ctx, box, color, dashed, scorePct) => {
+const captureFrameBlob = (video, quality = 0.72, maxWidth = 720) => {
+  if (!video || !video.videoWidth || !video.videoHeight) return Promise.resolve(null)
+
+  const ratio = Math.min(1, maxWidth / video.videoWidth)
+  const width = Math.max(1, Math.round(video.videoWidth * ratio))
+  const height = Math.max(1, Math.round(video.videoHeight * ratio))
+
+  const c = document.createElement('canvas')
+  c.width = width
+  c.height = height
+  const g = c.getContext('2d')
+  g.drawImage(video, 0, 0, width, height)
+
+  return new Promise((resolve) => {
+    c.toBlob((blob) => resolve(blob), 'image/jpeg', quality)
+  })
+}
+
+const drawReticle = (ctx, box, toneClass, scorePct) => {
+  const color = toneClass === 'alert' ? '#b3261e' : toneClass === 'ok' ? '#186b3c' : '#7a5c00'
+  const dashed = toneClass === 'unknown'
+
   ctx.save()
   ctx.strokeStyle = color
   ctx.fillStyle = color
   ctx.lineWidth = 2.5
   ctx.setLineDash(dashed ? [7, 5] : [])
-
   ctx.strokeRect(box.x, box.y, box.w, box.h)
 
   const tick = Math.max(10, Math.min(box.w, box.h) * 0.18)
@@ -118,20 +118,9 @@ const drawReticle = (ctx, box, color, dashed, scorePct) => {
     ctx.stroke()
   }
 
-  const cx = box.x + box.w / 2
-  const cy = box.y + box.h / 2
-  ctx.lineWidth = 1.5
   ctx.setLineDash([])
-  ctx.beginPath()
-  ctx.moveTo(cx - 10, cy)
-  ctx.lineTo(cx + 10, cy)
-  ctx.moveTo(cx, cy - 10)
-  ctx.lineTo(cx, cy + 10)
-  ctx.stroke()
-
   ctx.font = '700 12px ui-monospace, SFMono-Regular, Menlo, monospace'
-  const label = `${scorePct}%`
-  ctx.fillText(label, box.x, Math.max(14, box.y - 6))
+  ctx.fillText(`${scorePct}%`, box.x, Math.max(14, box.y - 6))
   ctx.restore()
 }
 
@@ -147,6 +136,7 @@ export default function LiveScanDemo() {
 
   const [modelState, setModelState] = useState('loading')
   const [modelError, setModelError] = useState('')
+  const [backendReady, setBackendReady] = useState(false)
   const [matchResult, setMatchResult] = useState(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [scanError, setScanError] = useState('')
@@ -162,6 +152,26 @@ export default function LiveScanDemo() {
   const [selectedHistoryId, setSelectedHistoryId] = useState(null)
 
   const isModelLoaded = modelState === 'ready'
+
+  useEffect(() => {
+    let active = true
+
+    const pingBackend = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/health`)
+        if (active) setBackendReady(res.ok)
+      } catch {
+        if (active) setBackendReady(false)
+      }
+    }
+
+    pingBackend()
+    const id = setInterval(pingBackend, 10000)
+    return () => {
+      active = false
+      clearInterval(id)
+    }
+  }, [])
 
   useEffect(() => {
     const fetchMemberCount = async () => {
@@ -188,14 +198,11 @@ export default function LiveScanDemo() {
         setModelState('loading')
         setModelError('')
 
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
-        )
+        const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_ROOT)
 
         detectorRef.current = await FaceDetector.createFromOptions(vision, {
           baseOptions: {
-            modelAssetPath:
-              'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite',
+            modelAssetPath: MEDIAPIPE_MODEL_PATH,
           },
           runningMode: 'VIDEO',
           minDetectionConfidence: 0.52,
@@ -215,8 +222,8 @@ export default function LiveScanDemo() {
     }
   }, [])
 
-  const tone = toneFromMatch({ hasFace: hasFaceInFrame, isAnalyzing, matchResult })
-  const toneMeta = toneStyle(tone)
+  const toneClass = toneClassFromResult({ hasFace: hasFaceInFrame, isAnalyzing, matchResult })
+  const toneLabel = toneLabelFromResult({ hasFace: hasFaceInFrame, isAnalyzing, matchResult })
 
   useEffect(() => {
     let frameId
@@ -278,7 +285,7 @@ export default function LiveScanDemo() {
             setHasFaceInFrame(true)
             setFaceScore(score)
 
-            drawReticle(ctx, box, toneMeta.color, toneMeta.dashed, Math.round(score * 100))
+            drawReticle(ctx, box, toneClass, Math.round(score * 100))
           } else {
             faceBoxRef.current = null
             setHasFaceInFrame(false)
@@ -292,10 +299,10 @@ export default function LiveScanDemo() {
 
     if (isModelLoaded) run()
     return () => cancelAnimationFrame(frameId)
-  }, [isModelLoaded, webcamReady, toneMeta.color, toneMeta.dashed])
+  }, [isModelLoaded, webcamReady, toneClass])
 
   useEffect(() => {
-    if (!isModelLoaded || !webcamReady) return undefined
+    if (!isModelLoaded || !webcamReady || !backendReady) return undefined
 
     const id = setInterval(() => {
       if (!isAnalyzing && hasFaceInFrame) {
@@ -304,7 +311,7 @@ export default function LiveScanDemo() {
     }, SCAN_INTERVAL_MS)
 
     return () => clearInterval(id)
-  }, [isModelLoaded, webcamReady, isAnalyzing, hasFaceInFrame])
+  }, [isModelLoaded, webcamReady, backendReady, isAnalyzing, hasFaceInFrame])
 
   const addHistory = (entry) => {
     setHistory((prev) => {
@@ -319,14 +326,8 @@ export default function LiveScanDemo() {
     const video = webcam?.video
     if (!webcam || !video) return
     if (Date.now() < nextScanAllowedAtRef.current) return
-    if (!webcamReady) {
-      setScanError('Camera stream is not ready yet.')
-      return
-    }
-
-    const imageSrc = webcam.getScreenshot()
-    if (!imageSrc) {
-      setScanError('Camera frame unavailable. Check camera permissions and device access.')
+    if (!webcamReady || !backendReady) {
+      setScanError('System not ready: waiting on camera and backend health.')
       return
     }
 
@@ -337,7 +338,9 @@ export default function LiveScanDemo() {
       setScanError('')
 
       const started = performance.now()
-      const blob = await (await fetch(imageSrc)).blob()
+      const blob = await captureFrameBlob(video, 0.72, 720)
+      if (!blob) throw new Error('Camera frame unavailable.')
+
       const formData = new FormData()
       formData.append('file', blob, 'live_scan.jpg')
 
@@ -381,13 +384,10 @@ export default function LiveScanDemo() {
         poseLabel,
         personImageUrl: data?.person?.image_url || null,
         sourceImageUrl: capture?.image_url || data?.person?.image_url || null,
-        sourceText: capture?.source ? toTitle(capture.source) : 'Registry Seed',
+        sourceText: capture?.source || 'Registry Seed',
         liveCrop: localCrop,
         latencyMs: durationMs,
-      }
-
-      if (normalized.success === false) {
-        setScanError(normalized.error || 'Scan completed but no usable face was detected.')
+        stageTiming: data?.timings_ms || null,
       }
 
       setMatchResult(normalized)
@@ -400,7 +400,7 @@ export default function LiveScanDemo() {
       failureCountRef.current = nextFailureCount
       const cooldownMs = Math.min(5000, 500 * Math.pow(2, nextFailureCount - 1))
       nextScanAllowedAtRef.current = Date.now() + cooldownMs
-      setScanError(`Scan request failed. Retrying in ${Math.round(cooldownMs / 1000)}s.`)
+      setScanError(err?.message || `Scan request failed. Retrying in ${Math.round(cooldownMs / 1000)}s.`)
     } finally {
       setIsAnalyzing(false)
     }
@@ -411,74 +411,98 @@ export default function LiveScanDemo() {
     return history.find((h) => h.id === selectedHistoryId) || history[0]
   }, [history, selectedHistoryId])
 
-  const confidenceText =
-    typeof matchResult?.matchConfidence === 'number' ? `${matchResult.matchConfidence.toFixed(2)}%` : '--'
+  const readiness = [
+    { label: 'Camera', ok: webcamReady },
+    { label: 'Detector', ok: isModelLoaded },
+    { label: 'Backend', ok: backendReady },
+  ]
 
-  const distanceText =
-    typeof matchResult?.matchDistance === 'number' ? matchResult.matchDistance.toFixed(4) : '--'
+  const confidencePct = typeof matchResult?.matchConfidence === 'number' ? matchResult.matchConfidence : 0
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        padding: '24px 18px 28px',
-        color: '#e2e8f0',
-        background:
-          'radial-gradient(1600px 700px at 15% -10%, #052e37 0%, #020617 45%, #02040b 100%)',
-        fontFamily: 'Sora, Segoe UI, system-ui, sans-serif',
-      }}
-    >
-      <div style={{ maxWidth: 1280, margin: '0 auto', display: 'grid', gap: 14 }}>
-        <div
-          style={{
-            border: '1px solid rgba(45,212,191,0.25)',
-            borderRadius: 12,
-            padding: '10px 12px',
-            background: 'rgba(2,6,23,0.65)',
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-            gap: 8,
-          }}
-        >
-          <div style={{ fontSize: 12, color: '#7dd3fc' }}>Match Latency: {roundtripMs ?? '--'} ms</div>
-          <div style={{ fontSize: 12, color: '#7dd3fc' }}>Model: {MODEL_LABEL}</div>
-          <div style={{ fontSize: 12, color: '#7dd3fc' }}>Indexed Identities: {memberCount ?? '--'}</div>
-          <div style={{ fontSize: 12, color: '#7dd3fc' }}>Scan Interval: {SCAN_INTERVAL_MS} ms</div>
+    <div className="ls-wrap">
+      <style>{`
+        :root {
+          --bg:#f6f7f9; --panel:#ffffff; --fg:#16181d; --muted:#666c78; --line:#e2e5ea;
+          --alert:#b3261e; --alert-bg:#fdeceb; --ok:#186b3c; --ok-bg:#e9f6ee;
+          --unknown:#7a5c00; --unknown-bg:#fdf5e0; --accent:#1c4fd8;
+        }
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --bg:#131519; --panel:#1b1e24; --fg:#e9eaee; --muted:#9aa1ad; --line:#2b3038;
+            --alert:#ff9a92; --alert-bg:#3a1c1a; --ok:#7fd4a0; --ok-bg:#14301f;
+            --unknown:#e8c86a; --unknown-bg:#312713; --accent:#8fb0ff;
+          }
+        }
+        .ls-wrap { background: var(--bg); color: var(--fg); min-height: 100vh; padding: 24px 16px 64px; }
+        .ls-shell { max-width: 1180px; margin: 0 auto; }
+        .ls-sub { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+        .ls-grid { display: grid; grid-template-columns: minmax(420px, 2fr) minmax(320px, 1fr); gap: 14px; }
+        .ls-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+        .ls-pad { padding: 16px; }
+        .ls-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; font-size: 12px; color: var(--muted); }
+        .ls-camera { position: relative; width: 100%; aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #000; }
+        .ls-chip { display: inline-block; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: rgba(0,0,0,0.35); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .03em; }
+        .ls-overlay-top-left { position: absolute; top: 10px; left: 10px; z-index: 4; display: grid; gap: 6px; }
+        .ls-overlay-top-right { position: absolute; top: 10px; right: 10px; z-index: 4; }
+        .ls-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .ls-verdict { border-radius: 12px; padding: 14px; border: 1px solid; margin-bottom: 12px; }
+        .ls-verdict.alert { background: var(--alert-bg); border-color: var(--alert); color: var(--alert); }
+        .ls-verdict.ok { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
+        .ls-verdict.unknown { background: var(--unknown-bg); border-color: var(--unknown); color: var(--unknown); }
+        .ls-kv { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+        .ls-kv:last-child { border-bottom: 0; }
+        .ls-kv span:first-child { color: var(--muted); }
+        .ls-meter { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 8px 0 10px; }
+        .ls-meter > i { display: block; height: 100%; }
+        .ls-ready { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+        .ls-ready > span { font-size: 12px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); }
+        .ls-ready .ok { border-color: var(--ok); color: var(--ok); }
+        .ls-ready .bad { border-color: var(--unknown); color: var(--unknown); }
+        .ls-side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .ls-thumb-wrap { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--bg); aspect-ratio: 1/1; }
+        .ls-thumb-wrap img { width: 100%; height: 100%; object-fit: cover; }
+        .ls-caption { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+        .ls-audit { max-height: 220px; overflow-y: auto; display: grid; gap: 6px; }
+        .ls-audit button { text-align: left; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 8px 9px; cursor: pointer; font-size: 12px; }
+        .ls-audit button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+        .ls-warn { margin-top: 12px; font-size: 13px; color: var(--unknown); }
+        @media (max-width: 980px) {
+          .ls-grid { grid-template-columns: 1fr; }
+          .ls-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .ls-side-by-side { grid-template-columns: 1fr 1fr; }
+        }
+      `}</style>
+
+      <div className="ls-shell">
+        <h1>Face Scan (Live)</h1>
+        <p className="ls-sub">Live camera scan against registry with real-time reticle tracking.</p>
+
+        <div className="ls-card ls-pad" style={{ marginBottom: 14 }}>
+          <div className="ls-meta">
+            <div>Match Latency: {roundtripMs ?? '--'} ms</div>
+            <div>Model: {MODEL_LABEL}</div>
+            <div>Indexed Identities: {memberCount ?? '--'}</div>
+            <div>Scan Interval: {SCAN_INTERVAL_MS} ms</div>
+          </div>
+          <div className="ls-ready">
+            {readiness.map((item) => (
+              <span key={item.label} className={item.ok ? 'ok' : 'bad'}>
+                {item.label}: {item.ok ? 'Ready' : 'Waiting'}
+              </span>
+            ))}
+          </div>
         </div>
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(420px, 2fr) minmax(320px, 1fr)',
-            gap: 14,
-          }}
-        >
-          <div
-            style={{
-              borderRadius: 16,
-              border: '1px solid rgba(34,211,238,0.28)',
-              background: 'linear-gradient(180deg, rgba(3,7,18,0.85), rgba(2,6,23,0.75))',
-              padding: 12,
-            }}
-          >
-            <div
-              style={{
-                position: 'relative',
-                width: '100%',
-                maxWidth: 760,
-                aspectRatio: '4 / 3',
-                overflow: 'hidden',
-                borderRadius: 12,
-                border: '1px solid rgba(100,116,139,0.45)',
-                background: '#000',
-              }}
-            >
+        <div className="ls-grid">
+          <div className="ls-card ls-pad">
+            <div className="ls-camera">
               <Webcam
                 ref={webcamRef}
                 audio={false}
                 screenshotFormat="image/jpeg"
-                screenshotQuality={0.85}
-                videoConstraints={{ width: 1280, height: 960, facingMode: 'user' }}
+                screenshotQuality={0.72}
+                videoConstraints={{ width: 960, height: 720, facingMode: 'user' }}
                 onUserMedia={() => {
                   setWebcamReady(true)
                   setWebcamError('')
@@ -503,260 +527,109 @@ export default function LiveScanDemo() {
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 2 }}
               />
 
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 12,
-                  left: 12,
-                  display: 'grid',
-                  gap: 6,
-                  zIndex: 3,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    letterSpacing: 0.8,
-                    fontWeight: 700,
-                    color: '#f8fafc',
-                    padding: '5px 10px',
-                    borderRadius: 999,
-                    border: '1px solid rgba(248,113,113,0.7)',
-                    background: 'rgba(185,28,28,0.4)',
-                  }}
-                >
-                  REC / LIVE {fps || 30} FPS
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    letterSpacing: 0.5,
-                    fontWeight: 600,
-                    color: '#e2e8f0',
-                    padding: '5px 10px',
-                    borderRadius: 999,
-                    border: `1px solid ${toneMeta.color}`,
-                    background: 'rgba(2,6,23,0.82)',
-                  }}
-                >
-                  Face Detected: {(faceScore * 100).toFixed(1)}% · {toneMeta.label}
-                </div>
+              <div className="ls-overlay-top-left">
+                <span className="ls-chip">REC / LIVE {fps || 30} FPS</span>
+                <span className="ls-chip">Face: {(faceScore * 100).toFixed(1)}% • {toneLabel}</span>
               </div>
 
-              <div
-                style={{
-                  position: 'absolute',
-                  right: 12,
-                  top: 12,
-                  zIndex: 3,
-                  color: '#cbd5e1',
-                  fontSize: 11,
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                  background: 'rgba(2,6,23,0.68)',
-                  border: '1px solid rgba(100,116,139,0.45)',
-                  borderRadius: 8,
-                  padding: '6px 8px',
-                }}
-              >
-                {formatTimestamp(matchResult?.timestamp || new Date().toISOString())}
+              <div className="ls-overlay-top-right">
+                <span className="ls-chip">{formatTimestamp(matchResult?.timestamp || new Date().toISOString())}</span>
               </div>
             </div>
 
-            <div style={{ marginTop: 10, fontSize: 12, color: '#94a3b8' }}>
+            <div className="ls-warn">
               {hasFaceInFrame
                 ? 'Target lock acquired. Scanning against identity registry.'
-                : 'No face in frame. Move closer and increase front lighting.'}
+                : 'No face in frame. Move closer and improve front lighting.'}
             </div>
           </div>
 
-          <div
-            style={{
-              borderRadius: 16,
-              border: '1px solid rgba(56,189,248,0.28)',
-              background: 'linear-gradient(180deg, rgba(4,13,29,0.9), rgba(2,6,23,0.78))',
-              padding: 12,
-              display: 'grid',
-              gridTemplateRows: 'auto auto 1fr',
-              gap: 12,
-            }}
-          >
-            <div style={{ display: 'grid', gap: 6 }}>
-              <div style={{ fontSize: 11, color: '#67e8f9', letterSpacing: 1, textTransform: 'uppercase' }}>
-                Target Profile
-              </div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: '#f8fafc', lineHeight: 1.05 }}>
-                {matchResult?.fullName || 'Awaiting Match'}
-              </div>
-              <div
+          <div className="ls-card ls-pad">
+            <div className={`ls-verdict ${toneClass}`}>
+              <h2 style={{ margin: 0 }}>
+                {matchResult?.isAlert
+                  ? 'Flagged identity detected'
+                  : matchResult?.isKnownUser
+                  ? 'Recognised identity'
+                  : 'Awaiting confident match'}
+              </h2>
+              <p style={{ margin: '8px 0 0', color: 'var(--fg)', fontWeight: 600 }}>{matchResult?.fullName || '-'}</p>
+              <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: 13 }}>{matchResult?.message || 'Live scan running.'}</p>
+            </div>
+
+            <h3 style={{ margin: '0 0 8px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>How certain</h3>
+            <div className="ls-meter">
+              <i
                 style={{
-                  display: 'inline-block',
-                  width: 'fit-content',
-                  padding: '4px 10px',
-                  borderRadius: 999,
-                  border: `1px solid ${toneMeta.color}`,
-                  color: toneMeta.color,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  letterSpacing: 0.6,
+                  width: `${confidencePct}%`,
+                  background:
+                    toneClass === 'alert' ? 'var(--alert)' : toneClass === 'ok' ? 'var(--ok)' : 'var(--unknown)',
                 }}
-              >
-                {toneMeta.label}
-              </div>
+              />
             </div>
 
-            <div style={{ display: 'grid', gap: 8 }}>
-              <div style={{ fontSize: 12, color: '#a5b4fc' }}>Match Confidence: {confidenceText}</div>
-              <div
-                style={{
-                  height: 10,
-                  borderRadius: 999,
-                  background: 'rgba(71,85,105,0.42)',
-                  overflow: 'hidden',
-                }}
-              >
-                <div
-                  style={{
-                    width: `${matchResult?.matchConfidence || 0}%`,
-                    height: '100%',
-                    background: `linear-gradient(90deg, ${toneMeta.color}, #22d3ee)`,
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gap: 6, fontSize: 12, color: '#cbd5e1' }}>
-                <div>Pose Angle: {matchResult?.poseLabel || '-'}</div>
-                <div>Cosine Dist: {distanceText}</div>
-                <div>Timestamp: {formatTimestamp(matchResult?.timestamp)}</div>
-                <div>Status: {(matchResult?.status || 'unknown').toUpperCase()}</div>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gap: 10 }}>
-              <div style={{ fontSize: 11, color: '#7dd3fc', letterSpacing: 1, textTransform: 'uppercase' }}>
-                Reference Comparison
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div style={{ display: 'grid', gap: 4 }}>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>Live Crop</div>
-                  <div
-                    style={{
-                      border: '1px solid rgba(100,116,139,0.5)',
-                      borderRadius: 10,
-                      overflow: 'hidden',
-                      aspectRatio: '1 / 1',
-                      background: '#020617',
-                    }}
-                  >
-                    {liveCrop ? (
-                      <img src={liveCrop} alt="Live crop" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : null}
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gap: 4 }}>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>DB Seed Photo</div>
-                  <div
-                    style={{
-                      border: '1px solid rgba(100,116,139,0.5)',
-                      borderRadius: 10,
-                      overflow: 'hidden',
-                      aspectRatio: '1 / 1',
-                      background: '#020617',
-                    }}
-                  >
-                    {matchResult?.sourceImageUrl ? (
-                      <img
-                        src={matchResult.sourceImageUrl}
-                        alt="Database reference"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                Source: {matchResult?.sourceText || '-'} · Pose: {matchResult?.poseLabel || '-'}
-              </div>
-            </div>
+            <div className="ls-kv"><span>Confidence</span><span>{confidencePct}%</span></div>
+            <div className="ls-kv"><span>Cosine distance</span><span>{typeof matchResult?.matchDistance === 'number' ? matchResult.matchDistance.toFixed(4) : '--'}</span></div>
+            <div className="ls-kv"><span>Status</span><span>{(matchResult?.status || 'unknown').toUpperCase()}</span></div>
+            <div className="ls-kv"><span>Pose</span><span>{matchResult?.poseLabel || '-'}</span></div>
+            <div className="ls-kv"><span>Round trip</span><span>{roundtripMs ?? '--'} ms</span></div>
+            <div className="ls-kv"><span>Server stages</span><span>{matchResult?.stageTiming ? JSON.stringify(matchResult.stageTiming) : '--'}</span></div>
           </div>
         </div>
 
-        <div
-          style={{
-            border: '1px solid rgba(56,189,248,0.28)',
-            borderRadius: 12,
-            background: 'rgba(2,6,23,0.72)',
-            padding: 12,
-            display: 'grid',
-            gap: 10,
-          }}
-        >
-          <div style={{ fontSize: 11, color: '#67e8f9', letterSpacing: 1, textTransform: 'uppercase' }}>
-            Audit Log
+        <div className="ls-card ls-pad" style={{ marginTop: 14 }}>
+          <h3 style={{ margin: '0 0 10px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>
+            Reference comparison
+          </h3>
+          <div className="ls-side-by-side">
+            <div>
+              <div className="ls-caption">Live crop</div>
+              <div className="ls-thumb-wrap">{liveCrop ? <img src={liveCrop} alt="Live crop" /> : null}</div>
+            </div>
+            <div>
+              <div className="ls-caption">DB seed photo</div>
+              <div className="ls-thumb-wrap">
+                {matchResult?.sourceImageUrl ? <img src={matchResult.sourceImageUrl} alt="Database reference" /> : null}
+              </div>
+            </div>
           </div>
+          <div className="ls-row" style={{ marginTop: 10, color: 'var(--muted)', fontSize: 12 }}>
+            <span>Source: {matchResult?.sourceText || '-'}</span>
+            <span>Pose: {matchResult?.poseLabel || '-'}</span>
+          </div>
+        </div>
+
+        <div className="ls-card ls-pad" style={{ marginTop: 14 }}>
+          <h3 style={{ margin: '0 0 10px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>Audit log</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
-            <div style={{ maxHeight: 170, overflowY: 'auto', display: 'grid', gap: 6 }}>
+            <div className="ls-audit">
               {history.map((entry) => (
                 <button
                   key={entry.id}
+                  className={selectedHistoryId === entry.id ? 'active' : ''}
                   onClick={() => setSelectedHistoryId(entry.id)}
-                  style={{
-                    textAlign: 'left',
-                    borderRadius: 10,
-                    border:
-                      selectedHistoryId === entry.id
-                        ? '1px solid rgba(34,211,238,0.75)'
-                        : '1px solid rgba(100,116,139,0.45)',
-                    background: selectedHistoryId === entry.id ? 'rgba(14,116,144,0.22)' : 'rgba(15,23,42,0.45)',
-                    color: '#e2e8f0',
-                    padding: '8px 10px',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                  }}
                 >
                   {formatTimestamp(entry.timestamp)} - {entry.fullName} ({(entry.status || 'unknown').toUpperCase()}) -{' '}
                   {typeof entry.matchConfidence === 'number' ? `${entry.matchConfidence.toFixed(1)}%` : '--'}
                 </button>
               ))}
-              {!history.length ? <div style={{ color: '#94a3b8', fontSize: 12 }}>No detection events yet.</div> : null}
+              {!history.length ? <div className="ls-sub">No detection events yet.</div> : null}
             </div>
 
-            <div
-              style={{
-                border: '1px solid rgba(100,116,139,0.45)',
-                borderRadius: 10,
-                padding: 10,
-                fontSize: 12,
-                color: '#cbd5e1',
-                display: 'grid',
-                gap: 8,
-              }}
-            >
-              <div style={{ fontWeight: 700, color: '#e2e8f0' }}>{activeEntry?.fullName || 'Select an event'}</div>
-              <div>Status: {(activeEntry?.status || 'unknown').toUpperCase()}</div>
-              <div>Distance: {typeof activeEntry?.matchDistance === 'number' ? activeEntry.matchDistance.toFixed(4) : '--'}</div>
-              <div>Latency: {activeEntry?.latencyMs ?? '--'} ms</div>
-              {activeEntry?.liveCrop ? (
-                <img src={activeEntry.liveCrop} alt="Event crop" style={{ width: '100%', borderRadius: 8 }} />
-              ) : null}
+            <div className="ls-card ls-pad">
+              <div style={{ fontWeight: 700 }}>{activeEntry?.fullName || 'Select an event'}</div>
+              <div className="ls-kv"><span>Status</span><span>{(activeEntry?.status || 'unknown').toUpperCase()}</span></div>
+              <div className="ls-kv"><span>Distance</span><span>{typeof activeEntry?.matchDistance === 'number' ? activeEntry.matchDistance.toFixed(4) : '--'}</span></div>
+              <div className="ls-kv"><span>Latency</span><span>{activeEntry?.latencyMs ?? '--'} ms</span></div>
+              {activeEntry?.liveCrop ? <img src={activeEntry.liveCrop} alt="Event crop" style={{ width: '100%', borderRadius: 8, marginTop: 10 }} /> : null}
             </div>
           </div>
         </div>
 
-        {webcamError ? (
-          <div style={{ color: '#fecaca', fontSize: 13 }}>
-            Camera unavailable: {webcamError}. Ensure camera is connected, free, and permission is granted.
-          </div>
-        ) : null}
-
-        {scanError ? <div style={{ color: '#fcd34d', fontSize: 13 }}>{scanError}</div> : null}
-
-        {modelState === 'loading' ? <div style={{ color: '#94a3b8', fontSize: 13 }}>Initializing detector...</div> : null}
-
-        {modelState === 'failed' ? (
-          <div style={{ color: '#fda4af', fontSize: 13 }}>Model Load Failed: {modelError || 'Unknown model loading error.'}</div>
-        ) : null}
+        {webcamError ? <div className="ls-warn">Camera unavailable: {webcamError}</div> : null}
+        {scanError ? <div className="ls-warn">{scanError}</div> : null}
+        {modelState === 'loading' ? <div className="ls-sub">Initializing detector assets...</div> : null}
+        {modelState === 'failed' ? <div className="ls-warn">Model Load Failed: {modelError || 'Unknown error.'}</div> : null}
       </div>
     </div>
   )
