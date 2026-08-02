@@ -1,3 +1,13 @@
+"""Destructive bootstrap for local face schema testing.
+
+WARNING:
+- This script drops and recreates face tables.
+- Do NOT use it to add new seed images incrementally.
+
+For multi-angle incremental imports from backend/seed_photos, use:
+    python backend/scripts/import_seed_faces.py
+"""
+
 import os
 import psycopg2
 from deepface import DeepFace

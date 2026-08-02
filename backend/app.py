@@ -1,9 +1,15 @@
 import logging
+import importlib
+import os
+import time
 from pathlib import Path
 
 import psycopg2
+from psycopg2 import OperationalError
+from psycopg2.pool import SimpleConnectionPool
 
 from flask import Flask, jsonify, request, send_from_directory, abort
+from flask_cors import CORS
 
 from config import Config
 
@@ -42,10 +48,60 @@ ROOT_DIR = Path(__file__).resolve().parent
 FRONTEND_DIST_DIR = ROOT_DIR.parent / "frontend" / "dist"
 DEMO_STATIC_DIR = ROOT_DIR / "static"
 
+# Reuse one Azure Vision client across requests.
+_azure_client = None
+_db_pool = None
+
+
+def get_azure_client():
+    global _azure_client
+    if _azure_client is None:
+        endpoint = os.environ.get("AZURE_VISION_ENDPOINT")
+        key = os.environ.get("AZURE_VISION_KEY")
+        if not endpoint or not key:
+            raise RuntimeError(
+                "Azure Vision is not configured. Set AZURE_VISION_ENDPOINT and AZURE_VISION_KEY."
+            )
+
+        try:
+            imageanalysis = importlib.import_module("azure.ai.vision.imageanalysis")
+            credentials = importlib.import_module("azure.core.credentials")
+        except ImportError as exc:
+            raise RuntimeError(
+                "Azure Vision SDK is not installed. Install requirements and retry."
+            ) from exc
+
+        _azure_client = imageanalysis.ImageAnalysisClient(
+            endpoint=endpoint,
+            credential=credentials.AzureKeyCredential(key),
+        )
+    return _azure_client
+
 
 def get_db_connection():
-    # Establishes and returns a database connection using application config.
-    return psycopg2.connect(Config.DATABASE_URL)
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = SimpleConnectionPool(
+            Config.DB_POOL_MIN_CONN,
+            Config.DB_POOL_MAX_CONN,
+            Config.DATABASE_URL,
+            connect_timeout=Config.DB_CONNECT_TIMEOUT_SECONDS,
+            keepalives=1,
+            keepalives_idle=Config.DB_KEEPALIVES_IDLE_SECONDS,
+            keepalives_interval=Config.DB_KEEPALIVES_INTERVAL_SECONDS,
+            keepalives_count=Config.DB_KEEPALIVES_COUNT,
+        )
+    return _db_pool.getconn()
+
+
+def release_db_connection(conn):
+    global _db_pool
+    if conn is None:
+        return
+    if _db_pool is None:
+        conn.close()
+        return
+    _db_pool.putconn(conn)
 
 
 def _normalize_detection_status(raw_status):
@@ -135,6 +191,23 @@ def create_app(config_object=Config):
 
     app.config.from_object(config_object)
 
+    # Enable CORS for all routes (allows Vercel deployment to communicate with Railway API)
+    allowed_origins = [
+        "https://guardian-collect2.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
+    # Optionally pull additional origins from environment variable if present
+    custom_origin = os.environ.get("ALLOWED_ORIGIN")
+    if custom_origin:
+        allowed_origins.append(custom_origin)
+
+    CORS(
+        app,
+        resources={r"/*": {"origins": allowed_origins}},
+        supports_credentials=True,
+    )
+
     # Register all routes
     app.register_blueprint(health_bp)
     app.register_blueprint(hotspot_bp)
@@ -201,6 +274,19 @@ def create_app(config_object=Config):
                 return None
 
         conn = get_db_connection()
+        request_started = time.perf_counter()
+        logger.info(
+            "scan-face request received: filename=%s bytes=%s remote=%s",
+            file.filename,
+            len(image_bytes),
+            request.remote_addr,
+        )
+        try:
+            conn = get_db_connection()
+        except OperationalError as e:
+            logger.warning("scan-face DB unavailable: %s", e)
+            return jsonify({"error": "Face registry temporarily unavailable.", "code": "db_unavailable"}), 503
+
         try:
             # Process face matching against PostgreSQL + DeepFace
             result = process_incoming_face_image(
@@ -251,14 +337,28 @@ def create_app(config_object=Config):
                 result["detection_id"] = detection_ids[0]
 
             result = _attach_face_alert(result)
+            total_ms = round((time.perf_counter() - request_started) * 1000, 2)
+            result["request_timing_ms"] = total_ms
+            logger.info(
+                "scan-face result: success=%s known=%s status=%s distance=%s total_ms=%s stage_ms=%s",
+                result.get("success"),
+                result.get("is_known_user"),
+                result.get("status"),
+                result.get("match_distance"),
+                total_ms,
+                result.get("timings_ms"),
+            )
             return jsonify(result), 200
 
+        except OperationalError as e:
+            logger.warning("scan-face DB operation failed: %s", e)
+            return jsonify({"error": "Face registry temporarily unavailable.", "code": "db_unavailable"}), 503
         except Exception as e:
             logger.error(f"Error processing facial scan: {e}")
             return jsonify({"error": "Internal processing error during scan"}), 500
 
         finally:
-            conn.close()
+            release_db_connection(conn)
 
     @app.route("/api/v1/scan-plate", methods=["POST"])
     def scan_plate():
@@ -287,7 +387,7 @@ def create_app(config_object=Config):
             logger.error(f"Error processing plate scan: {e}")
             return jsonify({"error": "Internal processing error during plate scan"}), 500
         finally:
-            conn.close()
+            release_db_connection(conn)
 
     @app.route("/api/v1/scan-plate-azure", methods=["POST"])
     def scan_plate_azure():
@@ -439,7 +539,7 @@ def create_app(config_object=Config):
             logger.error(f"Error reading detections: {e}")
             return jsonify({"error": "Could not read the detection log"}), 500
         finally:
-            conn.close()
+            release_db_connection(conn)
 
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
@@ -468,6 +568,8 @@ app = create_app()
 
 
 if __name__ == "__main__":
+    from services.recognition import warm_recognition_pipeline
+
     try:
         warm_cache()
         logger.info("Successfully warmed claims cache.")
@@ -483,5 +585,21 @@ if __name__ == "__main__":
     except Exception as e:
         logger.warning(f"Could not warm the face model (first scan will be slow): {e}")
 
-    # Run local dev server
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    try:
+        warm_ms = warm_recognition_pipeline(Config.FACE_MODEL)
+        logger.info("Warm recognition pipeline completed in %sms", warm_ms)
+    except Exception as e:
+        logger.warning("Failed to warm recognition pipeline: %s", e)
+
+    try:
+        conn = get_db_connection()
+        release_db_connection(conn)
+        logger.info("Database pool initialized.")
+    except Exception as e:
+        logger.warning("Database pool warmup failed: %s", e)
+
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True
+    )
