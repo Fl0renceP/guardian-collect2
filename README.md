@@ -55,6 +55,62 @@ Flask also serves a standalone copy of the hot-spot map at
 | Hot-spots, claims, routing, alerts, patrol, safety score | Cosmos + Blob credentials in `.env` — that's all |
 | `POST /api/v1/scan-face` | A local PostgreSQL with pgvector at `DATABASE_URL`, plus the DeepFace/TensorFlow install |
 
+## Multi-angle face gallery import
+
+Use this when you have additional seed images per person (different angles / lighting).
+It incrementally adds photos to Azure Blob + `person_faces` and keeps existing DB
+person status as the source of truth.
+
+### Filename format
+
+Put images in `backend/seed_photos` using:
+
+```text
+Full Name - angle label - status.ext
+```
+
+Example:
+
+```text
+Tadiwa Banda - front 1 - verified.jpeg
+```
+
+Allowed status values are `offender`, `suspect`, `verified`.
+
+### Import commands
+
+```bash
+# Parse + quality-check without writing
+python backend/scripts/import_seed_faces.py --dry-run
+
+# Perform upload + DB insert
+python backend/scripts/import_seed_faces.py
+
+# Optional: process only first N files
+python backend/scripts/import_seed_faces.py --limit 20
+```
+
+What the importer does:
+
+- Creates a person only if the name does not already exist.
+- Preserves existing `persons.status` when a person already exists.
+- Uploads each file to Blob with metadata labels:
+  `full_name`, `person_status`, `source`, `angle_label`, `original_filename`.
+- Computes an embedding per image and stores one `person_faces` row per image.
+- Applies the quality gate:
+  low-quality images are still saved, but as `use_for_matching = FALSE`
+  (evidence only).
+- Is rerun-safe (duplicate imports are skipped).
+
+### Verify after import
+
+```bash
+python backend/verify_seed.py
+```
+
+The report now shows per-person capture counts, matching-reference counts,
+evidence-only counts, recent capture rows, and a sample of blob metadata.
+
 Note that `backend/app.py` imports `psycopg2` and `services.recognition` (which
 imports DeepFace) **at module level**, so the whole API — including the map —
 won't start unless the ML stack is installed, even though nothing else uses it.

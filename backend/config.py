@@ -22,6 +22,12 @@ class Config:
 
     # 1. PostgreSQL Database with pgvector enabled
     DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/guardian_db")
+    DB_POOL_MIN_CONN = int(os.getenv("DB_POOL_MIN_CONN", "1"))
+    DB_POOL_MAX_CONN = int(os.getenv("DB_POOL_MAX_CONN", "8"))
+    DB_CONNECT_TIMEOUT_SECONDS = int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "4"))
+    DB_KEEPALIVES_IDLE_SECONDS = int(os.getenv("DB_KEEPALIVES_IDLE_SECONDS", "30"))
+    DB_KEEPALIVES_INTERVAL_SECONDS = int(os.getenv("DB_KEEPALIVES_INTERVAL_SECONDS", "10"))
+    DB_KEEPALIVES_COUNT = int(os.getenv("DB_KEEPALIVES_COUNT", "3"))
 
     # 2. Azure Blob Storage
     AZURE_STORAGE_CONNECTION_STRING = _clean(os.getenv("AZURE_STORAGE_CONNECTION_STRING"))

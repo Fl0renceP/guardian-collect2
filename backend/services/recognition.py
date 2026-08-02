@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import cv2
 import psycopg2
 import numpy as np
@@ -22,6 +23,13 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 MATCH_THRESHOLD = 0.30
 
 
+def warm_recognition_pipeline(model_name="Facenet512"):
+    """Warm the DeepFace model so the first live scan avoids model boot latency."""
+    started = time.perf_counter()
+    DeepFace.build_model(model_name)
+    return round((time.perf_counter() - started) * 1000, 2)
+
+
 def _face_area(face):
     """Pixel area of a detected face, used to pick the subject in a group shot."""
     area = face.get("facial_area") or {}
@@ -42,12 +50,15 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
     and it quietly builds a biometric record of every passer-by. Enrolment belongs
     in a separate, deliberate admin action.
     """
+    timings_ms = {}
+
     # 1. Save uploaded image bytes to a temporary file for DeepFace processing
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
         tmp.write(image_bytes)
         tmp_path = tmp.name
 
     try:
+        embed_started = time.perf_counter()
         # 2. Extract the 512-dim vector embedding (Facenet512 by default)
         embeddings = DeepFace.represent(
             img_path=tmp_path,
@@ -55,6 +66,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
             detector_backend="retinaface",  # Faster for single face detection
             enforce_detection=True  # Fails cleanly if no face is detected
         )
+        timings_ms["embedding"] = round((time.perf_counter() - embed_started) * 1000, 2)
         # embeddings[0] is whichever face the detector happened to return first,
         # which in a group shot is arbitrary. Take the largest instead: the person
         # nearest the camera is the one being scanned.
@@ -68,12 +80,14 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
         # the frame. The score tells the operator how much to trust the answer,
         # which is a different question from whether the image is fit to become a
         # stored reference (that gate lives in enrolment).
+        quality_started = time.perf_counter()
         probe_image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
         capture_quality = (
             assess_quality(probe_image, subject.get("facial_area"), face_confidence)
             if probe_image is not None
             else None
         )
+        timings_ms["quality"] = round((time.perf_counter() - quality_started) * 1000, 2)
 
     except Exception as e:
         os.remove(tmp_path)
@@ -91,6 +105,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
     cursor = conn.cursor()
 
     try:
+        query_started = time.perf_counter()
         # Convert list to string format expected by pgvector '[x1, x2, ...]'
         vector_str = str(query_vector)
 
@@ -137,6 +152,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
         """
         cursor.execute(query, {"vec": vector_str})
         ranked = cursor.fetchall()
+        timings_ms["query_nearest"] = round((time.perf_counter() - query_started) * 1000, 2)
         result = ranked[0] if ranked else None
 
         # Distance to the nearest DIFFERENT person. A tiny margin means the scan
@@ -171,6 +187,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
                 """,
                 {"vec": vector_str, "pid": person_id},
             )
+            support_started = time.perf_counter()
             captures = [
                 {
                     "id": str(row[0]),
@@ -185,6 +202,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
                 }
                 for row in cursor.fetchall()
             ]
+            timings_ms["query_supporting"] = round((time.perf_counter() - support_started) * 1000, 2)
             agreeing = sum(1 for c in captures if c["agrees"])
 
             return {
@@ -207,6 +225,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
                 "faces_detected": faces_detected,
                 "face_confidence": face_confidence,
                 "capture_quality": capture_quality,
+                "timings_ms": timings_ms,
                 "message": f"ALERT: {status.upper()} DETECTED!" if is_flagged else f"Member '{full_name}' is verified."
             }
 
@@ -224,6 +243,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
             "faces_detected": faces_detected,
             "face_confidence": face_confidence,
             "capture_quality": capture_quality,
+            "timings_ms": timings_ms,
             "registered": False,
             "message": "Unknown face — not in the registry. Not added; enrolment is a separate admin action."
         }

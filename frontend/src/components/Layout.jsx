@@ -6,6 +6,7 @@ import { api } from '../api'
 const NAV_BY_ROLE = {
   member: [
     { to: '/', label: 'Hot-spots', end: true },
+    { to: '/live-scan', label: 'Live scan' },
     { to: '/safety-score', label: 'Safety score' },
     { to: '/alerts', label: 'Alerts' },
     { to: '/route', label: 'Plan a route' },
@@ -17,18 +18,28 @@ const NAV_BY_ROLE = {
   ],
   employee: [
     { to: '/', label: 'Hot-spots', end: true },
+    { to: '/live-scan', label: 'Live scan' },
     { to: '/review', label: 'Review queue', badge: 'pending' },
   ],
   cpu: [
     { to: '/', label: 'Hot-spots', end: true },
+    { to: '/live-scan', label: 'Live scan' },
     { to: '/alerts', label: 'Alerts', badge: 'alerts' },
     { to: '/patrol', label: 'Patrol planning' },
   ],
 }
 
+const RAW_DEMO_BASE =
+  (import.meta.env.VITE_DEMO_BASE_URL || import.meta.env.VITE_API_BASE_URL || '').trim()
+const DEMO_BASE = RAW_DEMO_BASE
+  ? RAW_DEMO_BASE.replace(/\/+$/, '').replace(/\/api$/, '')
+  : ''
+
+const demoHref = (path) => (DEMO_BASE ? `${DEMO_BASE}${path}` : path)
+
 const DEMO_LINKS = [
-  { href: '/test-scan', label: 'Face demo' },
-  { href: '/test-azure-plate', label: 'Image to Text demo' },
+  { href: demoHref('/test-scan'), label: 'Face demo' },
+  { href: demoHref('/test-azure-plate'), label: 'Image to Text demo' },
 ]
 
 function currentTheme() {

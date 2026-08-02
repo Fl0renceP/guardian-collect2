@@ -1,5 +1,8 @@
-/* Thin fetch wrapper over the Flask API. Vite proxies /api in dev (see
-   vite.config.js), so there is no base URL to configure per environment. */
+/* Thin fetch wrapper over the Flask API.
+   Supports production Vercel -> Railway calls via VITE_API_BASE_URL,
+   while falling back to relative paths for Vite proxying in local dev. */
+
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
 class ApiError extends Error {
   constructor(message, { status, fields } = {}) {
@@ -13,8 +16,11 @@ class ApiError extends Error {
 
 async function request(path, options = {}) {
   let response
+  // Prepend BASE_URL to the relative API endpoint path
+  const url = `${BASE_URL}${path}`
+
   try {
-    response = await fetch(path, options)
+    response = await fetch(url, options)
   } catch (cause) {
     throw new ApiError('Could not reach the server. Is the backend running?', { status: 0 })
   }
