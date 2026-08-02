@@ -6,6 +6,7 @@ import { api } from '../api'
 const NAV_BY_ROLE = {
   member: [
     { to: '/', label: 'Hot-spots', end: true },
+    { to: '/live-scan', label: 'Live scan' },
     { to: '/safety-score', label: 'Safety score' },
     { to: '/alerts', label: 'Alerts' },
     { to: '/route', label: 'Plan a route' },
@@ -17,10 +18,12 @@ const NAV_BY_ROLE = {
   ],
   employee: [
     { to: '/', label: 'Hot-spots', end: true },
+    { to: '/live-scan', label: 'Live scan' },
     { to: '/review', label: 'Review queue', badge: 'pending' },
   ],
   cpu: [
     { to: '/', label: 'Hot-spots', end: true },
+    { to: '/live-scan', label: 'Live scan' },
     { to: '/alerts', label: 'Alerts', badge: 'alerts' },
     { to: '/patrol', label: 'Patrol planning' },
   ],

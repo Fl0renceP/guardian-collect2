@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react'
 import Webcam from 'react-webcam'
+import { Link } from 'react-router-dom'
 import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
@@ -476,7 +477,10 @@ export default function LiveScanDemo() {
 
       <div className="ls-shell">
         <h1>Face Scan (Live)</h1>
-        <p className="ls-sub">Live camera scan against registry with real-time reticle tracking.</p>
+        <p className="ls-sub">
+          Live camera scan against registry with real-time reticle tracking.{' '}
+          <Link to="/">Return home</Link>
+        </p>
 
         <div className="ls-card ls-pad" style={{ marginBottom: 14 }}>
           <div className="ls-meta">
