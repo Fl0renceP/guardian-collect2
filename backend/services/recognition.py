@@ -6,6 +6,7 @@ import numpy as np
 from deepface import DeepFace
 
 from services import face_geometry
+from services.blob_storage import BlobStorageService
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -134,6 +135,33 @@ ENFORCE_PROBE_QUALITY = os.getenv("ENFORCE_PROBE_QUALITY", "true").strip().lower
 # Which face leads the response when several are present. An offender in the
 # background matters more than a verified member in the foreground.
 _SEVERITY = {"offender": 3, "suspect": 2, "verified": 1}
+
+# Reference photos live in a private blob container, so the raw stored URL is
+# not fetchable by a browser — the review UI gets a short-lived signed one
+# instead. Built lazily and cached: False means "tried and failed", so a missing
+# storage connection costs one attempt rather than one per face, and degrades to
+# the unsigned URL rather than taking the scan down with it.
+_blob_service = None
+
+
+def _blob_signer():
+    global _blob_service
+    if _blob_service is None:
+        try:
+            _blob_service = BlobStorageService()
+        except Exception:
+            _blob_service = False
+    return _blob_service or None
+
+
+def _readable_face_url(url):
+    signer = _blob_signer()
+    if not url or signer is None:
+        return url
+    try:
+        return signer.sign_stored_url(url)
+    except Exception:
+        return url
 
 
 def warm_recognition_pipeline(model_name="Facenet512"):
@@ -308,7 +336,10 @@ def _match_face(cursor, vector_str, threshold, probable_threshold=None):
         captures = [
             {
                 "id": str(row[0]),
-                "image_url": row[1],
+                # Signed here and only here: the person's own image_url below is
+                # taken from captures[0], so signing it again would re-sign an
+                # already-signed URL.
+                "image_url": _readable_face_url(row[1]),
                 "source": row[2],
                 "camera_id": row[3],
                 "captured_at": row[4].isoformat() if row[4] else None,

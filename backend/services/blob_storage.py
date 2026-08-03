@@ -1,13 +1,17 @@
 import os
 import re
 import uuid
-from azure.storage.blob import BlobServiceClient, ContentSettings
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
+
+from azure.storage.blob import BlobServiceClient, ContentSettings, BlobSasPermissions, generate_blob_sas
 from dotenv import load_dotenv
 
 load_dotenv()
 
 AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 CONTAINER_NAME = "face-db2"
+DEFAULT_READ_SAS_MINUTES = int(os.getenv("FACE_IMAGE_SAS_MINUTES", "30"))
 
 
 def _content_type_for(filename):
@@ -40,6 +44,20 @@ def _sanitize_metadata(metadata):
         cleaned[safe_key] = safe_value
     return cleaned or None
 
+
+def _blob_name_from_url(url):
+    parsed = urlparse(url or "")
+    path = parsed.path.lstrip("/")
+    if not path:
+        return None
+    parts = path.split("/", 1)
+    if len(parts) != 2:
+        return None
+    container_name, blob_name = parts
+    if container_name != CONTAINER_NAME:
+        return None
+    return blob_name
+
 class BlobStorageService:
     def __init__(self):
         if not AZURE_STORAGE_CONNECTION_STRING:
@@ -55,8 +73,15 @@ class BlobStorageService:
         container_client = self.blob_service_client.get_container_client(CONTAINER_NAME)
         if not container_client.exists():
             # Create container with public read access for individual blobs
-            container_client.create_container()
+            container_client.create_container(public_access="blob")
             print(f"✅ Container '{CONTAINER_NAME}' created successfully.")
+
+        # Keep access policy explicit for already-existing containers as well.
+        try:
+            container_client.set_container_access_policy(public_access="blob")
+        except Exception as exc:
+            print(f"⚠️ Unable to enforce public blob access policy on '{CONTAINER_NAME}': {exc}")
+
         return container_client
 
     def upload_image(self, file_path_or_bytes, filename=None, metadata=None):
@@ -90,3 +115,25 @@ class BlobStorageService:
             )
 
         return blob_client.url
+
+    def read_url(self, blob_name, minutes=None):
+        """Return a short-lived read-only SAS URL for one face blob."""
+        minutes = minutes or DEFAULT_READ_SAS_MINUTES
+
+        token = generate_blob_sas(
+            account_name=self.blob_service_client.account_name,
+            container_name=CONTAINER_NAME,
+            blob_name=blob_name,
+            account_key=self.blob_service_client.credential.account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.now(timezone.utc) + timedelta(minutes=minutes),
+        )
+        blob = self.container_client.get_blob_client(blob_name)
+        return f"{blob.url}?{token}"
+
+    def sign_stored_url(self, url, minutes=None):
+        """Convert a stored blob URL into a short-lived readable SAS URL."""
+        blob_name = _blob_name_from_url(url)
+        if not blob_name:
+            return url
+        return self.read_url(blob_name, minutes=minutes)
