@@ -6,6 +6,7 @@ import psycopg2
 import numpy as np
 from deepface import DeepFace
 
+from services.blob_storage import BlobStorageService
 from services.face_quality import assess as assess_quality
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -21,6 +22,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 #
 # If you change the operator in the query below, change this to match.
 MATCH_THRESHOLD = 0.30
+_blob_service = None
 
 
 def warm_recognition_pipeline(model_name="Facenet512"):
@@ -34,6 +36,26 @@ def _face_area(face):
     """Pixel area of a detected face, used to pick the subject in a group shot."""
     area = face.get("facial_area") or {}
     return area.get("w", 0) * area.get("h", 0)
+
+
+def _blob_signer():
+    global _blob_service
+    if _blob_service is None:
+        try:
+            _blob_service = BlobStorageService()
+        except Exception:
+            _blob_service = False
+    return _blob_service or None
+
+
+def _readable_face_url(url):
+    signer = _blob_signer()
+    if not url or signer is None:
+        return url
+    try:
+        return signer.sign_stored_url(url)
+    except Exception:
+        return url
 
 
 def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet", threshold=MATCH_THRESHOLD):
@@ -191,7 +213,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
             captures = [
                 {
                     "id": str(row[0]),
-                    "image_url": row[1],
+                    "image_url": _readable_face_url(row[1]),
                     "source": row[2],
                     "camera_id": row[3],
                     "captured_at": row[4].isoformat() if row[4] else None,
@@ -214,7 +236,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
                     "id": str(person_id),
                     "full_name": full_name,
                     "status": status,
-                    "image_url": image_url
+                    "image_url": _readable_face_url(image_url)
                 },
                 "match_distance": round(distance, 4),
                 "matched_against_photos": len(captures),

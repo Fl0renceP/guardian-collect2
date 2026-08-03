@@ -22,19 +22,26 @@ const formatTimestamp = (iso) => {
 }
 
 const toneClassFromResult = ({ hasFace, isAnalyzing, matchResult }) => {
-  if (!hasFace) return 'unknown'
-  if (isAnalyzing) return 'unknown'
   if (matchResult?.isAlert) return 'alert'
   if (matchResult?.isKnownUser) return 'ok'
+  if (!hasFace) return 'unknown'
+  if (isAnalyzing) return 'unknown'
   return 'unknown'
 }
 
 const toneLabelFromResult = ({ hasFace, isAnalyzing, matchResult }) => {
-  if (!hasFace) return 'NO TARGET'
-  if (isAnalyzing) return 'SCANNING'
   if (matchResult?.isAlert) return 'FLAGGED'
   if (matchResult?.isKnownUser) return 'RECOGNISED'
+  if (!hasFace) return 'NO TARGET'
+  if (isAnalyzing) return 'SCANNING'
   return 'UNREGISTERED'
+}
+
+const auditTone = (entry) => {
+  const status = (entry?.status || '').toLowerCase()
+  if (status === 'offender' || status === 'suspect' || entry?.isAlert) return 'alert'
+  if (entry?.isKnownUser || status === 'verified') return 'ok'
+  return 'unknown'
 }
 
 const toConfidencePct = (distance) => {
@@ -151,6 +158,7 @@ export default function LiveScanDemo() {
   const [roundtripMs, setRoundtripMs] = useState(null)
   const [history, setHistory] = useState([])
   const [selectedHistoryId, setSelectedHistoryId] = useState(null)
+  const [dbImageBroken, setDbImageBroken] = useState(false)
 
   const isModelLoaded = modelState === 'ready'
 
@@ -391,6 +399,7 @@ export default function LiveScanDemo() {
         stageTiming: data?.timings_ms || null,
       }
 
+      setDbImageBroken(false)
       setMatchResult(normalized)
       setLiveCrop(localCrop)
       addHistory(normalized)
@@ -411,6 +420,8 @@ export default function LiveScanDemo() {
     if (!history.length) return null
     return history.find((h) => h.id === selectedHistoryId) || history[0]
   }, [history, selectedHistoryId])
+
+  const dbImageUrl = activeEntry?.sourceImageUrl || activeEntry?.personImageUrl || matchResult?.sourceImageUrl || matchResult?.personImageUrl || null
 
   const readiness = [
     { label: 'Camera', ok: webcamReady },
@@ -467,6 +478,12 @@ export default function LiveScanDemo() {
         .ls-audit { max-height: 220px; overflow-y: auto; display: grid; gap: 6px; }
         .ls-audit button { text-align: left; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 8px 9px; cursor: pointer; font-size: 12px; }
         .ls-audit button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+        .ls-audit button.alert { border-color: var(--alert); background: color-mix(in srgb, var(--alert) 14%, var(--panel)); color: var(--alert); }
+        .ls-audit button.ok { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, var(--panel)); color: var(--ok); }
+        .ls-audit button.unknown { border-color: var(--unknown); background: color-mix(in srgb, var(--unknown) 12%, var(--panel)); color: var(--unknown); }
+        .ls-audit button.alert.active,
+        .ls-audit button.ok.active,
+        .ls-audit button.unknown.active { box-shadow: inset 0 0 0 1px var(--accent); }
         .ls-warn { margin-top: 12px; font-size: 13px; color: var(--unknown); }
         @media (max-width: 980px) {
           .ls-grid { grid-template-columns: 1fr; }
@@ -593,7 +610,13 @@ export default function LiveScanDemo() {
             <div>
               <div className="ls-caption">DB seed photo</div>
               <div className="ls-thumb-wrap">
-                {matchResult?.sourceImageUrl ? <img src={matchResult.sourceImageUrl} alt="Database reference" /> : null}
+                {dbImageUrl && !dbImageBroken ? (
+                  <img
+                    src={dbImageUrl}
+                    alt="Database reference"
+                    onError={() => setDbImageBroken(true)}
+                  />
+                ) : null}
               </div>
             </div>
           </div>
@@ -601,6 +624,11 @@ export default function LiveScanDemo() {
             <span>Source: {matchResult?.sourceText || '-'}</span>
             <span>Pose: {matchResult?.poseLabel || '-'}</span>
           </div>
+          {dbImageBroken ? (
+            <div className="ls-warn" style={{ marginTop: 8 }}>
+              Stored reference photo could not be loaded from blob storage.
+            </div>
+          ) : null}
         </div>
 
         <div className="ls-card ls-pad" style={{ marginTop: 14 }}>
@@ -610,8 +638,11 @@ export default function LiveScanDemo() {
               {history.map((entry) => (
                 <button
                   key={entry.id}
-                  className={selectedHistoryId === entry.id ? 'active' : ''}
-                  onClick={() => setSelectedHistoryId(entry.id)}
+                  className={`${auditTone(entry)}${selectedHistoryId === entry.id ? ' active' : ''}`}
+                  onClick={() => {
+                    setSelectedHistoryId(entry.id)
+                    setDbImageBroken(false)
+                  }}
                 >
                   {formatTimestamp(entry.timestamp)} - {entry.fullName} ({(entry.status || 'unknown').toUpperCase()}) -{' '}
                   {typeof entry.matchConfidence === 'number' ? `${entry.matchConfidence.toFixed(1)}%` : '--'}
