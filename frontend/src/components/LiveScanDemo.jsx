@@ -5,6 +5,12 @@ import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const SCAN_INTERVAL_MS = 1500
+// Plates get their own cadence because they are gated differently: the face
+// scan only fires when MediaPipe sees a face, so on a frame with a car and no
+// visible driver the face path is idle and the plate path is the only one
+// working. Slower than the face interval because plate OCR costs ~1.2s and
+// there is no point queueing frames the backend cannot reach.
+const PLATE_SCAN_INTERVAL_MS = 2000
 const HISTORY_LIMIT = 30
 const MODEL_LABEL = 'Facenet512 / Cosine'
 const MEDIAPIPE_WASM_ROOT =
@@ -151,6 +157,19 @@ export default function LiveScanDemo() {
   const [roundtripMs, setRoundtripMs] = useState(null)
   const [history, setHistory] = useState([])
   const [selectedHistoryId, setSelectedHistoryId] = useState(null)
+
+  const [plateResult, setPlateResult] = useState(null)
+  const [plateError, setPlateError] = useState('')
+  const [plateSightings, setPlateSightings] = useState([])
+
+  // Face and plate requests are serialised through this. The dev server runs
+  // both concurrently if asked, but they contend for the same CPU — TensorFlow
+  // and EasyOCR each want it — so overlapping them makes both slower than
+  // running them in turn.
+  const scanBusyRef = useRef(false)
+  const plateStreamIdRef = useRef(
+    `livescan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  )
 
   const isModelLoaded = modelState === 'ready'
 
@@ -306,13 +325,72 @@ export default function LiveScanDemo() {
     if (!isModelLoaded || !webcamReady || !backendReady) return undefined
 
     const id = setInterval(() => {
-      if (!isAnalyzing && hasFaceInFrame) {
+      if (!isAnalyzing && !scanBusyRef.current && hasFaceInFrame) {
         sendFrameToBackend()
       }
     }, SCAN_INTERVAL_MS)
 
     return () => clearInterval(id)
   }, [isModelLoaded, webcamReady, backendReady, isAnalyzing, hasFaceInFrame])
+
+  const sendPlateFrame = async () => {
+    const video = webcamRef.current?.video
+    if (!video || scanBusyRef.current) return
+
+    scanBusyRef.current = true
+    try {
+      const blob = await captureFrameBlob(video, 0.72, 720)
+      if (!blob) return
+
+      const formData = new FormData()
+      formData.append('file', blob, 'live_plate.jpg')
+      formData.append('stream_id', plateStreamIdRef.current)
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/scan-plate-live`, {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`)
+
+      setPlateResult(data)
+      setPlateError('')
+
+      // Only the frame the vote lands on. A car parked in view would otherwise
+      // add a row every couple of seconds for as long as it sits there.
+      if (data?.stability?.newly_confirmed && data?.match_found) {
+        setPlateSightings((prev) => [
+          {
+            id: `plate-${Date.now()}`,
+            plateNumber: data.plate?.plate_number,
+            status: data.status,
+            ownerName: data.plate?.owner_name,
+            alert: !!data.alert,
+            at: new Date().toISOString(),
+          },
+          ...prev,
+        ].slice(0, 10))
+      }
+    } catch (err) {
+      setPlateError(err?.message || 'Plate scan failed.')
+    } finally {
+      scanBusyRef.current = false
+    }
+  }
+
+  useEffect(() => {
+    if (!webcamReady || !backendReady) return undefined
+
+    const id = setInterval(() => {
+      // Yields to the face scan: a face in frame is the higher-value read, and
+      // the plate is usually still there a beat later.
+      if (!isAnalyzing && !scanBusyRef.current) {
+        sendPlateFrame()
+      }
+    }, PLATE_SCAN_INTERVAL_MS)
+
+    return () => clearInterval(id)
+  }, [webcamReady, backendReady, isAnalyzing])
 
   const addHistory = (entry) => {
     setHistory((prev) => {
@@ -335,6 +413,7 @@ export default function LiveScanDemo() {
     const localCrop = captureCrop(video, faceBoxRef.current)
 
     try {
+      scanBusyRef.current = true
       setIsAnalyzing(true)
       setScanError('')
 
@@ -404,6 +483,7 @@ export default function LiveScanDemo() {
       setScanError(err?.message || `Scan request failed. Retrying in ${Math.round(cooldownMs / 1000)}s.`)
     } finally {
       setIsAnalyzing(false)
+      scanBusyRef.current = false
     }
   }
 
@@ -476,9 +556,11 @@ export default function LiveScanDemo() {
       `}</style>
 
       <div className="ls-shell">
-        <h1>Face Scan (Live)</h1>
+        <h1>Live Scan — Faces &amp; Plates</h1>
         <p className="ls-sub">
-          Live camera scan against registry with real-time reticle tracking.{' '}
+          One camera, both registries. Faces are scanned when a face is in frame;
+          plates are read continuously and must agree across several frames before
+          they raise an alert.{' '}
           <Link to="/">Return home</Link>
         </p>
 
@@ -534,11 +616,96 @@ export default function LiveScanDemo() {
               <div className="ls-overlay-top-left">
                 <span className="ls-chip">REC / LIVE {fps || 30} FPS</span>
                 <span className="ls-chip">Face: {(faceScore * 100).toFixed(1)}% • {toneLabel}</span>
+                {plateResult?.extracted_text && (
+                  <span className="ls-chip">
+                    Plate: {plateResult.extracted_text}
+                    {plateResult.stability && !plateResult.stability.confirmed
+                      ? ` • ${plateResult.stability.agreeing_frames}/${plateResult.stability.required_frames}`
+                      : plateResult.match_found ? ' • CONFIRMED' : ''}
+                  </span>
+                )}
               </div>
+
+              {/* Plate boxes come back in captured-frame pixels, so they are
+                  scaled to percentages rather than assumed to match the video's
+                  rendered size. */}
+              {plateResult?.frame?.width > 0 && (plateResult.regions || []).map((r, i) => (
+                <div
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    left: `${(r.x / plateResult.frame.width) * 100}%`,
+                    top: `${(r.y / plateResult.frame.height) * 100}%`,
+                    width: `${(r.w / plateResult.frame.width) * 100}%`,
+                    height: `${(r.h / plateResult.frame.height) * 100}%`,
+                    border: `2px solid ${plateResult.alert ? '#b3261e' : '#2f6feb'}`,
+                    borderRadius: 4,
+                    zIndex: 3,
+                    pointerEvents: 'none',
+                  }}
+                />
+              ))}
 
               <div className="ls-overlay-top-right">
                 <span className="ls-chip">{formatTimestamp(matchResult?.timestamp || new Date().toISOString())}</span>
               </div>
+            </div>
+
+            <div className="ls-card ls-pad" style={{ marginTop: 12 }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>
+                Vehicle plate
+              </h3>
+              <div style={{
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontSize: 24, fontWeight: 700, letterSpacing: '.08em',
+                color: plateResult?.alert ? 'var(--unknown)' : 'var(--fg)',
+              }}>
+                {plateResult?.extracted_text || '—'}
+              </div>
+
+              {plateResult?.stability && (
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+                  {plateResult.stability.confirmed
+                    ? 'Confirmed across frames'
+                    : `${plateResult.stability.agreeing_frames || 0} of ${plateResult.stability.required_frames} frames agree`}
+                </div>
+              )}
+
+              {plateResult?.match_found && (
+                <div style={{ fontSize: 13, marginTop: 8 }}>
+                  <strong>{plateResult.plate?.plate_number}</strong>
+                  {' — '}
+                  <span style={{ textTransform: 'uppercase' }}>{plateResult.status}</span>
+                  <div style={{ color: 'var(--muted)' }}>{plateResult.plate?.owner_name}</div>
+                </div>
+              )}
+
+              {plateResult?.message && (
+                <div style={{
+                  fontSize: 13, marginTop: 8,
+                  color: plateResult.alert ? 'var(--unknown)' : 'var(--muted)',
+                  fontWeight: plateResult.alert ? 600 : 400,
+                }}>
+                  {plateResult.message}
+                </div>
+              )}
+
+              {plateSightings.length > 0 && (
+                <div style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+                  <div style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 4 }}>
+                    Plates seen this session
+                  </div>
+                  {plateSightings.map((s) => (
+                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
+                      <span style={{ fontFamily: 'ui-monospace, monospace' }}>{s.plateNumber}</span>
+                      <span>{s.status}</span>
+                      <span style={{ color: 'var(--muted)' }}>{new Date(s.at).toLocaleTimeString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {plateError && <div className="ls-warn">Plate: {plateError}</div>}
             </div>
 
             <div className="ls-warn">

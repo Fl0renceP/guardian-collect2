@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guardian Collective — Live Camera</title>
+  <style>
+    :root {
+      --bg:#0f1115; --panel:#191d24; --fg:#e9eaee; --muted:#9aa1ad; --line:#2b3038;
+      --alert:#ff5a4e; --alert-bg:#2c1310; --ok:#4ade80; --ok-bg:#0f2a1b;
+      --unknown:#e8c86a; --unknown-bg:#2b2413; --accent:#6f9bff;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; padding:20px 16px 48px; background:var(--bg); color:var(--fg);
+      font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+    }
+    .wrap { max-width:1080px; margin:0 auto; }
+    header { display:flex; justify-content:space-between; align-items:baseline;
+             gap:16px; flex-wrap:wrap; margin-bottom:16px; }
+    h1 { font-size:20px; margin:0; letter-spacing:-.01em; }
+    .sub { color:var(--muted); font-size:13px; margin:2px 0 0; }
+    a { color:var(--accent); }
+
+    .grid { display:grid; grid-template-columns:1fr 340px; gap:16px; align-items:start; }
+    @media (max-width:860px) { .grid { grid-template-columns:1fr; } }
+
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+    .pad { padding:16px; }
+
+    #stage { position:relative; border-radius:12px; overflow:hidden; background:#000;
+             border:1px solid var(--line); aspect-ratio:4/3; }
+    video, #ipPreview { width:100%; height:100%; object-fit:contain; display:block; }
+    #ipPreview { display:none; }
+    #stage.idle video { opacity:.25; }
+    /* Sized in CSS to exactly cover the video, and in pixels to the capture
+       resolution, so face boxes land where the faces actually are. */
+    #overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+
+    /* The banner is the whole point on a projector: readable from the back row. */
+    #banner {
+      position:absolute; inset:auto 0 0 0; padding:16px 18px;
+      backdrop-filter:blur(8px); border-top:3px solid; display:none;
+    }
+    #banner.show { display:block; animation:rise .25s ease-out; }
+    @keyframes rise { from { transform:translateY(100%); } to { transform:translateY(0); } }
+    #banner.alert      { background:rgba(44,19,16,.92); border-color:var(--alert);   color:var(--alert); }
+    #banner.ok         { background:rgba(15,42,27,.92); border-color:var(--ok);      color:var(--ok); }
+    #banner.unknown    { background:rgba(43,36,19,.92); border-color:var(--unknown); color:var(--unknown); }
+    #banner.nodecision { background:rgba(25,29,36,.92); border-color:var(--muted);   color:var(--muted); }
+    #banner .head { font-size:24px; font-weight:800; letter-spacing:-.02em; }
+    #banner .name { font-size:17px; font-weight:600; color:#fff; margin-top:3px; }
+    #banner .meta { font-size:12px; color:#c9ced8; margin-top:4px; }
+
+    #pip {
+      position:absolute; top:12px; right:12px; display:flex; align-items:center; gap:7px;
+      background:rgba(0,0,0,.6); padding:6px 11px; border-radius:20px; font-size:12px;
+    }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+    .dot.live { background:var(--alert); animation:pulse 1.4s infinite; }
+    .dot.busy { background:var(--accent); animation:pulse .7s infinite; }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.25; } }
+
+    button { font:inherit; font-weight:600; padding:10px 16px; border-radius:8px;
+             cursor:pointer; border:1px solid var(--line); background:var(--panel); color:var(--fg); }
+    button.primary { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+    button:disabled { opacity:.4; cursor:not-allowed; }
+    select, input[type=text] {
+      font:inherit; padding:8px 10px; border-radius:7px; border:1px solid var(--line);
+      background:var(--bg); color:var(--fg); width:100%;
+    }
+    label { display:block; font-size:12px; color:var(--muted); margin:12px 0 5px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+
+    h3 { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted);
+         margin:0 0 10px; font-weight:700; }
+    .stat { display:flex; justify-content:space-between; font-size:13px; padding:4px 0; }
+    .stat span:first-child { color:var(--muted); }
+    .stat span:last-child { font-variant-numeric:tabular-nums; font-weight:600; }
+
+    #feed { max-height:340px; overflow-y:auto; }
+    .hit { border-left:3px solid var(--muted); padding:7px 10px; margin-bottom:7px;
+           background:var(--bg); border-radius:0 7px 7px 0; font-size:13px; }
+    .hit.alert { border-color:var(--alert); }
+    .hit.ok { border-color:var(--ok); }
+    .hit.unknown { border-color:var(--unknown); }
+    .hit.nodecision { border-color:var(--muted); }
+    .hit .who { font-weight:600; }
+    .hit .det { color:var(--muted); font-size:11.5px; margin-top:2px;
+                font-variant-numeric:tabular-nums; }
+    .note { font-size:12px; color:var(--muted); margin:10px 0 0; }
+    .err { color:var(--alert); font-size:13px; margin-top:10px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Live Camera</h1>
+      <p class="sub">Continuous scanning — no manual upload.
+        <a href="/test-scan">Single-image tool</a></p>
+    </div>
+    <div id="pip"><span class="dot" id="dot"></span><span id="pipText">stopped</span></div>
+  </header>
+
+  <div class="grid">
+    <div>
+      <div id="stage" class="idle">
+        <video id="video" playsinline muted></video>
+        <img id="ipPreview" alt="network camera preview">
+        <canvas id="overlay"></canvas>
+        <div id="banner"></div>
+      </div>
+      <div class="row">
+        <button id="start" class="primary">Start camera</button>
+        <button id="stop" disabled>Stop</button>
+      </div>
+      <div id="err" class="err"></div>
+    </div>
+
+    <div>
+      <div class="card pad">
+        <h3>Camera</h3>
+        <label for="device">Source</label>
+        <select id="device"></select>
+        <label for="camId">Camera ID (recorded on every detection)</label>
+        <input id="camId" type="text" value="LIVE-01">
+        <label for="sensitivity">Motion sensitivity</label>
+        <select id="sensitivity">
+          <option value="12">High — scan on slight movement</option>
+          <option value="25" selected>Normal</option>
+          <option value="45">Low — only obvious movement</option>
+        </select>
+        <p class="note">Frames are only sent when the scene changes. A still
+          corridor costs nothing.</p>
+      </div>
+
+      <div class="card pad" style="margin-top:14px">
+        <h3>Network camera (phone / CCTV)</h3>
+        <p class="note" style="margin:0 0 8px">
+          The server pulls frames itself — nothing is uploaded by hand. Use the
+          snapshot URL, e.g. <code>http://192.168.1.42:8080/shot.jpg</code>
+        </p>
+        <label for="ipUrl">Snapshot URL</label>
+        <input id="ipUrl" type="text" placeholder="http://192.168.1.42:8080/shot.jpg">
+        <label for="ipId">Camera ID</label>
+        <input id="ipId" type="text" value="IPCAM-01">
+        <div class="row">
+          <button id="ipTest">Test</button>
+          <button id="ipStart" class="primary">Start ingest</button>
+          <button id="ipStop" disabled>Stop</button>
+        </div>
+        <div id="ipMsg" class="note"></div>
+        <div id="ipStats" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card pad" style="margin-top:14px">
+        <h3>This session</h3>
+        <div class="stat"><span>Frames watched</span><span id="sFrames">0</span></div>
+        <div class="stat"><span>Scans run</span><span id="sScans">0</span></div>
+        <div class="stat"><span>Recognised</span><span id="sHits">0</span></div>
+        <div class="stat"><span>Alerts</span><span id="sAlerts">0</span></div>
+        <div class="stat"><span>Last scan</span><span id="sTime">—</span></div>
+      </div>
+
+      <div class="card pad" style="margin-top:14px">
+        <h3>Detections</h3>
+        <div id="feed"><p class="note" style="margin:0">Nothing yet.</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const video = $("video"), stage = $("stage"), banner = $("banner");
+  const dot = $("dot"), pipText = $("pipText");
+
+  const canvas = document.createElement("canvas");   // full-size, for upload
+  const tiny = document.createElement("canvas");     // 32x24, for motion only
+  tiny.width = 32; tiny.height = 24;
+  const tctx = tiny.getContext("2d", { willReadFrequently: true });
+
+  let stream = null, loop = null, scanning = false;
+  let lastPixels = null, lastScanAt = 0;
+  const stats = { frames: 0, scans: 0, hits: 0, alerts: 0 };
+
+  // Don't re-announce the same person over and over while they stand there.
+  const lastSeen = new Map();
+  const REANNOUNCE_MS = 12000;
+  // Floor between scans even under constant motion — a scan costs ~1s of CPU,
+  // and queueing them up just builds latency with no extra information.
+  const MIN_GAP_MS = 1200;
+
+  const esc = v => String(v ?? "").replace(/[&<>"]/g,
+    c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+  function setState(state, text) {
+    dot.className = "dot" + (state ? " " + state : "");
+    pipText.textContent = text;
+  }
+
+  async function listDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === "videoinput");
+      $("device").innerHTML = cams.length
+        ? cams.map((c, i) => `<option value="${esc(c.deviceId)}">${esc(c.label || "Camera " + (i + 1))}</option>`).join("")
+        : `<option value="">No camera found</option>`;
+    } catch (e) { /* labels need permission; refreshed after start */ }
+  }
+
+  async function start() {
+    $("err").textContent = "";
+    try {
+      const deviceId = $("device").value;
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: deviceId ? { deviceId: { exact: deviceId } }
+                        : { facingMode: "environment", width: { ideal: 1280 } },
+        audio: false,
+      });
+      video.srcObject = stream;
+      await video.play();
+
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      // Match the stage to the camera's aspect ratio so the overlay canvas and
+      // the video occupy exactly the same rectangle — otherwise the face boxes
+      // drift away from the faces.
+      stage.style.aspectRatio = `${canvas.width} / ${canvas.height}`;
+
+      stage.classList.remove("idle");
+      $("start").disabled = true;
+      $("stop").disabled = false;
+      setState("live", "watching");
+      await listDevices();
+
+      lastPixels = null;
+      loop = setInterval(tick, 200);   // 5 checks/sec — motion only, very cheap
+    } catch (e) {
+      $("err").textContent = "Could not open the camera: " + e.message;
+    }
+  }
+
+  function stop() {
+    clearInterval(loop); loop = null;
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = null;
+    stage.classList.add("idle");
+    banner.classList.remove("show");
+    $("start").disabled = false;
+    $("stop").disabled = true;
+    setState("", "stopped");
+  }
+
+  // Cheap motion gate: mean absolute difference between consecutive 32x24
+  // greyscale frames. This is the "detect on every frame, embed rarely" idea in
+  // its simplest form — it costs microseconds and keeps a ~1s face scan from
+  // running against an empty room.
+  function motionScore() {
+    tctx.drawImage(video, 0, 0, tiny.width, tiny.height);
+    const data = tctx.getImageData(0, 0, tiny.width, tiny.height).data;
+    const grey = new Uint8Array(tiny.width * tiny.height);
+    for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+      grey[p] = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) | 0;
+    }
+    if (!lastPixels) { lastPixels = grey; return 999; }   // first frame always scans
+    let sum = 0;
+    for (let i = 0; i < grey.length; i++) sum += Math.abs(grey[i] - lastPixels[i]);
+    lastPixels = grey;
+    return sum / grey.length;
+  }
+
+  function tick() {
+    if (!stream || scanning) return;
+    stats.frames++;
+    $("sFrames").textContent = stats.frames;
+
+    const score = motionScore();
+    const threshold = parseInt($("sensitivity").value, 10);
+    if (score < threshold) return;
+    if (Date.now() - lastScanAt < MIN_GAP_MS) return;
+
+    scan();
+  }
+
+  async function scan() {
+    scanning = true;
+    lastScanAt = Date.now();
+    setState("busy", "scanning…");
+
+    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.9));
+
+    const fd = new FormData();
+    fd.append("file", blob, "frame.jpg");
+    fd.append("camera_id", $("camId").value.trim() || "LIVE-01");
+
+    const started = performance.now();
+    try {
+      const res = await fetch("/api/v1/scan-face", { method: "POST", body: fd });
+      const data = await res.json();
+      const elapsed = ((performance.now() - started) / 1000).toFixed(2);
+
+      stats.scans++;
+      $("sScans").textContent = stats.scans;
+      $("sTime").textContent = elapsed + "s";
+      handle(data, canvas.width, canvas.height);
+    } catch (e) {
+      $("err").textContent = "Scan failed: " + e.message;
+    } finally {
+      scanning = false;
+      if (stream) setState("live", "watching");
+    }
+  }
+
+  // One class per face drives the banner, the box, the caption and the feed
+  // entry, so those four can never disagree about what a face is.
+  function faceClass(f) {
+    if (f.confidence === "no_decision") return "nodecision";
+    return f.alert ? "alert" : f.is_known_user ? "ok" : "unknown";
+  }
+
+  function faceName(f) {
+    const name = f.full_name || (f.person || {}).full_name;
+    return name || "Unknown — not in the registry";
+  }
+
+  // Read straight from the CSS custom properties rather than repeating the hex
+  // values here. They were previously duplicated, which meant restyling the
+  // banner silently left the boxes on the old palette — two sources of truth for
+  // one colour. Resolved once at startup; the values do not change at runtime.
+  const CSS = getComputedStyle(document.documentElement);
+  const cssColour = name => CSS.getPropertyValue(name).trim();
+  const BOX_COLOUR = {
+    alert: cssColour("--alert"),
+    ok: cssColour("--ok"),
+    unknown: cssColour("--unknown"),
+    nodecision: cssColour("--muted"),
+  };
+
+  // Draw a box round every face. The canvas is sized to the CAPTURE resolution
+  // and stretched by CSS onto the video, so bbox coordinates map straight across
+  // with no scaling maths — provided the stage keeps the video's aspect ratio,
+  // which start() sets.
+  function drawBoxes(faces, capW, capH) {
+    const c = $("overlay");
+    if (!capW || !capH) return;
+    c.width = capW; c.height = capH;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, capW, capH);
+    if (!faces || !faces.length) return;
+
+    const scale = capW / 640;              // keep strokes readable at any resolution
+    ctx.lineWidth = Math.max(2, 3 * scale);
+    ctx.font = `${Math.max(13, 16 * scale)}px system-ui, sans-serif`;
+    ctx.textBaseline = "top";
+
+    faces.forEach(f => {
+      const b = f.bbox;
+      if (!b || !b.w) return;
+      const colour = BOX_COLOUR[faceClass(f)];
+      ctx.strokeStyle = colour;
+      ctx.strokeRect(b.x, b.y, b.w, b.h);
+
+      const prefix = f.confidence === "probable" ? "? " : "";
+      const label = prefix + faceName(f)
+                  + (f.match_distance != null ? `  ${f.match_distance}` : "");
+      const pad = 5 * scale;
+      const tw = ctx.measureText(label).width + pad * 2;
+      const th = Math.max(19, 22 * scale);
+      const ty = b.y - th > 0 ? b.y - th : b.y + b.h;   // flip below if no room above
+      ctx.fillStyle = colour;
+      ctx.fillRect(b.x, ty, tw, th);
+      ctx.fillStyle = "#000";
+      ctx.fillText(label, b.x + pad, ty + pad * 0.6);
+    });
+  }
+
+  function handle(data, capW, capH) {
+    // No face in frame is the common case, not an error — stay quiet.
+    if (data.success === false) { drawBoxes([], capW, capH); return; }
+
+    const faces = data.faces && data.faces.length ? data.faces : [];
+    drawBoxes(faces, capW, capH);
+    if (!faces.length) return;
+
+    faces.forEach(f => {
+      if (f.alert) { stats.alerts++; stats.hits++; }
+      else if (f.is_known_user) { stats.hits++; }
+    });
+    $("sAlerts").textContent = stats.alerts;
+    $("sHits").textContent = stats.hits;
+
+    // Banner leads with severity — an offender at the back of the frame matters
+    // more than a verified member at the front.
+    const rank = f => (f.alert ? 2 : f.is_known_user ? 1 : 0);
+    const lead = faces.reduce((a, b) => (rank(b) > rank(a) ? b : a), faces[0]);
+    const cls = faceClass(lead);
+
+    const head = faces.length > 1
+      ? `${faces.length} FACES · ${data.summary ? data.summary.alerts : 0} ALERT`
+      : (lead.alert ? (lead.status || "").toUpperCase() + " DETECTED"
+                    : lead.is_known_user ? "RECOGNISED" : "UNKNOWN FACE");
+
+    const names = faces.map(f => {
+      const tag = f.alert ? ` (${f.status})` : f.is_known_user ? " (verified)" : "";
+      // A probable match is named, but never presented as a certainty.
+      const maybe = f.confidence === "probable" ? "likely " : "";
+      return maybe + esc(faceName(f)) + tag;
+    }).join(" · ");
+
+    banner.className = "show " + cls;
+    banner.innerHTML = `<div class="head">${esc(head)}</div>
+      <div class="name">${names}</div>
+      <div class="meta">${esc(data.message || "")}</div>`;
+
+    // One feed entry per face, each suppressed independently so a person
+    // standing in shot does not flood the list.
+    const now = Date.now();
+    faces.forEach(f => {
+      const key = (f.person || {}).id || f.full_name || "unknown";
+      if (lastSeen.has(key) && now - lastSeen.get(key) < REANNOUNCE_MS) return;
+      lastSeen.set(key, now);
+      const meta = [
+        f.confidence === "probable" ? "PROBABLE — needs review" : null,
+        f.match_distance != null ? "distance " + f.match_distance : null,
+        f.margin_to_next_person != null ? "margin " + f.margin_to_next_person : null,
+        f.capture_quality ? "quality " + f.capture_quality.quality_score : null,
+      ].filter(Boolean).join("  ·  ");
+      const label = f.alert
+                  ? (f.confidence === "probable" ? "LIKELY " : "") + (f.status || "").toUpperCase() + (f.confidence === "probable" ? "" : " DETECTED")
+                  : f.is_known_user ? (f.confidence === "probable" ? "PROBABLY RECOGNISED" : "RECOGNISED")
+                  : "UNKNOWN FACE";
+      addToFeed(faceClass(f), label, faceName(f), meta);
+    });
+  }
+
+  function addToFeed(cls, head, name, meta) {
+    const feed = $("feed");
+    if (feed.querySelector(".note")) feed.innerHTML = "";
+    const time = new Date().toLocaleTimeString();
+    const el = document.createElement("div");
+    el.className = "hit " + cls;
+    el.innerHTML = `<div class="who">${esc(name)}</div>
+                    <div class="det">${esc(head)} · ${esc(time)}<br>${esc(meta)}</div>`;
+    feed.prepend(el);
+    while (feed.children.length > 40) feed.removeChild(feed.lastChild);
+  }
+
+  // ---- network camera: the server does the pulling and the scanning --------
+  // The browser cannot scan a remote camera itself (a cross-origin frame taints
+  // the canvas and blocks the upload), so this panel just drives the backend
+  // poller and shows what it finds.
+
+  let ipTimer = null;
+
+  async function postJSON(url, body) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    return { ok: res.ok, data: await res.json() };
+  }
+
+  $("ipTest").addEventListener("click", async () => {
+    const url = $("ipUrl").value.trim();
+    $("ipMsg").textContent = "Testing…";
+    const { ok, data } = await postJSON("/api/v1/camera/test", { url });
+    $("ipMsg").innerHTML = ok
+      ? `<span style="color:var(--ok)">Reached it — ${data.width}x${data.height},
+         ${data.fetch_ms}ms per frame.</span>`
+      : `<span style="color:var(--alert)">${esc(data.error)}</span>` +
+        (data.hint ? `<br>${esc(data.hint)}` : "");
+  });
+
+  $("ipStart").addEventListener("click", async () => {
+    const { ok, data } = await postJSON("/api/v1/camera/start", {
+      url: $("ipUrl").value.trim(),
+      camera_id: $("ipId").value.trim() || "IPCAM-01",
+      motion_threshold: parseInt($("sensitivity").value, 10),
+    });
+    if (!ok) { $("ipMsg").innerHTML = `<span style="color:var(--alert)">${esc(data.error)}</span>`; return; }
+    $("ipMsg").textContent = "Ingesting.";
+    $("ipStart").disabled = true; $("ipStop").disabled = false;
+
+    // Show the camera while the server scans it. IP Webcam serves a continuous
+    // MJPEG stream at /video alongside the /shot.jpg stills, and an <img> renders
+    // that natively. Preview only — the server pulls its own frames.
+    const preview = $("ipUrl").value.trim().replace(/\/shot\.jpg.*$/, "/video");
+    $("ipPreview").src = preview;
+    $("ipPreview").style.display = "block";
+    $("video").style.display = "none";
+    stage.classList.remove("idle");
+    ipTimer = setInterval(pollStatus, 1000);
+    pollStatus();
+  });
+
+  $("ipStop").addEventListener("click", async () => {
+    await postJSON("/api/v1/camera/stop");
+    clearInterval(ipTimer); ipTimer = null;
+    $("ipStart").disabled = false; $("ipStop").disabled = true;
+    $("ipMsg").textContent = "Stopped.";
+    $("ipPreview").removeAttribute("src");
+    $("ipPreview").style.display = "none";
+    $("video").style.display = "block";
+    if (!stream) stage.classList.add("idle");
+  });
+
+  let lastIpScanAt = 0;
+  async function pollStatus() {
+    try {
+      const res = await fetch("/api/v1/camera/status");
+      const s = await res.json();
+      if (!s.running) {
+        clearInterval(ipTimer); ipTimer = null;
+        $("ipStart").disabled = false; $("ipStop").disabled = true;
+        return;
+      }
+      $("ipStats").innerHTML =
+        `<div class="stat"><span>Frames pulled</span><span>${s.frames}</span></div>
+         <div class="stat"><span>Scans run</span><span>${s.scans}</span></div>
+         <div class="stat"><span>Alerts</span><span>${s.alerts}</span></div>` +
+        (s.errors ? `<div class="stat"><span style="color:var(--alert)">Errors</span>
+                     <span>${s.errors}</span></div>` : "");
+
+      const r = s.last_result;
+      if (r && r.at && r.at > lastIpScanAt) {
+        lastIpScanAt = r.at;
+        // Boxes ARE drawn here. The preview is an independent MJPEG stream, so
+        // the frame on screen is not the exact frame that was scanned and a box
+        // can trail a moving subject by a scan interval. That is a far better
+        // trade than showing no box at all — and because the stage is sized to
+        // the reported frame dimensions, a stationary subject lines up exactly.
+        stage.style.aspectRatio = (r.frame_width && r.frame_height)
+          ? `${r.frame_width} / ${r.frame_height}` : stage.style.aspectRatio;
+        handle({
+          success: r.success,
+          alert: r.alert,
+          message: r.message,
+          summary: r.summary,
+          faces: r.faces || [],
+        }, r.frame_width || 0, r.frame_height || 0);
+      }
+    } catch (e) { /* transient; the next tick will retry */ }
+  }
+
+  $("start").addEventListener("click", start);
+  $("stop").addEventListener("click", stop);
+  $("device").addEventListener("change", () => { if (stream) { stop(); start(); } });
+  window.addEventListener("beforeunload", stop);
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $("err").textContent =
+      "This browser will not provide camera access. Note that browsers only allow "
+      + "cameras on https:// or on localhost — if you opened this page by IP address, "
+      + "use http://localhost:5000/live instead.";
+    $("start").disabled = true;
+  } else {
+    listDevices();
+  }
+})();
+</script>
+</body>
+</html>

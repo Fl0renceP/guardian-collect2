@@ -44,13 +44,47 @@ class Config:
     # 3. DeepFace Model Configuration
     # Options: "Facenet" (128-dim), "Facenet512" (512-dim), "ArcFace" (512-dim), "VGG-Face"
     FACE_MODEL = "Facenet512"
-    # Cosine distance match threshold for Facenet (lower = stricter match).
-    # This is the value the endpoint actually uses — app.py passes it into
-    # recognition.process_incoming_face_image, overriding that module's default.
+
+    # Face detector, used by enrolment and seeding. services/recognition.py reads
+    # the same FACE_DETECTOR environment variable with the same default, and
+    # carries the benchmark that produced this choice — briefly, retinaface took
+    # ~24s per scan against yunet's ~0.77s for no accuracy the threshold can see.
+    #
+    # Enrolment and scanning MUST agree: different backends crop faces
+    # differently, so a mismatch leaves stored references out of step with live
+    # scans. After changing this, run reembed_references.py.
+    FACE_DETECTOR = os.getenv("FACE_DETECTOR", "yunet")
+
+    # Face alignment, off by default. Counterintuitive but measured: with yunet it
+    # loses faces in group shots AND matches worse (separation 7.2x aligned vs
+    # 17.7x unaligned). services/recognition.py carries the full note.
+    # Must match the scan path — and changing it means re-running
+    # reembed_references.py.
+    FACE_ALIGN = os.getenv("FACE_ALIGN", "false").strip().lower() in ("1", "true", "yes")
+    # Cosine distance match threshold (lower = stricter). This is the value the
+    # endpoint actually uses — app.py passes it into recognition, overriding that
+    # module's default — so the two must not drift apart.
+    #
     # It must stay in the same units as the operator in that module's query (<=>).
-    # 0.60 here was being compared against raw Euclidean distances of ~20-30, so
-    # nothing but a byte-identical image ever matched.
-    MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.30"))
+    # An earlier 0.60 here was being compared against raw Euclidean distances of
+    # ~20-30, so nothing but a byte-identical image ever matched.
+    #
+    # Lowered from 0.30 to 0.15 after the only out-of-gallery face we have
+    # measured at 0.296 and was matched as an offender. See the measurement table
+    # in services/recognition.py — and the warning there that the safe window is
+    # narrower than the synthetic test data suggests.
+    MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.15"))
+
+    # Looser second band. Real cameras do not produce reference-quality images:
+    # live captures of enrolled people measured 0.1552-0.2023 here, recognisably
+    # the right person but outside the strict cut-off. Anything between the two
+    # thresholds is reported as a PROBABLE match — named and alerted on, but
+    # flagged for a human to confirm.
+    #
+    # 0.25 sits above the worst genuine live capture and below the nearest known
+    # impostor (0.2960, a real person not in the registry). Widening it starts
+    # naming that impostor as an offender.
+    PROBABLE_THRESHOLD = float(os.getenv("PROBABLE_THRESHOLD", "0.25"))
 
     # 3b. Face capture quality gate.
     # CCTV frames are the problem case: a 30px face upscaled to the model's 160px
@@ -75,6 +109,17 @@ class Config:
     # — and that blurred face still scored a higher Laplacian variance (132) than
     # a perfectly usable dim photo (91), so no isotropic threshold separates them.
     MIN_BLUR_DIRECTIONAL_RATIO = float(os.getenv("MIN_BLUR_DIRECTIONAL_RATIO", "0.25"))
+
+    # 3c. Azure AI Vision — Read/OCR, used for licence plates.
+    # Both values are on the "Keys and Endpoint" page of the Azure AI Services
+    # resource. The endpoint looks like https://<name>.cognitiveservices.azure.com/
+    #
+    # Note this is Vision READ, which is generally available. It is NOT the Azure
+    # Face API, whose identification and verification calls are Limited Access and
+    # need an approval process — see PROJECT_CONTEXT.md section 5. Face matching
+    # stays in our own pgvector pipeline for exactly that reason.
+    AZURE_VISION_ENDPOINT = _clean(os.getenv("AZURE_VISION_ENDPOINT"))
+    AZURE_VISION_KEY = _clean(os.getenv("AZURE_VISION_KEY"))
 
     # 4. Claims / hot-spot data
     # Azure Cosmos DB is the source of truth: it's writable, so claims submitted

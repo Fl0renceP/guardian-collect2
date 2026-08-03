@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guardian Collective — Media Analysis</title>
+  <style>
+    :root {
+      --bg:#f6f7f9; --panel:#fff; --fg:#16181d; --muted:#666c78; --line:#e2e5ea;
+      --alert:#b3261e; --alert-bg:#fdeceb; --ok:#186b3c; --ok-bg:#e9f6ee;
+      --unknown:#7a5c00; --unknown-bg:#fdf5e0; --accent:#1c4fd8;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#131519; --panel:#1b1e24; --fg:#e9eaee; --muted:#9aa1ad;
+              --line:#2b3038; --alert:#ff9a92; --alert-bg:#3a1c1a; --ok:#7fd4a0;
+              --ok-bg:#14301f; --unknown:#e8c86a; --unknown-bg:#312713; --accent:#8fb0ff; }
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:24px 16px 64px; background:var(--bg); color:var(--fg);
+           font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    .wrap { max-width:900px; margin:0 auto; }
+    h1 { font-size:21px; margin:0 0 4px; }
+    .sub { color:var(--muted); font-size:13px; margin:0 0 20px; }
+    a { color:var(--accent); }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+    .pad { padding:18px; }
+    .card + .card { margin-top:14px; }
+
+    #drop { border:2px dashed var(--line); border-radius:12px; padding:30px 18px;
+            text-align:center; cursor:pointer; background:var(--panel); }
+    #drop:hover, #drop.over { border-color:var(--accent); }
+    #drop p { margin:6px 0 0; color:var(--muted); font-size:13px; }
+    input[type=file] { display:none; }
+    #picked { margin-top:12px; font-size:13px; color:var(--muted); }
+    button { font:inherit; font-weight:600; padding:10px 18px; border-radius:8px;
+             cursor:pointer; border:1px solid var(--fg); background:var(--fg); color:var(--bg); }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    select { font:inherit; padding:8px 10px; border-radius:7px; border:1px solid var(--line);
+             background:var(--bg); color:var(--fg); }
+    .row { display:flex; gap:12px; align-items:center; margin-top:14px; flex-wrap:wrap; }
+    label { font-size:12px; color:var(--muted); }
+
+    h3 { font-size:11px; text-transform:uppercase; letter-spacing:.07em;
+         color:var(--muted); margin:0 0 12px; font-weight:700; }
+    .bar { height:7px; background:var(--line); border-radius:4px; overflow:hidden; margin:10px 0; }
+    .bar i { display:block; height:100%; background:var(--accent); transition:width .3s; }
+
+    .person { border-left:3px solid var(--muted); padding:9px 12px; margin-bottom:8px;
+              background:var(--bg); border-radius:0 8px 8px 0; }
+    .person.alert { border-color:var(--alert); }
+    .person.ok { border-color:var(--ok); }
+    .person.unknown { border-color:var(--unknown); }
+    .person .top { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
+    .person .name { font-weight:600; }
+    .person .det { font-size:12px; color:var(--muted); margin-top:3px;
+                   font-variant-numeric:tabular-nums; }
+    .badge { display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase;
+             letter-spacing:.05em; padding:2px 7px; border-radius:4px; margin-left:7px; }
+    .badge.offender,.badge.suspect { background:var(--alert); color:var(--panel); }
+    .badge.verified { background:var(--ok); color:var(--panel); }
+    .badge.multi { background:var(--accent); color:var(--panel); }
+    .file { font-size:13px; }
+    .file h4 { margin:0 0 3px; font-size:14px; }
+    .file .meta { color:var(--muted); font-size:12px; margin-bottom:8px; }
+    .none { color:var(--muted); font-size:13px; margin:0; }
+    .err { color:var(--alert); font-size:13px; }
+    details { margin-top:10px; }
+    summary { cursor:pointer; font-size:12px; color:var(--muted); }
+    pre { background:var(--bg); border:1px solid var(--line); padding:10px;
+          border-radius:8px; font-size:11px; overflow-x:auto; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Media Analysis</h1>
+  <p class="sub">Upload photos and videos — identify everyone in them, and find who
+    appears in more than one. <a href="/live">Live camera</a> · <a href="/test-scan">Single scan</a></p>
+
+  <div id="drop">
+    <strong>Drop images and videos here, or click to choose</strong>
+    <p>Pick several at once to compare across them. Videos are sampled, not
+       decoded frame by frame.</p>
+    <div id="picked"></div>
+  </div>
+  <input id="files" type="file" multiple accept="image/*,video/*">
+
+  <div class="row">
+    <button id="go" disabled>Analyse</button>
+    <label for="interval">Sample every</label>
+    <select id="interval">
+      <option value="0.5">0.5s — thorough, slower</option>
+      <option value="1" selected>1s</option>
+      <option value="2">2s — quick pass</option>
+      <option value="5">5s — long footage</option>
+    </select>
+  </div>
+
+  <div id="progress" class="card pad" style="display:none;margin-top:18px">
+    <h3>Working</h3>
+    <div id="progressText" class="none"></div>
+    <div class="bar"><i id="progressBar" style="width:0%"></i></div>
+  </div>
+
+  <div id="out"></div>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const esc = v => String(v ?? "").replace(/[&<>"]/g,
+    c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+  let chosen = [];
+
+  $("drop").addEventListener("click", () => $("files").click());
+  $("drop").addEventListener("dragover", e => { e.preventDefault(); $("drop").classList.add("over"); });
+  $("drop").addEventListener("dragleave", () => $("drop").classList.remove("over"));
+  $("drop").addEventListener("drop", e => {
+    e.preventDefault(); $("drop").classList.remove("over");
+    chosen = [...e.dataTransfer.files]; showPicked();
+  });
+  $("files").addEventListener("change", e => { chosen = [...e.target.files]; showPicked(); });
+
+  function showPicked() {
+    $("picked").innerHTML = chosen.length
+      ? chosen.map(f => `${esc(f.name)} <span style="opacity:.6">(${(f.size / 1048576).toFixed(1)} MB)</span>`).join("<br>")
+      : "";
+    $("go").disabled = !chosen.length;
+  }
+
+  function fmtTime(s) {
+    if (s == null) return "—";
+    const m = Math.floor(s / 60), sec = (s % 60).toFixed(1).padStart(4, "0");
+    return m ? `${m}:${sec.padStart(4, "0")}` : `${s.toFixed(1)}s`;
+  }
+
+  function personRow(p, extra) {
+    const cls = p.alert ? "alert" : "ok";
+    const badge = p.status ? `<span class="badge ${esc(p.status)}">${esc(p.status)}</span>` : "";
+    return `<div class="person ${cls}">
+      <div class="top"><span class="name">${esc(p.full_name)}${badge}</span>
+        <span style="font-variant-numeric:tabular-nums">${p.best_distance ?? ""}</span></div>
+      <div class="det">${extra}</div>
+    </div>`;
+  }
+
+  function renderFile(f) {
+    if (f.error) {
+      return `<div class="card pad file"><h4>${esc(f.filename)}</h4>
+              <p class="err">${esc(f.error)}</p></div>`;
+    }
+    const meta = f.media_type === "video"
+      ? `video · ${f.duration_seconds}s · sampled ${f.frames_sampled} frames
+         (${f.frames_skipped_static} skipped as static) · faces in ${f.frames_with_faces}`
+      : `image · ${f.faces_detected} face(s) detected`;
+
+    const people = f.people.length
+      ? f.people.map(p => personRow(p,
+          f.media_type === "video"
+            ? `${p.sightings} sighting(s) · first ${fmtTime(p.first_seen)} · last ${fmtTime(p.last_seen)}`
+            : `matched at distance ${p.best_distance}`)).join("")
+      : `<p class="none">No known people identified.</p>`;
+
+    const unknown = f.unknown_face_count
+      ? `<p class="none" style="margin-top:8px">${f.unknown_face_count} unrecognised
+         face(s) — see cross-media grouping below.</p>` : "";
+
+    return `<div class="card pad file">
+      <h4>${esc(f.filename)}</h4>
+      <div class="meta">${esc(meta)}</div>
+      ${people}${unknown}
+    </div>`;
+  }
+
+  function renderCross(cross, fileCount) {
+    let html = `<div class="card pad"><h3>Across all ${fileCount} file(s)</h3>`;
+
+    const shared = cross.shared_known || [];
+    if (shared.length) {
+      html += `<p class="none" style="margin-bottom:10px">Known people appearing in
+               more than one file:</p>`;
+      html += shared.map(p => {
+        const where = Object.entries(p.sources)
+          .map(([name, s]) => `${esc(name)} (${s.sightings}×, best ${s.best_distance})`)
+          .join(" · ");
+        return personRow({ ...p, best_distance: "" },
+          `<span class="badge multi">${p.source_count} files</span> ${where}`);
+      }).join("");
+    } else {
+      html += `<p class="none">No known person appears in more than one file.</p>`;
+    }
+
+    const groups = (cross.unknown_groups || []).filter(g => g.in_multiple_media);
+    if (groups.length) {
+      html += `<h3 style="margin-top:18px">Unrecognised people seen in several files</h3>
+               <p class="none" style="margin-bottom:10px">Not in the registry, but the
+               same face appears more than once — matched directly against each other.</p>`;
+      html += groups.map(g => `<div class="person unknown">
+        <div class="top"><span class="name">${esc(g.group)}</span>
+          <span class="badge multi">${g.sources.length} files</span></div>
+        <div class="det">${g.appearances.map(a =>
+          `${esc(a.source)} @ ${fmtTime(a.timestamp)}`).join(" · ")}</div>
+      </div>`).join("");
+    }
+
+    const solo = (cross.unknown_groups || []).filter(g => !g.in_multiple_media).length;
+    if (solo) {
+      html += `<p class="none" style="margin-top:10px">${solo} other unrecognised
+               ${solo === 1 ? "person" : "people"} seen in one file only.</p>`;
+    }
+    return html + `</div>`;
+  }
+
+  async function poll(jobId) {
+    while (true) {
+      const res = await fetch(`/api/v1/media/job/${jobId}`);
+      const job = await res.json();
+
+      if (job.state === "running") {
+        const pct = job.duration_seconds
+          ? Math.min(100, (job.position_seconds / job.duration_seconds) * 100)
+          : (job.files_done / job.files_total) * 100;
+        $("progressText").textContent =
+          `${job.current_file} — file ${job.files_done + 1} of ${job.files_total}`
+          + (job.duration_seconds
+              ? `, ${job.position_seconds.toFixed(1)}s of ${job.duration_seconds.toFixed(1)}s`
+              : "")
+          + ` · ${job.frames_done} frames scanned`;
+        $("progressBar").style.width = pct + "%";
+        await new Promise(r => setTimeout(r, 700));
+        continue;
+      }
+
+      $("progress").style.display = "none";
+      if (job.state === "failed") {
+        $("out").innerHTML = `<div class="card pad err">Analysis failed: ${esc(job.error)}</div>`;
+        return;
+      }
+
+      const result = job.result;
+      $("out").innerHTML =
+        renderCross(result.cross_media, result.files.length) +
+        result.files.map(renderFile).join("") +
+        `<details><summary>Raw result</summary><pre>${esc(JSON.stringify(result, null, 2))}</pre></details>`;
+      return;
+    }
+  }
+
+  $("go").addEventListener("click", async () => {
+    $("go").disabled = true;
+    $("out").innerHTML = "";
+    $("progress").style.display = "block";
+    $("progressText").textContent = "Uploading…";
+    $("progressBar").style.width = "0%";
+
+    const fd = new FormData();
+    chosen.forEach(f => fd.append("files", f));
+    fd.append("sample_interval", $("interval").value);
+
+    try {
+      const res = await fetch("/api/v1/media/analyse", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      await poll(data.job_id);
+    } catch (e) {
+      $("progress").style.display = "none";
+      $("out").innerHTML = `<div class="card pad err">${esc(e.message)}</div>`;
+    } finally {
+      $("go").disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
