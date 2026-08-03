@@ -274,6 +274,34 @@ a {
   overflow-wrap: anywhere;
 }
 
+.tile-v-suburb {
+  font-size: clamp(17px, 1.75vw, 22px);
+  line-height: 1.24;
+}
+
+.tile {
+  padding: 16px;
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tile-k {
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+}
+
+.tile-m {
+  font-size: 12.5px;
+  line-height: 1.35;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
 /* Hotspot map helpers required by the Leaflet view layout. */
 .map-canvas {
   height: 560px;
@@ -383,11 +411,45 @@ a {
 .appbar-inner {
   max-width: 1240px;
   margin: 0 auto;
-  padding: 12px 20px;
+  padding: 12px 20px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.appbar-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.appbar-nav-row {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  margin-left: 10px;
+}
+
+.appbar-controls-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.appbar-controls-row .viewing-label {
+  white-space: nowrap;
+}
+
+.appbar-controls-row select {
+  width: auto;
+  min-width: 0;
 }
 /* The member role carries the logo lockup, six nav items and two identity
    selects. Shed the least useful pieces in order — label, then the wordmark
@@ -468,8 +530,8 @@ a {
 }
 .nav {
   display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 .nav a {
   text-decoration: none;
@@ -488,18 +550,18 @@ a {
   background: linear-gradient(112deg, var(--accent), color-mix(in srgb, var(--accent) 62%, var(--rule)));
   color: var(--accent-ink);
   font-weight: 550;
-  box-shadow: 0 8px 14px color-mix(in srgb, var(--accent) 36%, transparent);
+  box-shadow: none;
 }
 
 .nav a.active::after {
   content: '';
   position: absolute;
-  inset: -2px;
+  inset: 0px 0px 1px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 70%, #ffffff 30%);
-  opacity: 0.55;
+  background: color-mix(in srgb, var(--accent) 36%, transparent);
+  opacity: 0.62;
   pointer-events: none;
-  animation: nav-tab-pulse 1.9s ease-in-out infinite;
+  animation: nav-tab-pulse 2.1s ease-in-out infinite;
 }
 .nav a .badge {
   margin-left: 6px;
@@ -541,6 +603,56 @@ a {
 }
 .spacer {
   margin-left: auto;
+}
+
+.menu-toggle {
+  display: none;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.roomy-card {
+  padding: 18px;
+}
+
+.roomy-card .card-head {
+  gap: 14px;
+  align-items: center;
+}
+
+.roomy-card p {
+  line-height: 1.45;
+}
+
+.alert-title {
+  font-size: 15.5px;
+  line-height: 1.35;
+}
+
+.alert-kind {
+  font-size: 13px;
+  margin-right: 4px;
+}
+
+.alert-distance {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.alert-detail {
+  margin: 10px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.alert-meta {
+  margin: 8px 0 0;
+  line-height: 1.45;
 }
 
 /* ---------- controls ---------- */
@@ -802,6 +914,52 @@ textarea {
   .grid-4-tiles > * {
     min-width: 0;
   }
+
+  .menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-left: auto;
+  }
+
+  .appbar-menu {
+    display: none;
+    flex-basis: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    border-top: 1px solid var(--hairline);
+    padding-top: 10px;
+  }
+
+  .appbar-menu[data-open='true'] {
+    display: flex;
+  }
+
+  .appbar-menu .nav {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .appbar-controls-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .appbar-menu .nav a {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+  }
+
+  .appbar-menu .spacer {
+    display: none;
+  }
+
+  .appbar-menu select,
+  .appbar-menu .btn {
+    width: 100%;
+  }
 }
 
 @media (max-width: 780px) {
@@ -938,12 +1096,12 @@ textarea {
 @keyframes nav-tab-pulse {
   0%,
   100% {
-    transform: scale(1);
-    opacity: 0.5;
+    transform: scale(0.965);
+    opacity: 0.38;
   }
   50% {
-    transform: scale(1.055);
-    opacity: 0.9;
+    transform: scale(1.11);
+    opacity: 0.62;
   }
 }
 

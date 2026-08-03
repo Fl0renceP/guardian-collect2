@@ -100,7 +100,7 @@ export default function MyClaims() {
         {claims.map((claim) => {
           const open = openId === claim.Incident
           return (
-            <article key={claim.Incident} className="card list-card">
+            <article key={claim.Incident} className="card list-card roomy-card">
               <div className="card-head">
                 <StatusPill status={claim.status} />
                 <strong style={{ fontSize: 14.5 }}>

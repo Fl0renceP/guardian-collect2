@@ -208,28 +208,28 @@ export default function AlertsFeed() {
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {sorted.map((alert) => {
           const style = SEVERITY_STYLE[alert.severity] || SEVERITY_STYLE.info
           return (
-            <article key={alert.id} className="card list-card">
+            <article key={alert.id} className="card list-card roomy-card">
               <div className="card-head">
                 <span className={`pill ${style.pill}`}>
                   <span className="dot" aria-hidden="true" />
                   {style.label}
                 </span>
-                <strong style={{ fontSize: 14.5 }}>{alert.title}</strong>
-                <span className="tiny">{KIND_LABEL[alert.kind] || alert.kind}</span>
+                <strong className="alert-title">{alert.title}</strong>
+                <span className="tiny alert-kind">{KIND_LABEL[alert.kind] || alert.kind}</span>
                 <span className="spacer" />
                 {alert.distance_km != null ? (
-                  <span className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <span className="muted alert-distance" style={{ fontVariantNumeric: 'tabular-nums' }}>
                     {alert.distance_km} km away
                   </span>
                 ) : null}
               </div>
 
-              <p style={{ margin: '7px 0 0', fontSize: 13.5 }}>{alert.detail}</p>
-              <p className="tiny" style={{ margin: '5px 0 0' }}>
+              <p className="alert-detail">{alert.detail}</p>
+              <p className="tiny alert-meta">
                 {alert.suburb ? `${alert.suburb} · ` : ''}
                 {formatDateTime(alert.at)}
                 {alert.meta?.member ? ` · reported by ${alert.meta.member}` : ''}
