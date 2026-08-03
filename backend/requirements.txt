@@ -13,6 +13,10 @@ click
 colorama
 cryptography
 deepface
+# Local OCR for the live plate reader. Pulls torch + torchvision (~2.5GB): the
+# live stream reads hundreds of frames, which is the wrong shape of workload to
+# bill per call to a cloud OCR API.
+easyocr
 filelock
 fire
 Flask

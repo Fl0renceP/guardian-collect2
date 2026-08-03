@@ -7,7 +7,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-CONTAINER_NAME = "plate-images"
+CONTAINER_NAME = "image-plates"
 
 CREATE_PLATE_SCHEMA_SQL = """
 DROP TABLE IF EXISTS vehicle_plate_images CASCADE;
@@ -63,6 +63,18 @@ SEED_PLATES = [
         "status": "offender",
         "owner_name": "Stolen Vehicle - Alert",
         "blob_name": "seed_offender_plate2.jpeg"
+    },
+    {
+        "plate_number": "CF 246-830",
+        "status": "offender",
+        "owner_name": "Stolen Vehicle - Alert",
+        "blob_name": "seed_offender_plate3.jpeg"
+    },
+    {
+        "plate_number": "CF 41043",
+        "status": "verified",
+        "owner_name": "Registered Resident",
+        "blob_name": "seed_verified_plate2.jpeg"
     }
 ]
 

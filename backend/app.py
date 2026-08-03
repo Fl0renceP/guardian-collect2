@@ -29,6 +29,7 @@ from services import detection_log
 from services import camera_poller
 from services import media_analysis
 from services import plate_ocr
+from services import plate_video
 from services import face_tracker
 
 # Configure logging
@@ -273,7 +274,6 @@ def create_app(config_object=Config):
             except ValueError:
                 return None
 
-        conn = get_db_connection()
         request_started = time.perf_counter()
         logger.info(
             "scan-face request received: filename=%s bytes=%s remote=%s",
@@ -281,6 +281,11 @@ def create_app(config_object=Config):
             len(image_bytes),
             request.remote_addr,
         )
+        # One acquisition only. This used to take a connection here AND again
+        # below, orphaning the first: never released, never closed. At
+        # DB_POOL_MAX_CONN=8 the pool was dry after eight scans, and every
+        # DB-backed endpoint then failed with "connection pool exhausted" —
+        # including ones that had nothing to do with faces.
         try:
             conn = get_db_connection()
         except OperationalError as e:
@@ -422,7 +427,63 @@ def create_app(config_object=Config):
             logger.error(f"Error processing Azure plate scan: {e}")
             return jsonify({"error": "Internal processing error during plate scan"}), 500
         finally:
-            conn.close()
+            # release, not close: conn came from the pool, and closing it drains
+            # one slot permanently instead of handing it back.
+            release_db_connection(conn)
+
+    @app.route("/api/v1/scan-plate-live", methods=["POST"])
+    def scan_plate_live():
+        """One frame of a live video stream, read locally through EasyOCR.
+
+        Separate from /api/v1/scan-plate rather than a flag on it, because the
+        two have opposite priorities. A single uploaded photo should try its
+        hardest on the one image it has. A video frame is disposable — the next
+        one arrives in a moment — so it locates the plate before reading, and
+        withholds judgement until several frames agree.
+
+        stream_id partitions the frame-to-frame vote, so two cameras (or two
+        operators) scanning at once do not pool their readings into one verdict.
+        """
+        if "file" not in request.files:
+            return jsonify({"error": "No image file provided in 'file' field"}), 400
+
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "No selected file"}), 400
+
+        stream_id = request.form.get("stream_id") or "default"
+        image_bytes = file.read()
+
+        conn = get_db_connection()
+        try:
+            result = plate_video.read_frame(
+                image_bytes, db_conn=conn, stream_id=stream_id
+            )
+            if not result.get("success"):
+                return jsonify(result), 502
+
+            # Only on the frame where the vote lands. Without this the operator
+            # gets an alert per frame for as long as the car sits in view.
+            if result.get("alert") and result.get("stability", {}).get("newly_confirmed"):
+                result = _attach_plate_alert(
+                    result, source_endpoint="/api/v1/scan-plate-live"
+                )
+            else:
+                result["alert_event"] = None
+                result["alerts"] = []
+            return jsonify(result), 200
+        except Exception as e:
+            logger.error(f"Error processing live plate frame: {e}")
+            return jsonify({"error": "Internal processing error during plate scan"}), 500
+        finally:
+            release_db_connection(conn)
+
+    @app.route("/api/v1/scan-plate-live/reset", methods=["POST"])
+    def scan_plate_live_reset():
+        """Forget a stream's vote history, so a new session starts clean."""
+        stream_id = (request.get_json(silent=True) or {}).get("stream_id") or "default"
+        plate_video.reset_stream(stream_id)
+        return jsonify({"success": True, "stream_id": stream_id}), 200
 
     @app.route("/media", methods=["GET"])
     def media_page():
@@ -590,6 +651,12 @@ if __name__ == "__main__":
         logger.info("Warm recognition pipeline completed in %sms", warm_ms)
     except Exception as e:
         logger.warning("Failed to warm recognition pipeline: %s", e)
+
+    try:
+        warm_ms = plate_video.warm_plate_reader()
+        logger.info("EasyOCR plate reader warmed in %sms.", warm_ms)
+    except Exception as e:
+        logger.warning("Could not warm the plate reader (first frame will be slow): %s", e)
 
     try:
         conn = get_db_connection()
