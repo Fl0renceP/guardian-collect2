@@ -68,8 +68,8 @@ export default function MemberSafetyScore() {
       </p>
 
       {/* Hero */}
-      <section className="card" style={{ padding: 24, marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
+      <section className="card score-card" style={{ marginBottom: 16 }}>
+        <div className="score-hero">
           <ScoreRing categories={data.categories} score={data.score} />
 
           <div style={{ flex: 1, minWidth: 260 }}>
@@ -89,7 +89,7 @@ export default function MemberSafetyScore() {
             </span>
           </div>
 
-          <div style={{ textAlign: 'right', minWidth: 170 }}>
+          <div className="score-miles" style={{ textAlign: 'right', minWidth: 170 }}>
             <div
               style={{
                 fontSize: 36,
@@ -183,7 +183,7 @@ export default function MemberSafetyScore() {
                 {c.label}
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 4 }}>
-                <span style={{ fontSize: 27, fontWeight: 700, letterSpacing: '-0.02em' }}>
+                <span className="tile-v" style={{ fontWeight: 700 }}>
                   {c.points}
                 </span>
                 <span className="muted" style={{ fontSize: 13 }}>
@@ -253,7 +253,7 @@ export default function MemberSafetyScore() {
 
       {/* What's still available */}
       {data.opportunities.length ? (
-        <section className="card" style={{ padding: 18 }}>
+        <section className="card panel">
           <h2 style={{ fontSize: 15 }}>Earn more</h2>
           <p className="muted" style={{ margin: '4px 0 12px' }}>
             {num.format(data.max_score - data.score)} points still available, worth{' '}

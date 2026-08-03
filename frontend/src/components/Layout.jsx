@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ROLES, useSession } from '../session'
 import { api } from '../api'
 
@@ -64,10 +64,18 @@ export default function Layout() {
   const [theme, setTheme] = useState(currentTheme)
   const [pending, setPending] = useState(null)
   const [alertCount, setAlertCount] = useState(null)
+  // Only meaningful below the mobile breakpoint, where the nav and the identity
+  // switcher collapse behind a menu button. Above it the panel is display:contents
+  // and this flag has no effect.
+  const [menuOpen, setMenuOpen] = useState(false)
+  const { pathname } = useLocation()
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  // Landing on a new screen should leave the menu behind, not on top of it.
+  useEffect(() => setMenuOpen(false), [pathname])
 
   // Keep the review-queue badge current so an employee sees new work arrive.
   useEffect(() => {
@@ -120,101 +128,109 @@ export default function Layout() {
             </span>
           </NavLink>
 
-          <nav className="nav">
-            {nav.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) => (isActive ? 'active' : undefined)}
-              >
-                {item.label}
-                {item.badge && badgeValue[item.badge] ? (
-                  <span className="badge">{badgeValue[item.badge]}</span>
-                ) : null}
-              </NavLink>
-            ))}
-          </nav>
-
-          <nav className="demo-nav" aria-label="Biometric demos">
-            {DEMO_LINKS.map((item) => (
-              <a key={item.href} href={item.href}>
-                {item.label}
-              </a>
-            ))}
-          </nav>
-
-          <div className="spacer" />
-
-          {/* Demo identity switcher. Stands in for authentication — see session.jsx. */}
-          <label className="tiny viewing-label" htmlFor="role-select" style={{ marginRight: -4 }}>
-            Viewing as
-          </label>
-          <select
-            id="role-select"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            style={{ width: 'auto' }}
-          >
-            {ROLES.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-
-          {role === 'member' ? (
-            <select
-              aria-label="Select member"
-              value={memberId || ''}
-              onChange={(e) => setMemberId(e.target.value)}
-              style={{ width: 'auto' }}
-            >
-              {directory.members.map((m) => (
-                <option key={m.member_id} value={m.member_id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          ) : null}
-
-          {role === 'employee' ? (
-            <select
-              aria-label="Select employee"
-              value={employeeId || ''}
-              onChange={(e) => setEmployeeId(e.target.value)}
-              style={{ width: 'auto' }}
-            >
-              {directory.employees.map((e) => (
-                <option key={e.employee_id} value={e.employee_id}>
-                  {e.name}
-                </option>
-              ))}
-            </select>
-          ) : null}
-
-          {role === 'cpu' ? (
-            <select
-              aria-label="Select unit"
-              value={unitId || ''}
-              onChange={(e) => setUnitId(e.target.value)}
-              style={{ width: 'auto' }}
-            >
-              {directory.units.map((u) => (
-                <option key={u.unit_id} value={u.unit_id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          ) : null}
-
           <button
             type="button"
-            className="btn"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className="btn menu-toggle"
+            aria-expanded={menuOpen}
+            aria-controls="app-menu"
+            onClick={() => setMenuOpen((open) => !open)}
           >
-            {theme === 'dark' ? 'Light' : 'Dark'}
+            <span aria-hidden="true">{menuOpen ? '✕' : '☰'}</span>
+            {menuOpen ? 'Close' : 'Menu'}
           </button>
+
+          <div className="appbar-menu" id="app-menu" data-open={menuOpen ? 'true' : 'false'}>
+            <nav className="nav">
+              {nav.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) => (isActive ? 'active' : undefined)}
+                  // Tapping the tab you are already on doesn't change the route,
+                  // so the effect above won't fire — close it here as well.
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {item.label}
+                  {item.badge && badgeValue[item.badge] ? (
+                    <span className="badge">{badgeValue[item.badge]}</span>
+                  ) : null}
+                </NavLink>
+              ))}
+            </nav>
+
+            <nav className="demo-nav" aria-label="Biometric demos">
+              {DEMO_LINKS.map((item) => (
+                <a key={item.href} href={item.href}>
+                  {item.label}
+                </a>
+              ))}
+            </nav>
+
+            <div className="spacer" />
+
+            {/* Demo identity switcher. Stands in for authentication — see session.jsx. */}
+            <label className="tiny viewing-label" htmlFor="role-select" style={{ marginRight: -4 }}>
+              Viewing as
+            </label>
+            <select id="role-select" value={role} onChange={(e) => setRole(e.target.value)}>
+              {ROLES.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+
+            {role === 'member' ? (
+              <select
+                aria-label="Select member"
+                value={memberId || ''}
+                onChange={(e) => setMemberId(e.target.value)}
+              >
+                {directory.members.map((m) => (
+                  <option key={m.member_id} value={m.member_id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+
+            {role === 'employee' ? (
+              <select
+                aria-label="Select employee"
+                value={employeeId || ''}
+                onChange={(e) => setEmployeeId(e.target.value)}
+              >
+                {directory.employees.map((e) => (
+                  <option key={e.employee_id} value={e.employee_id}>
+                    {e.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+
+            {role === 'cpu' ? (
+              <select
+                aria-label="Select unit"
+                value={unitId || ''}
+                onChange={(e) => setUnitId(e.target.value)}
+              >
+                {directory.units.map((u) => (
+                  <option key={u.unit_id} value={u.unit_id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            >
+              {theme === 'dark' ? 'Light' : 'Dark'}
+            </button>
+          </div>
         </div>
       </header>
 

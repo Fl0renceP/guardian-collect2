@@ -127,11 +127,21 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Stop iOS inflating body text when the phone is turned to landscape. */
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: var(--page);
   color: var(--ink);
   font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+img,
+video {
+  max-width: 100%;
 }
 
 h1,
@@ -166,6 +176,35 @@ a {
   border-radius: var(--radius);
 }
 
+/* Card paddings live here rather than inline on each view, so a phone can shed
+   the chrome from one place. */
+.panel {
+  padding: 18px;
+}
+.list-card {
+  padding: 16px;
+}
+.empty {
+  padding: 28px;
+  text-align: center;
+}
+/* The filter strip above a map or feed: one row of labelled groups on a desktop,
+   a stack of full-width groups on a phone. */
+.filters {
+  padding: 14px;
+  margin-bottom: 16px;
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+/* Header row of a claim/alert card — pill, title, spacer, actions. */
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .muted {
   color: var(--ink-2);
   font-size: 13.5px;
@@ -181,6 +220,11 @@ a {
   /* The magenta rule from the mockups. Decorative only — it carries no meaning,
      so its 3.92:1 against white is fine (nothing reads text off it). */
   border-bottom: 2px solid var(--rule);
+  /* Sticky so the nav is always a thumb away on a phone. Above Leaflet, whose
+     controls top out at z-index 1000. */
+  position: sticky;
+  top: 0;
+  z-index: 1100;
 }
 .appbar-inner {
   max-width: 1240px;
@@ -193,10 +237,20 @@ a {
 }
 /* The member role carries the logo lockup, six nav items and two identity
    selects. Shed the least useful pieces in order — label, then the wordmark
-   (the badge alone still identifies the app) — before the row wraps. */
+   (the badge alone still identifies the app) — before the row wraps. Below the
+   mobile breakpoint the whole lot collapses behind the menu button instead. */
 .appbar-inner select {
+  width: auto;
   max-width: 150px;
   text-overflow: ellipsis;
+}
+/* Desktop: the wrapper is inert, so its children lay out as direct flex items
+   of the bar exactly as they did before the menu existed. */
+.appbar-menu {
+  display: contents;
+}
+.menu-toggle {
+  display: none;
 }
 @media (max-width: 1240px) {
   .appbar-inner .viewing-label {
@@ -358,6 +412,12 @@ a {
   background: var(--critical-wash);
   color: var(--critical);
 }
+/* Filter chips. Compact on a desktop where they sit in a dense row; grown to a
+   proper touch target on a phone. */
+.btn-chip {
+  border-radius: 999px;
+  padding: 4px 12px;
+}
 
 select,
 input[type='text'],
@@ -423,6 +483,103 @@ textarea {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 14px;
+}
+
+/* ---------- stat tiles ---------- */
+.tile {
+  padding: 13px 15px;
+}
+.tile-k {
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 5px;
+}
+.tile-v {
+  font-size: 27px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  /* Suburb names and rand totals are unbounded — wrap rather than overflow the
+     tile once two of these sit side by side on a phone. */
+  overflow-wrap: anywhere;
+}
+.tile-m {
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+
+/* ---------- safety score ---------- */
+.score-card {
+  padding: 24px;
+}
+.score-hero {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ---------- maps ---------- */
+.map-canvas {
+  height: 560px;
+  background: var(--page);
+  transition: opacity 120ms ease;
+}
+.map-canvas.map-md {
+  height: 520px;
+}
+.map-canvas.map-sm {
+  height: 380px;
+}
+/* Legend / caption strip below a map. */
+.map-footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--hairline);
+  padding: 11px 15px;
+}
+
+/* ---------- data tables ---------- */
+/* Every table is a wide grid of numbers; it scrolls sideways inside its card
+   rather than forcing the page to. */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.data-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13.5px;
+}
+/* The note lives outside .table-wrap, not in a <caption>: a caption is sized to
+   the table, so on a phone it would scroll sideways with it and be half-hidden.
+   The table points at it with aria-describedby instead. */
+.table-note {
+  margin: 0;
+  padding: 14px 15px 12px;
+}
+.data-table th {
+  text-align: left;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+.data-table td {
+  text-align: left;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.data-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- status pill ---------- */
@@ -558,6 +715,12 @@ textarea {
   font-weight: 550;
 }
 
+/* A grid track is min-content-wide by default, so an unbreakable suburb name or
+   rand total would push the column past the viewport rather than wrap in it. */
+.grid-4-tiles > * {
+  min-width: 0;
+}
+
 @media (max-width: 980px) {
   .grid-4-tiles {
     grid-template-columns: repeat(2, 1fr) !important;
@@ -568,5 +731,217 @@ textarea {
   .grid-2,
   .grid-3 {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- phones and small tablets ----------
+
+   Two steps. At 880px the app bar can no longer hold seven nav items plus the
+   identity switcher, so everything but the logo collapses behind a menu button.
+   At 720px the page itself goes to phone proportions: tighter gutters, filter
+   groups stacked full width, maps sized to the viewport instead of a fixed
+   desktop height, and controls grown to a 40px+ touch target.
+
+   The 16px floor on form fields is not a style choice — iOS Safari zooms the
+   whole page in when it focuses a field smaller than that, and the user is then
+   left scrolled sideways on a layout that had fitted fine. */
+
+@media (max-width: 880px) {
+  .appbar-inner {
+    gap: 10px;
+    padding: 10px max(14px, env(safe-area-inset-right)) 10px
+      max(14px, env(safe-area-inset-left));
+  }
+  /* With the nav gone from the top row there is room for the wordmark again. */
+  .brand-text {
+    display: flex;
+  }
+  .menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-left: auto;
+    padding: 9px 13px;
+  }
+
+  .appbar-menu {
+    display: none;
+    /* Full-width, so it wraps onto its own row beneath the logo and button. */
+    flex-basis: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    margin-top: 2px;
+    padding: 10px 0 2px;
+    border-top: 1px solid var(--hairline);
+    /* A member has seven tabs, two demo links and the identity switcher. Cap the
+       panel and scroll it rather than letting the sticky bar grow taller than
+       the screen it is stuck to. */
+    max-height: min(78vh, 640px);
+    overflow-y: auto;
+  }
+  .appbar-menu[data-open='true'] {
+    display: flex;
+  }
+
+  .appbar-menu .nav {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .appbar-menu .nav a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 15px;
+  }
+  .appbar-menu .demo-nav {
+    flex-direction: column;
+    gap: 6px;
+    margin: 8px 0 0;
+    padding: 8px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--hairline);
+  }
+  .appbar-menu .demo-nav a {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+  }
+  /* The push-right spacer and its label only make sense on one long row. */
+  .appbar-menu .spacer {
+    display: none;
+  }
+  .appbar-menu .viewing-label {
+    display: block;
+    margin: 10px 0 -2px;
+  }
+  .appbar-menu select {
+    width: 100%;
+    max-width: none;
+  }
+  .appbar-menu .btn {
+    width: 100%;
+    margin-top: 6px;
+  }
+}
+
+@media (max-width: 720px) {
+  .wrap {
+    padding: 14px max(14px, env(safe-area-inset-right))
+      calc(40px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  }
+  h1 {
+    font-size: 20px;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+  .list-card {
+    padding: 13px;
+  }
+  .empty {
+    padding: 22px 16px;
+  }
+  .card-head {
+    gap: 8px;
+  }
+
+  .filters {
+    padding: 12px;
+    gap: 14px;
+  }
+  /* Each filter group gets its own full-width row. The !important overrides the
+     inline min-widths the desktop layout uses to keep sliders usable. */
+  .filters > .field {
+    width: 100%;
+    min-width: 0 !important;
+  }
+
+  .score-card {
+    padding: 16px;
+  }
+  .score-hero {
+    gap: 16px;
+  }
+  /* Stacked, a right-aligned miles figure reads as a stray — bring it back to
+     the same left edge as everything above it. */
+  .score-hero > div {
+    min-width: 0 !important;
+  }
+  .score-hero .score-miles {
+    text-align: left !important;
+  }
+
+  .map-canvas,
+  .map-canvas.map-md {
+    height: 58vh;
+    min-height: 300px;
+    max-height: 460px;
+  }
+  .map-canvas.map-sm {
+    height: 46vh;
+    min-height: 260px;
+    max-height: 360px;
+  }
+  .map-footer {
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .map-footer .spacer {
+    display: none;
+  }
+  /* Nothing sits to its right once the strip stacks, so right-aligned text just
+     reads as ragged. */
+  .map-footer .map-note {
+    text-align: left !important;
+  }
+
+  .tile {
+    padding: 11px 12px;
+  }
+  /* Two tiles to a row leaves ~150px of text width. Sized so the longest real
+     values — a rand total and a suburb name — land on one line rather than
+     being broken mid-word by the overflow-wrap above. */
+  .tile-v {
+    font-size: 18px;
+  }
+  .tile-m {
+    font-size: 12px;
+  }
+
+  .data-table {
+    font-size: 13px;
+  }
+  .table-note {
+    padding: 12px 12px 10px;
+  }
+  .data-table th,
+  .data-table td {
+    padding: 8px 10px;
+  }
+
+  /* Touch targets. 13.5px/7px padding measures ~31px tall, under the 44px the
+     iOS guidelines ask for and the 24px WCAG 2.2 requires. */
+  .btn {
+    padding: 10px 14px;
+  }
+  .btn-chip {
+    padding: 8px 13px;
+  }
+  select,
+  input[type='text'],
+  input[type='number'],
+  input[type='date'],
+  input[type='datetime-local'],
+  input[type='search'],
+  textarea {
+    font-size: 16px;
+    padding: 10px 12px;
+  }
+  input[type='range'] {
+    height: 28px;
   }
 }

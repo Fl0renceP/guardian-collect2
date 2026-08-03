@@ -149,3 +149,27 @@ class Config:
     ROUTE_MIN_RISK_REDUCTION = float(os.getenv("ROUTE_MIN_RISK_REDUCTION", "0.20"))
     # Score at or above which a sampled point counts as "high risk".
     ROUTE_HIGH_RISK_THRESHOLD = float(os.getenv("ROUTE_HIGH_RISK_THRESHOLD", "0.55"))
+
+    # 8. Patrol routing — the mirror image of the member's avoidance.
+    # A member routes *around* risk cells; a patrol is sent *through* them, so
+    # the loop between two stops is nudged onto streets that need presence.
+    # How far out of its way a vehicle may swing to sweep one extra area. Both
+    # a proportional and an absolute allowance, whichever is larger, because
+    # neither works alone: stops inside a cluster sit 1-3 km apart while the
+    # risk cells are ~5 km across, so a purely proportional corridor rejects
+    # every candidate on a short leg — and a purely absolute one lets a 60 km
+    # leg wander for nothing.
+    PATROL_VIA_CORRIDOR_RATIO = float(os.getenv("PATROL_VIA_CORRIDOR_RATIO", "1.35"))
+    PATROL_VIA_MAX_DETOUR_KM = float(os.getenv("PATROL_VIA_MAX_DETOUR_KM", "4.0"))
+    # And it must be worth the detour in the first place.
+    PATROL_VIA_MIN_SCORE = float(os.getenv("PATROL_VIA_MIN_SCORE", "0.35"))
+    # Cap per vehicle: every via point is another location in the Valhalla
+    # request and another chance for the loop to stop looking like a patrol.
+    PATROL_MAX_VIA_POINTS = int(os.getenv("PATROL_MAX_VIA_POINTS", "8"))
+    # A shift is finite. Past this much longer than the plain fastest loop, the
+    # detours get trimmed back rather than handed to a controller as a plan.
+    PATROL_MAX_DETOUR_RATIO = float(os.getenv("PATROL_MAX_DETOUR_RATIO", "1.5"))
+    # Concurrent Valhalla calls. Each vehicle now needs two routes (the plain
+    # fastest loop and the risk-seeking one), so a six-vehicle plan is twelve
+    # calls — sequential, that is a minute of staring at a spinner.
+    PATROL_ROUTE_WORKERS = int(os.getenv("PATROL_ROUTE_WORKERS", "4"))
