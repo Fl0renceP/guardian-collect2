@@ -6,6 +6,7 @@ import numpy as np
 from deepface import DeepFace
 
 from services import face_geometry
+from services.blob_storage import BlobStorageService
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -135,12 +136,43 @@ ENFORCE_PROBE_QUALITY = os.getenv("ENFORCE_PROBE_QUALITY", "true").strip().lower
 # background matters more than a verified member in the foreground.
 _SEVERITY = {"offender": 3, "suspect": 2, "verified": 1}
 
+# One BlobStorageService for the process. False (not None) marks a failed
+# construction so a missing credential is tried once, not on every match.
+_blob_service = None
+
 
 def warm_recognition_pipeline(model_name="Facenet512"):
     """Warm the DeepFace model so the first live scan avoids model boot latency."""
     started = time.perf_counter()
     DeepFace.build_model(model_name)
     return round((time.perf_counter() - started) * 1000, 2)
+
+
+def _blob_signer():
+    global _blob_service
+    if _blob_service is None:
+        try:
+            _blob_service = BlobStorageService()
+        except Exception:
+            _blob_service = False
+    return _blob_service or None
+
+
+def _readable_face_url(url):
+    """Sign a stored face URL so the UI can display it.
+
+    Reference faces live in a private container, so the raw URL a match returns
+    is not fetchable by the browser. Signing failures fall back to the raw URL
+    rather than raising: a broken image is a better outcome than a scan that
+    reports no match because the storage account was unreachable.
+    """
+    signer = _blob_signer()
+    if not url or signer is None:
+        return url
+    try:
+        return signer.sign_stored_url(url)
+    except Exception:
+        return url
 
 
 def _plain_crop(image, bbox, size=160):
@@ -308,7 +340,7 @@ def _match_face(cursor, vector_str, threshold, probable_threshold=None):
         captures = [
             {
                 "id": str(row[0]),
-                "image_url": row[1],
+                "image_url": _readable_face_url(row[1]),
                 "source": row[2],
                 "camera_id": row[3],
                 "captured_at": row[4].isoformat() if row[4] else None,

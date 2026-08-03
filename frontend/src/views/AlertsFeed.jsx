@@ -118,10 +118,7 @@ export default function AlertsFeed() {
         </div>
       ) : null}
 
-      <div
-        className="card"
-        style={{ padding: 14, marginBottom: 16, display: 'flex', gap: 24, flexWrap: 'wrap' }}
-      >
+      <div className="card filters">
         <div className="field" style={{ gap: 7 }}>
           <span className="tiny" style={{ fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Window
@@ -131,8 +128,7 @@ export default function AlertsFeed() {
               <button
                 key={w.days}
                 type="button"
-                className={`btn${days === w.days ? ' btn-primary' : ''}`}
-                style={{ borderRadius: 999, padding: '4px 12px' }}
+                className={`btn btn-chip${days === w.days ? ' btn-primary' : ''}`}
                 onClick={() => setDays(w.days)}
               >
                 {w.label}
@@ -148,8 +144,7 @@ export default function AlertsFeed() {
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button
               type="button"
-              className={`btn${severities.length === 0 ? ' btn-primary' : ''}`}
-              style={{ borderRadius: 999, padding: '4px 12px' }}
+              className={`btn btn-chip${severities.length === 0 ? ' btn-primary' : ''}`}
               onClick={() => setSeverities([])}
             >
               All
@@ -158,8 +153,7 @@ export default function AlertsFeed() {
               <button
                 key={sev}
                 type="button"
-                className={`btn${severities.includes(sev) ? ' btn-primary' : ''}`}
-                style={{ borderRadius: 999, padding: '4px 12px' }}
+                className={`btn btn-chip${severities.includes(sev) ? ' btn-primary' : ''}`}
                 onClick={() => toggleSeverity(sev)}
               >
                 {SEVERITY_STYLE[sev]?.label || sev}
@@ -202,7 +196,7 @@ export default function AlertsFeed() {
       {loading && !data ? <p className="muted">Loading alerts…</p> : null}
 
       {data && !sorted.length ? (
-        <div className="card" style={{ padding: 28, textAlign: 'center' }}>
+        <div className="card empty">
           <p style={{ margin: 0 }}>
             No alerts in this window{isMember ? ' near you' : ` for ${unit.name}`}.
           </p>
@@ -217,8 +211,8 @@ export default function AlertsFeed() {
         {sorted.map((alert) => {
           const style = SEVERITY_STYLE[alert.severity] || SEVERITY_STYLE.info
           return (
-            <article key={alert.id} className="card" style={{ padding: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <article key={alert.id} className="card list-card">
+              <div className="card-head">
                 <span className={`pill ${style.pill}`}>
                   <span className="dot" aria-hidden="true" />
                   {style.label}

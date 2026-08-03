@@ -28,19 +28,26 @@ const formatTimestamp = (iso) => {
 }
 
 const toneClassFromResult = ({ hasFace, isAnalyzing, matchResult }) => {
-  if (!hasFace) return 'unknown'
-  if (isAnalyzing) return 'unknown'
   if (matchResult?.isAlert) return 'alert'
   if (matchResult?.isKnownUser) return 'ok'
+  if (!hasFace) return 'unknown'
+  if (isAnalyzing) return 'unknown'
   return 'unknown'
 }
 
 const toneLabelFromResult = ({ hasFace, isAnalyzing, matchResult }) => {
-  if (!hasFace) return 'NO TARGET'
-  if (isAnalyzing) return 'SCANNING'
   if (matchResult?.isAlert) return 'FLAGGED'
   if (matchResult?.isKnownUser) return 'RECOGNISED'
+  if (!hasFace) return 'NO TARGET'
+  if (isAnalyzing) return 'SCANNING'
   return 'UNREGISTERED'
+}
+
+const auditTone = (entry) => {
+  const status = (entry?.status || '').toLowerCase()
+  if (status === 'offender' || status === 'suspect' || entry?.isAlert) return 'alert'
+  if (entry?.isKnownUser || status === 'verified') return 'ok'
+  return 'unknown'
 }
 
 const toConfidencePct = (distance) => {
@@ -157,6 +164,7 @@ export default function LiveScanDemo() {
   const [roundtripMs, setRoundtripMs] = useState(null)
   const [history, setHistory] = useState([])
   const [selectedHistoryId, setSelectedHistoryId] = useState(null)
+  const [dbImageBroken, setDbImageBroken] = useState(false)
 
   const [plateResult, setPlateResult] = useState(null)
   const [plateError, setPlateError] = useState('')
@@ -470,6 +478,7 @@ export default function LiveScanDemo() {
         stageTiming: data?.timings_ms || null,
       }
 
+      setDbImageBroken(false)
       setMatchResult(normalized)
       setLiveCrop(localCrop)
       addHistory(normalized)
@@ -491,6 +500,8 @@ export default function LiveScanDemo() {
     if (!history.length) return null
     return history.find((h) => h.id === selectedHistoryId) || history[0]
   }, [history, selectedHistoryId])
+
+  const dbImageUrl = activeEntry?.sourceImageUrl || activeEntry?.personImageUrl || matchResult?.sourceImageUrl || matchResult?.personImageUrl || null
 
   const readiness = [
     { label: 'Camera', ok: webcamReady },
@@ -515,25 +526,28 @@ export default function LiveScanDemo() {
             --unknown:#e8c86a; --unknown-bg:#312713; --accent:#8fb0ff;
           }
         }
-        .ls-wrap { background: var(--bg); color: var(--fg); min-height: 100vh; padding: 24px 16px 64px; }
-        .ls-shell { max-width: 1180px; margin: 0 auto; }
+        .ls-wrap { background: var(--bg); color: var(--fg); min-height: 100vh; padding: 24px 16px 64px; width: 100%; max-width: 100%; overflow-x: clip; }
+        .ls-shell { max-width: 1180px; margin: 0 auto; width: 100%; max-width: 100%; }
         .ls-sub { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
         .ls-grid { display: grid; grid-template-columns: minmax(420px, 2fr) minmax(320px, 1fr); gap: 14px; }
-        .ls-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+        .ls-grid > * { min-width: 0; }
+        .ls-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
         .ls-pad { padding: 16px; }
         .ls-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; font-size: 12px; color: var(--muted); }
         .ls-camera { position: relative; width: 100%; aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #000; }
         .ls-chip { display: inline-block; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: rgba(0,0,0,0.35); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .03em; }
         .ls-overlay-top-left { position: absolute; top: 10px; left: 10px; z-index: 4; display: grid; gap: 6px; }
         .ls-overlay-top-right { position: absolute; top: 10px; right: 10px; z-index: 4; }
-        .ls-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .ls-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+        .ls-row > * { min-width: 0; overflow-wrap: anywhere; }
         .ls-verdict { border-radius: 12px; padding: 14px; border: 1px solid; margin-bottom: 12px; }
         .ls-verdict.alert { background: var(--alert-bg); border-color: var(--alert); color: var(--alert); }
         .ls-verdict.ok { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
         .ls-verdict.unknown { background: var(--unknown-bg); border-color: var(--unknown); color: var(--unknown); }
-        .ls-kv { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+        .ls-kv { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); min-width: 0; }
         .ls-kv:last-child { border-bottom: 0; }
         .ls-kv span:first-child { color: var(--muted); }
+        .ls-kv span:last-child { min-width: 0; max-width: 62%; text-align: right; overflow-wrap: anywhere; word-break: break-word; }
         .ls-meter { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 8px 0 10px; }
         .ls-meter > i { display: block; height: 100%; }
         .ls-ready { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
@@ -547,11 +561,25 @@ export default function LiveScanDemo() {
         .ls-audit { max-height: 220px; overflow-y: auto; display: grid; gap: 6px; }
         .ls-audit button { text-align: left; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 8px 9px; cursor: pointer; font-size: 12px; }
         .ls-audit button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+        .ls-audit button.alert { border-color: var(--alert); background: color-mix(in srgb, var(--alert) 14%, var(--panel)); color: var(--alert); }
+        .ls-audit button.ok { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, var(--panel)); color: var(--ok); }
+        .ls-audit button.unknown { border-color: var(--unknown); background: color-mix(in srgb, var(--unknown) 12%, var(--panel)); color: var(--unknown); }
+        .ls-audit button.alert.active,
+        .ls-audit button.ok.active,
+        .ls-audit button.unknown.active { box-shadow: inset 0 0 0 1px var(--accent); }
         .ls-warn { margin-top: 12px; font-size: 13px; color: var(--unknown); }
         @media (max-width: 980px) {
           .ls-grid { grid-template-columns: 1fr; }
           .ls-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .ls-side-by-side { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 640px) {
+          .ls-wrap { padding: 14px 10px 42px; }
+          .ls-meta { grid-template-columns: 1fr; }
+          .ls-side-by-side { grid-template-columns: 1fr; }
+          .ls-kv { flex-direction: column; align-items: flex-start; gap: 4px; }
+          .ls-kv span:last-child { max-width: 100%; text-align: left; }
+          .ls-audit-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
 
@@ -760,7 +788,13 @@ export default function LiveScanDemo() {
             <div>
               <div className="ls-caption">DB seed photo</div>
               <div className="ls-thumb-wrap">
-                {matchResult?.sourceImageUrl ? <img src={matchResult.sourceImageUrl} alt="Database reference" /> : null}
+                {dbImageUrl && !dbImageBroken ? (
+                  <img
+                    src={dbImageUrl}
+                    alt="Database reference"
+                    onError={() => setDbImageBroken(true)}
+                  />
+                ) : null}
               </div>
             </div>
           </div>
@@ -768,17 +802,25 @@ export default function LiveScanDemo() {
             <span>Source: {matchResult?.sourceText || '-'}</span>
             <span>Pose: {matchResult?.poseLabel || '-'}</span>
           </div>
+          {dbImageBroken ? (
+            <div className="ls-warn" style={{ marginTop: 8 }}>
+              Stored reference photo could not be loaded from blob storage.
+            </div>
+          ) : null}
         </div>
 
         <div className="ls-card ls-pad" style={{ marginTop: 14 }}>
           <h3 style={{ margin: '0 0 10px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>Audit log</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
+          <div className="ls-audit-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
             <div className="ls-audit">
               {history.map((entry) => (
                 <button
                   key={entry.id}
-                  className={selectedHistoryId === entry.id ? 'active' : ''}
-                  onClick={() => setSelectedHistoryId(entry.id)}
+                  className={`${auditTone(entry)}${selectedHistoryId === entry.id ? ' active' : ''}`}
+                  onClick={() => {
+                    setSelectedHistoryId(entry.id)
+                    setDbImageBroken(false)
+                  }}
                 >
                   {formatTimestamp(entry.timestamp)} - {entry.fullName} ({(entry.status || 'unknown').toUpperCase()}) -{' '}
                   {typeof entry.matchConfidence === 'number' ? `${entry.matchConfidence.toFixed(1)}%` : '--'}

@@ -264,7 +264,7 @@ export default function HotspotMap() {
       ) : null}
 
       {/* Filters: one row, above everything they scope. Date range first. */}
-      <div className="card" style={{ padding: 14, marginBottom: 16, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+      <div className="card filters">
         <div className="field" style={{ gap: 7 }}>
           <span className="tiny" style={{ fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Date range
@@ -274,8 +274,7 @@ export default function HotspotMap() {
               <button
                 key={p.id}
                 type="button"
-                className={`btn${preset === p.id ? ' btn-primary' : ''}`}
-                style={{ borderRadius: 999, padding: '4px 11px' }}
+                className={`btn btn-chip${preset === p.id ? ' btn-primary' : ''}`}
                 onClick={() => {
                   setPreset(p.id)
                   setRange({ from: p.from, to: p.to })
@@ -327,8 +326,7 @@ export default function HotspotMap() {
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: 620 }}>
             <button
               type="button"
-              className={`btn${perils.length === 0 ? ' btn-primary' : ''}`}
-              style={{ borderRadius: 999, padding: '4px 11px' }}
+              className={`btn btn-chip${perils.length === 0 ? ' btn-primary' : ''}`}
               onClick={() => setPerils([])}
             >
               All
@@ -337,8 +335,7 @@ export default function HotspotMap() {
               <button
                 key={p.value}
                 type="button"
-                className={`btn${perils.includes(p.value) ? ' btn-primary' : ''}`}
-                style={{ borderRadius: 999, padding: '4px 11px' }}
+                className={`btn btn-chip${perils.includes(p.value) ? ' btn-primary' : ''}`}
                 onClick={() => toggle(perils, setPerils)(p.value)}
               >
                 {p.value}
@@ -357,8 +354,7 @@ export default function HotspotMap() {
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button
               type="button"
-              className={`btn${itemTypes.length === 0 ? ' btn-primary' : ''}`}
-              style={{ borderRadius: 999, padding: '4px 11px' }}
+              className={`btn btn-chip${itemTypes.length === 0 ? ' btn-primary' : ''}`}
               onClick={() => setItemTypes([])}
             >
               All
@@ -367,8 +363,7 @@ export default function HotspotMap() {
               <button
                 key={t.value}
                 type="button"
-                className={`btn${itemTypes.includes(t.value) ? ' btn-primary' : ''}`}
-                style={{ borderRadius: 999, padding: '4px 11px' }}
+                className={`btn btn-chip${itemTypes.includes(t.value) ? ' btn-primary' : ''}`}
                 onClick={() => toggle(itemTypes, setItemTypes)(t.value)}
               >
                 {t.value}
@@ -395,20 +390,8 @@ export default function HotspotMap() {
       </div>
 
       <div className="card" style={{ overflow: 'hidden' }}>
-        <div
-          ref={containerRef}
-          style={{ height: 560, background: 'var(--page)', opacity: loading ? 0.55 : 1, transition: 'opacity 120ms ease' }}
-        />
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            flexWrap: 'wrap',
-            borderTop: '1px solid var(--hairline)',
-            padding: '11px 15px',
-          }}
-        >
+        <div ref={containerRef} className="map-canvas" style={{ opacity: loading ? 0.55 : 1 }} />
+        <div className="map-footer">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 210 }}>
             <div
               style={{
@@ -426,7 +409,7 @@ export default function HotspotMap() {
           </div>
           <span className="muted">Claims per suburb · square-root scale</span>
           <span className="spacer" />
-          <span className="tiny" style={{ textAlign: 'right' }}>
+          <span className="tiny map-note" style={{ textAlign: 'right' }}>
             {data ? <Coverage data={data} /> : null}
           </span>
         </div>
@@ -437,30 +420,32 @@ export default function HotspotMap() {
           {showTable ? 'Hide data table' : 'Show data table'}
         </button>
         {showTable && data ? (
-          <div className="card" style={{ marginTop: 10, overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13.5 }}>
-              <caption className="muted" style={{ textAlign: 'left', padding: '14px 15px' }}>
-                Top 100 suburbs for the current filters.
-              </caption>
-              <thead>
-                <tr>
-                  <Th>Suburb</Th>
-                  <Th num>Claims</Th>
-                  <Th num>Total claim value</Th>
-                  <Th>Leading peril</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.hotspots.slice(0, 100).map((s) => (
-                  <tr key={s.suburb}>
-                    <Td>{s.suburb}</Td>
-                    <Td num>{num.format(s.count)}</Td>
-                    <Td num>{money.format(s.total_amount)}</Td>
-                    <Td>{s.top_peril}</Td>
+          <div className="card" style={{ marginTop: 10 }}>
+            <p className="muted table-note" id="hotspot-table-note">
+              Top 100 suburbs for the current filters.
+            </p>
+            <div className="table-wrap">
+              <table className="data-table" aria-describedby="hotspot-table-note">
+                <thead>
+                  <tr>
+                    <Th>Suburb</Th>
+                    <Th num>Claims</Th>
+                    <Th num>Total claim value</Th>
+                    <Th>Leading peril</Th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.hotspots.slice(0, 100).map((s) => (
+                    <tr key={s.suburb}>
+                      <Td>{s.suburb}</Td>
+                      <Td num>{num.format(s.count)}</Td>
+                      <Td num>{money.format(s.total_amount)}</Td>
+                      <Td>{s.top_peril}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : null}
       </div>
@@ -470,12 +455,10 @@ export default function HotspotMap() {
 
 function Tile({ k, v, m, stale }) {
   return (
-    <div className="card" style={{ padding: '13px 15px', opacity: stale ? 0.55 : 1, transition: 'opacity 120ms ease' }}>
-      <div className="tiny" style={{ fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>
-        {k}
-      </div>
-      <div style={{ fontSize: 27, fontWeight: 650, letterSpacing: '-0.02em', lineHeight: 1.15 }}>{v}</div>
-      {m ? <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{m}</div> : null}
+    <div className="card tile" style={{ opacity: stale ? 0.55 : 1, transition: 'opacity 120ms ease' }}>
+      <div className="tiny tile-k">{k}</div>
+      <div className="tile-v">{v}</div>
+      {m ? <div className="muted tile-m">{m}</div> : null}
     </div>
   )
 }
@@ -491,33 +474,6 @@ function Coverage({ data }) {
   return <>{text}</>
 }
 
-const Th = ({ children, num: isNum }) => (
-  <th
-    style={{
-      textAlign: isNum ? 'right' : 'left',
-      padding: '8px 14px',
-      borderBottom: '1px solid var(--hairline)',
-      fontSize: 11,
-      fontWeight: 650,
-      letterSpacing: '0.05em',
-      textTransform: 'uppercase',
-      color: 'var(--ink-muted)',
-      whiteSpace: 'nowrap',
-    }}
-  >
-    {children}
-  </th>
-)
+const Th = ({ children, num: isNum }) => <th className={isNum ? 'num' : undefined}>{children}</th>
 
-const Td = ({ children, num: isNum }) => (
-  <td
-    style={{
-      textAlign: isNum ? 'right' : 'left',
-      padding: '8px 14px',
-      borderBottom: '1px solid var(--hairline)',
-      fontVariantNumeric: isNum ? 'tabular-nums' : 'normal',
-    }}
-  >
-    {children}
-  </td>
-)
+const Td = ({ children, num: isNum }) => <td className={isNum ? 'num' : undefined}>{children}</td>
