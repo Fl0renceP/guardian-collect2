@@ -35,7 +35,10 @@ export default function MemberProfile() {
   const { member, refreshDirectory } = useSession()
   const theme = useThemeName()
 
-  const containerRef = useRef(null)
+  // A callback ref, not useRef: this view returns early until the member loads,
+  // so the container isn't in the DOM on the first render. A mount effect would
+  // run once against a null node and never again, leaving a blank map.
+  const [container, setContainer] = useState(null)
   const mapRef = useRef(null)
   const tileRef = useRef(null)
   const pinRef = useRef(null)
@@ -68,15 +71,15 @@ export default function MemberProfile() {
 
   /* ---------- map ---------- */
   useEffect(() => {
-    if (mapRef.current || !containerRef.current) return undefined
-    const map = L.map(containerRef.current, { center: [-26.1, 28.05], zoom: 10, minZoom: 4 })
+    if (mapRef.current || !container) return undefined
+    const map = L.map(container, { center: [-26.1, 28.05], zoom: 10, minZoom: 4 })
     mapRef.current = map
     map.on('click', (e) => setPoint({ lat: e.latlng.lat, lng: e.latlng.lng }))
     return () => {
       map.remove()
       mapRef.current = null
     }
-  }, [])
+  }, [container])
 
   useEffect(() => {
     const map = mapRef.current
@@ -185,7 +188,7 @@ export default function MemberProfile() {
         </p>
       </div>
 
-      <section className="card" style={{ padding: 18, marginBottom: 16 }}>
+      <section className="card panel" style={{ marginBottom: 16 }}>
         <h2>Home location</h2>
         <p className="muted" style={{ margin: '4px 0 14px' }}>
           Click the map to place your home, or move the pin. We store the point you place — not a
@@ -232,12 +235,11 @@ export default function MemberProfile() {
         </div>
 
         <div
-          ref={containerRef}
+          ref={setContainer}
+          className="map-canvas map-sm"
           style={{
-            height: 380,
             borderRadius: 'var(--radius-sm)',
             border: '1px solid var(--border)',
-            background: 'var(--page)',
             cursor: 'crosshair',
           }}
         />

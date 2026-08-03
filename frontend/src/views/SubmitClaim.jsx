@@ -156,7 +156,7 @@ export default function SubmitClaim() {
       ) : null}
 
       <form onSubmit={onSubmit} noValidate>
-        <section className="card" style={{ padding: 18, marginBottom: 16 }}>
+        <section className="card panel" style={{ marginBottom: 16 }}>
           <h2>What happened</h2>
           <div className="grid-2" style={{ marginTop: 14 }}>
             <Field label="Type of crime" error={errors.peril} htmlFor="peril">
@@ -282,7 +282,7 @@ export default function SubmitClaim() {
           </div>
         </section>
 
-        <section className="card" style={{ padding: 18, marginBottom: 16 }}>
+        <section className="card panel" style={{ marginBottom: 16 }}>
           <h2>Photos or video</h2>
           <p className="muted" style={{ margin: '4px 0 12px' }}>
             Up to {MAX_FILES} files, {MAX_FILE_MB}MB total. Images and video only.
@@ -330,7 +330,7 @@ export default function SubmitClaim() {
           ) : null}
         </section>
 
-        <section className="card" style={{ padding: 18, marginBottom: 20 }}>
+        <section className="card panel" style={{ marginBottom: 20 }}>
           <h2>Door camera footage</h2>
           {/* Opt-in, never pre-ticked, and scoped to this one incident. The
               backend timestamps the consent alongside the claim. */}
@@ -356,7 +356,9 @@ export default function SubmitClaim() {
           </label>
         </section>
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        {/* Wraps rather than shrinks: without this the note squeezes the submit
+            button into two lines on a phone. */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <button type="submit" className="btn btn-primary" disabled={submitting}>
             {submitting ? 'Submitting…' : 'Submit report'}
           </button>

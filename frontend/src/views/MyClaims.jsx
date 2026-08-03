@@ -88,7 +88,7 @@ export default function MyClaims() {
       {loading && !claims.length ? <LoadingGraphic label="Loading claims…" /> : null}
 
       {!loading && !claims.length ? (
-        <div className="card" style={{ padding: 28, textAlign: 'center' }}>
+        <div className="card empty">
           <p style={{ margin: 0 }}>You haven't submitted any reports yet.</p>
           <p className="muted" style={{ marginTop: 6 }}>
             <Link to="/report">Report an incident</Link> and it will appear here.
@@ -100,8 +100,8 @@ export default function MyClaims() {
         {claims.map((claim) => {
           const open = openId === claim.Incident
           return (
-            <article key={claim.Incident} className="card" style={{ padding: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <article key={claim.Incident} className="card list-card">
+              <div className="card-head">
                 <StatusPill status={claim.status} />
                 <strong style={{ fontSize: 14.5 }}>
                   {claim.PERIL} · {claim.SUBURB}

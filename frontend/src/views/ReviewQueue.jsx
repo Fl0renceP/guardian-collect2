@@ -148,7 +148,7 @@ export default function ReviewQueue() {
       {loading && !claims.length ? <LoadingGraphic label="Loading review queue…" /> : null}
 
       {!loading && !claims.length ? (
-        <div className="card" style={{ padding: 28, textAlign: 'center' }}>
+        <div className="card empty">
           <p style={{ margin: 0 }}>
             {tab === 'pending' ? 'No claims are waiting for review.' : `No ${tab} claims.`}
           </p>
@@ -160,8 +160,8 @@ export default function ReviewQueue() {
           const open = openId === claim.Incident
           const busy = busyId === claim.Incident
           return (
-            <article key={claim.Incident} className="card" style={{ padding: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <article key={claim.Incident} className="card list-card">
+              <div className="card-head">
                 <StatusPill status={claim.status} />
                 <strong style={{ fontSize: 14.5 }}>
                   {claim.PERIL} · {claim.SUBURB}
@@ -258,7 +258,7 @@ export default function ReviewQueue() {
                               {denyError}
                             </span>
                           ) : null}
-                          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
                             <button
                               type="button"
                               className="btn btn-danger"
@@ -294,7 +294,7 @@ export default function ReviewQueue() {
                               placeholder="e.g. Verified against doorbell footage."
                             />
                           </div>
-                          <div style={{ display: 'flex', gap: 8 }}>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             <button
                               type="button"
                               className="btn btn-good"
