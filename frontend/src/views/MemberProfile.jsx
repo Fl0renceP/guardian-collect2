@@ -34,11 +34,14 @@ export default function MemberProfile() {
   const { member, refreshDirectory } = useSession()
   const theme = useThemeName()
 
-  // A callback ref, not useRef: this view returns early until the member loads,
-  // so the container isn't in the DOM on the first render. A mount effect would
-  // run once against a null node and never again, leaving a blank map.
+  // Both state, not refs. `container` is a callback ref because this view
+  // returns early until the member loads, so the node isn't in the DOM on the
+  // first render. `map` is state because the effects that draw into it — the
+  // tile layer and the pin — key on the theme and the point, neither of which
+  // changes when the map is finally built; in a ref it would never schedule
+  // them, and the basemap would stay blank.
   const [container, setContainer] = useState(null)
-  const mapRef = useRef(null)
+  const [map, setMap] = useState(null)
   const tileRef = useRef(null)
   const pinRef = useRef(null)
   const ringRef = useRef(null)
@@ -70,18 +73,17 @@ export default function MemberProfile() {
 
   /* ---------- map ---------- */
   useEffect(() => {
-    if (mapRef.current || !container) return undefined
-    const map = L.map(container, { center: [-26.1, 28.05], zoom: 10, minZoom: 4 })
-    mapRef.current = map
-    map.on('click', (e) => setPoint({ lat: e.latlng.lat, lng: e.latlng.lng }))
+    if (!container) return undefined
+    const instance = L.map(container, { center: [-26.1, 28.05], zoom: 10, minZoom: 4 })
+    instance.on('click', (e) => setPoint({ lat: e.latlng.lat, lng: e.latlng.lng }))
+    setMap(instance)
     return () => {
-      map.remove()
-      mapRef.current = null
+      instance.remove()
+      setMap(null)
     }
   }, [container])
 
   useEffect(() => {
-    const map = mapRef.current
     if (!map) return
     if (tileRef.current) map.removeLayer(tileRef.current)
     const url =
@@ -94,10 +96,9 @@ export default function MemberProfile() {
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
     }).addTo(map)
     tileRef.current.bringToBack()
-  }, [theme])
+  }, [map, theme])
 
   useEffect(() => {
-    const map = mapRef.current
     if (!map) return
     if (pinRef.current) map.removeLayer(pinRef.current)
     if (ringRef.current) map.removeLayer(ringRef.current)
@@ -121,7 +122,7 @@ export default function MemberProfile() {
       .bindTooltip('Your home', { direction: 'top' })
       .addTo(map)
     map.fitBounds(ringRef.current.getBounds(), { padding: [30, 30] })
-  }, [point, radius, theme])
+  }, [map, point, radius, theme])
 
   async function save(shareLocation) {
     setSaving(true)

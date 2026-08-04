@@ -54,12 +54,19 @@ export default function PatrolPlan() {
   const theme = useThemeName()
   const now = new Date()
 
-  // A callback ref, not useRef: this view returns early until the unit loads,
-  // so on the first render the map container isn't in the DOM at all. A mount
-  // effect would run once against a null node and never fire again, leaving a
-  // permanently blank map. This re-runs the moment the node actually appears.
+  // Both of these are state, not refs, and both need to be.
+  //
+  // `container` is a callback ref because this view returns early until the
+  // unit loads, so on the first render the map node isn't in the DOM at all. A
+  // mount effect would run once against a null node and never fire again.
+  //
+  // `map` is state for the same reason one step down: the map is built after
+  // that first render, and every effect that draws into it has to re-run when
+  // it appears. Holding it in a ref does not schedule anything, so the tile
+  // layer — whose only other dependency is the theme — would never be added and
+  // the basemap would stay blank behind correctly-drawn routes.
   const [container, setContainer] = useState(null)
-  const mapRef = useRef(null)
+  const [map, setMap] = useState(null)
   const tileRef = useRef(null)
   const layerRef = useRef(null)
   const fittedRef = useRef(null)
@@ -81,23 +88,22 @@ export default function PatrolPlan() {
 
   /* ---------- map ---------- */
   useEffect(() => {
-    if (mapRef.current || !container) return undefined
-    const map = L.map(container, {
+    if (!container) return undefined
+    const instance = L.map(container, {
       center: [-26.1, 28.05],
       zoom: 10,
       minZoom: 4,
       preferCanvas: true,
     })
-    mapRef.current = map
-    layerRef.current = L.layerGroup().addTo(map)
+    layerRef.current = L.layerGroup().addTo(instance)
+    setMap(instance)
     return () => {
-      map.remove()
-      mapRef.current = null
+      instance.remove()
+      setMap(null)
     }
   }, [container])
 
   useEffect(() => {
-    const map = mapRef.current
     if (!map) return
     if (tileRef.current) map.removeLayer(tileRef.current)
     const url =
@@ -110,7 +116,7 @@ export default function PatrolPlan() {
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
     }).addTo(map)
     tileRef.current.bringToBack()
-  }, [theme])
+  }, [map, theme])
 
   /* ---------- data ---------- */
   // Planning takes several seconds (one routing call per vehicle), so changing
@@ -144,7 +150,6 @@ export default function PatrolPlan() {
 
   /* ---------- draw ---------- */
   useEffect(() => {
-    const map = mapRef.current
     const layer = layerRef.current
     if (!map || !layer || !plan) return
 
@@ -231,7 +236,7 @@ export default function PatrolPlan() {
         map.setView([plan.unit.base_lat, plan.unit.base_lng], 11)
       }
     }
-  }, [plan, theme, showFastest])
+  }, [map, plan, theme, showFastest])
 
   if (!unit) return <p className="muted">Loading unit…</p>
 
