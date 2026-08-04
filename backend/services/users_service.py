@@ -366,6 +366,43 @@ def storage_status():
 
 
 # ---------------------------------------------------------------------------
+# Web Push subscriptions — one browser subscription per device, keyed by
+# endpoint so re-subscribing (new browser, cleared storage) doesn't duplicate.
+# ---------------------------------------------------------------------------
+
+def add_push_subscription(user_id, subscription):
+    user = get_user_raw(user_id)
+    if not user:
+        raise ProfileError(f"Unknown user {user_id}")
+    endpoint = subscription.get("endpoint")
+    subs = [s for s in user.get("push_subscriptions", []) if s.get("endpoint") != endpoint]
+    subs.append(subscription)
+    user["push_subscriptions"] = subs
+    upsert_user(user)
+
+
+def remove_push_subscription(user_id, endpoint):
+    user = get_user_raw(user_id)
+    if not user:
+        return
+    user["push_subscriptions"] = [
+        s for s in user.get("push_subscriptions", []) if s.get("endpoint") != endpoint
+    ]
+    upsert_user(user)
+
+
+def list_push_subscriptions(role):
+    """(user_id, subscription) pairs for every subscribed user of this role."""
+    out = []
+    for user in _load():
+        if user.get("role") != role:
+            continue
+        for sub in user.get("push_subscriptions", []) or []:
+            out.append((user.get("user_id"), sub))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Member home location — optional, opt-in, and revocable
 # ---------------------------------------------------------------------------
 

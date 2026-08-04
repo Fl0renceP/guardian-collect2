@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ROLES, useSession } from '../session'
 import { api } from '../api'
 import GradientText from './GradientText'
+import { enablePushNotifications, pushSupported } from '../push'
 
 const NAV_BY_ROLE = {
   member: [
@@ -52,6 +53,7 @@ export default function Layout() {
   const [theme, setTheme] = useState(currentTheme)
   const [pending, setPending] = useState(null)
   const [alertCount, setAlertCount] = useState(null)
+  const [pushStatus, setPushStatus] = useState('idle')
   // Only meaningful below the mobile breakpoint, where the nav and the identity
   // switcher collapse behind a menu button. Above it the panel is display:contents
   // and this flag has no effect.
@@ -101,6 +103,18 @@ export default function Layout() {
 
   const nav = NAV_BY_ROLE[role] || NAV_BY_ROLE.member
   const badgeValue = { pending, alerts: alertCount }
+  // Only member and cpu are ever in an alert's audience — see alerts_service.audience_for.
+  const pushUserId = role === 'member' ? memberId : role === 'cpu' ? unitId : null
+
+  const handleEnablePush = async () => {
+    setPushStatus('requesting')
+    try {
+      const ok = await enablePushNotifications(pushUserId)
+      setPushStatus(ok ? 'enabled' : 'denied')
+    } catch {
+      setPushStatus('error')
+    }
+  }
 
   return (
     <>
@@ -211,6 +225,21 @@ export default function Layout() {
                     </option>
                   ))}
                 </select>
+              ) : null}
+
+              {pushUserId && pushSupported() ? (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={pushStatus === 'requesting' || pushStatus === 'enabled'}
+                  onClick={handleEnablePush}
+                >
+                  {pushStatus === 'enabled'
+                    ? 'Alerts enabled'
+                    : pushStatus === 'requesting'
+                      ? 'Enabling…'
+                      : 'Enable alerts'}
+                </button>
               ) : null}
 
               <button

@@ -66,6 +66,21 @@ export const api = {
     }),
   suburbs: (q) => request(`/api/suburbs${qs({ q })}`),
 
+  // --- push notifications (Web Push / VAPID) ---
+  pushPublicKey: () => request('/api/push/public-key'),
+  pushSubscribe: (userId, subscription) =>
+    request('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, subscription }),
+    }),
+  pushUnsubscribe: (userId, endpoint) =>
+    request('/api/push/unsubscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, endpoint }),
+    }),
+
   // --- crime prevention units ---
   alerts: (params) => request(`/api/alerts${qs(params)}`),
   patrolPlan: (payload) =>

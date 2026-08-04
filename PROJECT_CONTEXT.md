@@ -99,7 +99,7 @@ Use the `face_recognition` Python library (dlib-based) for face detection + 128-
 | Claims OCR / plates | Azure AI Vision Read/OCR API |
 | Maps / hotspots | **Leaflet + leaflet.heat**, OpenStreetMap (CARTO) tiles for rendering; **Nominatim** for one-time suburb geocoding — no API key, see note below |
 | Routing | **Valhalla** (OpenStreetMap, public FOSSGIS instance — no key) with `exclude_polygons` for risk-avoiding routes; **H3** for the travel-risk surface |
-| Alerts | Azure Functions (trigger logic) + Firebase Cloud Messaging (push delivery) |
+| Alerts | Web Push (VAPID) — self-issued keys, delivered straight from the Flask backend; see `DEV_ROADMAP.md` Phase 4 |
 | AI-generated briefings | Azure AI Foundry (agent/prompt flow) |
 | Frontend | React 18 + Vite |
 | Hosting | Azure App Service (backend), Azure Static Web Apps or App Service (frontend) |
