@@ -132,25 +132,34 @@ USE_5POINT_ALIGN = os.getenv("USE_5POINT_ALIGN", "true").strip().lower() in ("1"
 # somebody from an unreadable image. See services.face_geometry.assess_probe.
 ENFORCE_PROBE_QUALITY = os.getenv("ENFORCE_PROBE_QUALITY", "true").strip().lower() in ("1", "true", "yes")
 
-# CLAHE lighting normalisation before embedding. See face_geometry.equalize.
+# CLAHE lighting normalisation, applied to the PROBE ONLY — never to the
+# stored gallery. See face_geometry.equalize.
 #
-# OFF BY DEFAULT, and turning it on is a two-step change, not a flag flip.
+# The asymmetry is the whole point and it is deliberate. Reference photos are
+# enrolled under controlled conditions; the probe is whatever a doorbell camera
+# caught at dusk. Equalising the degraded side moves it toward the clean side,
+# which is what a normalisation step is for. Equalising BOTH sides just moves
+# the target as well.
 #
-# Measured on the seed gallery: embedding the SAME face with and without CLAHE
-# moves it by 0.1045 on average and 0.1555 at worst — and that worst case is
-# past MATCH_THRESHOLD (0.15). So equalising probes while the stored references
-# were embedded without it costs more than the technique gains: a genuine match
-# drifts out of the confirmed band on preprocessing mismatch alone.
+# Measured on the seed gallery, probes synthetically underexposed to a mean
+# brightness of 23.7/255, each compared against all references:
 #
-#   Enable  ->  re-run reembed_references.py  ->  only then is matching valid.
+#                                  mean genuine   worst genuine
+#   raw probe   vs raw ref            0.4742          0.9520
+#   CLAHE probe vs raw ref            0.3603          0.7141   <- best
+#   CLAHE probe vs CLAHE ref          0.3806          0.7758
 #
-# Until that re-embed finishes, matching is WORSE with this on than off.
+# On an already well-lit probe the ordering reverses and equalising costs a
+# little (0.3252 vs 0.3174 raw), which is why this is CONDITIONAL: the crop is
+# equalised only when face_geometry.needs_equalisation says it is dark or flat.
 #
-# Worth re-measuring with calibrate_threshold.py after the re-embed. It helps
-# most on unevenly-lit captures and does close to nothing on the well-lit
-# re-photographed prints in the current seed gallery, so the honest result here
-# may be "no gain on this data, useful on real camera footage".
-USE_CLAHE = os.getenv("USE_CLAHE", "false").strip().lower() in ("1", "true", "yes")
+# Because references are untouched, enabling this needs NO re-embed — that is
+# what makes probe-side correction the cheaper as well as the better option.
+EQUALIZE_PROBE = os.getenv("EQUALIZE_PROBE", "true").strip().lower() in ("1", "true", "yes")
+
+# Ignore the dark/flat test and equalise every probe. For measuring the
+# unconditional case with calibrate_threshold.py.
+EQUALIZE_PROBE_ALWAYS = os.getenv("EQUALIZE_PROBE_ALWAYS", "false").strip().lower() in ("1", "true", "yes")
 
 # Which face leads the response when several are present. An offender in the
 # background matters more than a verified member in the foreground.
@@ -214,17 +223,22 @@ def _crop_for_face(image, face):
             if USE_5POINT_ALIGN else _plain_crop(image, face.bbox))
 
 
-def _for_embedding(aligned):
+def _for_embedding(aligned, is_probe=False):
     """The crop as the embedding model should see it.
 
-    The ONLY place equalisation is applied. The probe path and the
-    re-embedding path both call this, because the moment those two disagree
-    about preprocessing every stored reference stops lining up with every
-    probe — which is the failure this project has hit repeatedly.
+    is_probe=True  -> a live capture; may be equalised.
+    is_probe=False -> destined for the gallery; returned untouched.
+
+    Defaulting to False matters: it means enrolment and reembed_references.py
+    get raw crops without having to know this flag exists, so the gallery
+    cannot accidentally acquire a preprocessing step the probe path does not
+    also apply in the same direction.
     """
-    if aligned is None or not USE_CLAHE:
+    if aligned is None or not is_probe or not EQUALIZE_PROBE:
         return aligned
-    return face_geometry.equalize(aligned)
+    if EQUALIZE_PROBE_ALWAYS or face_geometry.needs_equalisation(aligned):
+        return face_geometry.equalize(aligned)
+    return aligned
 
 
 # Collapsing to one row per PERSON (not per capture) matters: the runner-up has
@@ -297,13 +311,17 @@ _SUPPORTING_QUERY = """
 """
 
 
-def embed_image(image, model_name=None):
+def embed_image(image, model_name=None, is_probe=False):
     """Detect, align and embed the largest face — the single shared entry point.
 
     Enrolment, re-embedding and scanning all go through this, because a reference
     embedded by a different route than the probe is a reference that no longer
     lines up. Every previous accuracy problem in this project traced back to two
     code paths disagreeing about detection, alignment or threshold units.
+
+    is_probe distinguishes the ONE asymmetry that is intentional: a live capture
+    may be lighting-corrected, a gallery reference never is. Defaults to False so
+    reembed_references.py keeps producing raw reference vectors.
 
     Returns (embedding, face, quality) or (None, None, None) when no face is found.
     """
@@ -318,10 +336,12 @@ def embed_image(image, model_name=None):
     if aligned is None:
         return None, None, None
 
-    # Quality on the un-equalised crop, embedding on the equalised one.
+    # Quality is judged on the un-equalised crop either way, so the gate sees
+    # the exposure the camera actually produced.
     quality = face_geometry.assess_probe(image, face, aligned)
     embedded = DeepFace.represent(
-        img_path=_for_embedding(aligned), model_name=model_name or _Config.FACE_MODEL,
+        img_path=_for_embedding(aligned, is_probe=is_probe),
+        model_name=model_name or _Config.FACE_MODEL,
         detector_backend="skip", enforce_detection=False, align=False,
     )
     return embedded[0]["embedding"], face, quality
@@ -605,8 +625,10 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name=None,
                 continue
 
             # detector_backend="skip": the crop IS the face, already aligned.
+            # is_probe=True — this is the live capture, the one side that gets
+            # lighting-corrected.
             embedded = DeepFace.represent(
-                img_path=_for_embedding(aligned), model_name=model_name,
+                img_path=_for_embedding(aligned, is_probe=True), model_name=model_name,
                 detector_backend="skip", enforce_detection=False, align=False,
             )
             vector = embedded[0]["embedding"]
