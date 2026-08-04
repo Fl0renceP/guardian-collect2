@@ -1,0 +1,16 @@
+# Optional offline OCR fallback for licence-plate scanning.
+#
+# Azure Vision READ is the primary engine. This package is only used when Azure
+# is unconfigured, unreachable, or has spent the current minute's free-tier
+# budget — see services/plate_vision.easyocr_available().
+#
+# It is kept out of requirements.txt because easyocr depends on torch, which
+# adds several gigabytes to a container image. Install it where that cost is
+# acceptable (a local demo machine, or a host with room):
+#
+#     pip install -r requirements.txt -r requirements-offline.txt
+#
+# Nothing else changes: the fallback is detected at runtime, and the live view's
+# "Plate OCR" readiness pill turns on by itself once it is importable.
+
+easyocr

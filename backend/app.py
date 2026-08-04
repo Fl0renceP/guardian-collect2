@@ -1,7 +1,6 @@
+import json
 import os
-import re
 import logging
-import importlib
 import time
 from pathlib import Path
 
@@ -40,34 +39,10 @@ ROOT_DIR = Path(__file__).resolve().parent
 FRONTEND_DIST_DIR = ROOT_DIR.parent / "frontend" / "dist"
 DEMO_STATIC_DIR = ROOT_DIR / "static"
 
-# Reuse one Azure Vision client across requests.
-_azure_client = None
+# The Azure Vision client now lives in services.plate_vision, which owns the
+# free-tier call budget alongside it — two clients would mean two unmetered
+# callers on one subscription.
 _db_pool = None
-
-
-def get_azure_client():
-    global _azure_client
-    if _azure_client is None:
-        endpoint = os.environ.get("AZURE_VISION_ENDPOINT")
-        key = os.environ.get("AZURE_VISION_KEY")
-        if not endpoint or not key:
-            raise RuntimeError(
-                "Azure Vision is not configured. Set AZURE_VISION_ENDPOINT and AZURE_VISION_KEY."
-            )
-
-        try:
-            imageanalysis = importlib.import_module("azure.ai.vision.imageanalysis")
-            credentials = importlib.import_module("azure.core.credentials")
-        except ImportError as exc:
-            raise RuntimeError(
-                "Azure Vision SDK is not installed. Install requirements and retry."
-            ) from exc
-
-        _azure_client = imageanalysis.ImageAnalysisClient(
-            endpoint=endpoint,
-            credential=credentials.AzureKeyCredential(key),
-        )
-    return _azure_client
 
 
 def get_db_connection():
@@ -130,6 +105,16 @@ def _attach_plate_alert(result, *, source_endpoint):
     if not status or not result.get("match_found"):
         result["alert_event"] = None
         result["alerts"] = []
+        return result
+
+    # A tolerant match — confusable characters, one edit away, or a fragment
+    # that only one registry entry could be — is shown to the operator as
+    # probable but is deliberately kept out of the alert feed. Raising a
+    # stolen-vehicle alert on a guessed character is worse than raising none.
+    if result.get("match_confidence") == "probable":
+        result["alert_event"] = None
+        result["alerts"] = []
+        result["alert_suppressed"] = "probable_match_requires_confirmation"
         return result
 
     plate_number = plate.get("plate_number") or result.get("extracted_text") or "Unknown plate"
@@ -206,28 +191,76 @@ def create_app(config_object=Config):
         """Upload form for Azure OCR license plate endpoint testing."""
         return send_from_directory(app.static_folder, "azure_plate_test.html")
 
-    def extract_text_from_bytes(image_bytes: bytes) -> str:
-        """Send image bytes to Azure Vision Read OCR and return extracted text."""
+    def _read_roi(field_name="roi"):
+        """Parse the browser's plate-region hint, if it sent one."""
+        raw = request.form.get(field_name)
+        if not raw:
+            return None
         try:
-            models = importlib.import_module("azure.ai.vision.imageanalysis.models")
-            result = get_azure_client().analyze(
-                image_data=image_bytes,
-                visual_features=[models.VisualFeatures.READ],
+            roi = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        return roi if isinstance(roi, dict) else None
+
+    def _run_plate_scan(*, engine, source_endpoint, roi=None, max_passes=None):
+        """Shared body for every plate endpoint.
+
+        All three differ only in which engine they ask for and what they call
+        themselves in the alert feed; the conditioning, the plate grammar and
+        the registry matching are one code path.
+        """
+        if "file" not in request.files:
+            return jsonify({"error": "No image file provided in 'file' field"}), 400
+
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "No selected file"}), 400
+
+        image_bytes = file.read()
+
+        try:
+            conn = get_db_connection()
+        except OperationalError as e:
+            logger.warning("plate scan DB unavailable: %s", e)
+            return jsonify({"error": "Plate registry temporarily unavailable.", "code": "db_unavailable"}), 503
+
+        try:
+            from services.plate_recognition import scan_plate_image
+
+            result = scan_plate_image(
+                image_bytes,
+                conn,
+                roi=roi,
+                engine=engine,
+                max_passes=max_passes,
             )
 
-            extracted_words = []
-            if result.read is not None:
-                for block in result.read.blocks:
-                    for line in block.lines:
-                        extracted_words.append(line.text)
-            return " ".join(extracted_words)
-        except Exception as e:
-            logger.error(f"Azure OCR Error: {e}")
-            return ""
+            if isinstance(result, tuple):
+                return jsonify(result[0]), result[1]
 
-    def clean_plate_text(text: str) -> str:
-        """Normalise plate text so punctuation variants still match the registry."""
-        return re.sub(r"[^A-Za-z0-9]", "", text or "").upper()
+            if result.get("throttled"):
+                return jsonify(result), 200
+
+            result = _attach_plate_alert(result, source_endpoint=source_endpoint)
+            logger.info(
+                "plate scan: engine=%s detected=%s text=%s match=%s confidence=%s passes=%s quota_left=%s",
+                result.get("engine"),
+                result.get("plate_detected"),
+                result.get("extracted_text"),
+                result.get("match_found"),
+                result.get("match_confidence"),
+                result.get("passes_used"),
+                result.get("azure_calls_remaining"),
+            )
+            return jsonify(result), 200
+        except OperationalError as e:
+            logger.warning("plate scan DB operation failed: %s", e)
+            return jsonify({"error": "Plate registry temporarily unavailable.", "code": "db_unavailable"}), 503
+        except Exception as e:
+            logger.error(f"Error processing plate scan: {e}")
+            return jsonify({"error": "Internal processing error during plate scan"}), 500
+        finally:
+            release_db_connection(conn)
 
     @app.route("/api/v1/scan-face", methods=["POST"])
     def scan_face():
@@ -290,96 +323,54 @@ def create_app(config_object=Config):
 
     @app.route("/api/v1/scan-plate", methods=["POST"])
     def scan_plate():
-        """License plate recognition scanning endpoint (EasyOCR path)."""
-        if "file" not in request.files:
-            return jsonify({"error": "No image file provided in 'file' field"}), 400
-
-        file = request.files["file"]
-        if file.filename == "":
-            return jsonify({"error": "No selected file"}), 400
-
-        image_bytes = file.read()
-        conn = get_db_connection()
-        try:
-            from services.plate_recognition import process_incoming_plate_image
-
-            result = process_incoming_plate_image(
-                image_bytes=image_bytes,
-                db_conn=conn,
-            )
-
-            if isinstance(result, tuple):
-                return jsonify(result[0]), result[1]
-
-            result = _attach_plate_alert(result, source_endpoint="/api/v1/scan-plate")
-            return jsonify(result), 200
-        except Exception as e:
-            logger.error(f"Error processing plate scan: {e}")
-            return jsonify({"error": "Internal processing error during plate scan"}), 500
-        finally:
-            release_db_connection(conn)
+        """Still-image plate scan. Azure Vision, with the local engine behind it."""
+        return _run_plate_scan(engine="auto", source_endpoint="/api/v1/scan-plate")
 
     @app.route("/api/v1/scan-plate-azure", methods=["POST"])
     def scan_plate_azure():
-        if "file" not in request.files:
-            return jsonify({"error": "No file uploaded"}), 400
+        """Still-image plate scan, pinned to Azure Vision.
 
-        file = request.files["file"]
-        if file.filename == "":
-            return jsonify({"error": "No selected file"}), 400
+        An upload has no live loop pacing it, so it gets both conditioning
+        passes rather than the adaptive budget the live endpoint runs on.
+        """
+        return _run_plate_scan(
+            engine="azure",
+            source_endpoint="/api/v1/scan-plate-azure",
+            max_passes=2,
+        )
 
-        image_bytes = file.read()
+    @app.route("/api/v1/scan-plate-live", methods=["POST"])
+    def scan_plate_live():
+        """Live-camera plate scan.
 
-        raw_text = extract_text_from_bytes(image_bytes)
-        cleaned_plate = clean_plate_text(raw_text)
+        The browser sends a cropped, upscaled frame plus the region its own
+        detector locked onto, so the server is refining a candidate rather than
+        searching a whole doorbell frame. Pass count is left adaptive: this
+        endpoint fires every few seconds and has to share one free-tier minute
+        with every other scan.
+        """
+        return _run_plate_scan(
+            engine="auto",
+            source_endpoint="/api/v1/scan-plate-live",
+            roi=_read_roi(),
+        )
 
-        if not cleaned_plate:
-            return jsonify({"error": "No text detected in image"}), 400
+    @app.route("/api/v1/plate-scan-budget", methods=["GET"])
+    def plate_scan_budget():
+        """Remaining Azure Vision calls in the current minute.
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                """
-                SELECT p.id, p.plate_number, p.status, p.owner_name, f.image_url
-                FROM vehicle_plates p
-                LEFT JOIN vehicle_plate_images f ON p.id = f.plate_id
-                WHERE regexp_replace(upper(p.plate_number), '[^A-Z0-9]', '', 'g') = %s
-                ORDER BY f.created_at DESC NULLS LAST
-                LIMIT 1;
-                """,
-                (cleaned_plate,),
-            )
-            match = cursor.fetchone()
+        The live view reads this to pace itself and to show the operator why a
+        scan was skipped, instead of silently dropping frames.
+        """
+        from services import plate_vision
 
-            if match:
-                result = {
-                    "match_found": True,
-                    "raw_text": raw_text,
-                    "extracted_text": cleaned_plate,
-                    "plate": {
-                        "id": match[0],
-                        "plate_number": match[1],
-                        "status": match[2],
-                        "owner_name": match[3],
-                        "image_url": match[4],
-                    },
-                }
-                result = _attach_plate_alert(result, source_endpoint="/api/v1/scan-plate-azure")
-                return jsonify(result), 200
-
-            return jsonify({
-                "match_found": False,
-                "raw_text": raw_text,
-                "extracted_text": cleaned_plate,
-                "message": f"Plate '{cleaned_plate}' scanned but not flagged in database.",
-            }), 200
-        except Exception as e:
-            logger.error(f"Error processing Azure plate scan: {e}")
-            return jsonify({"error": "Internal processing error during plate scan"}), 500
-        finally:
-            cursor.close()
-            release_db_connection(conn)
+        return jsonify({
+            "azure_configured": plate_vision.azure_configured(),
+            "limit_per_minute": plate_vision.quota_gate.limit,
+            "remaining": plate_vision.quota_gate.remaining(),
+            "retry_after_seconds": round(plate_vision.quota_gate.retry_after_seconds(), 1),
+            "offline_fallback": plate_vision.easyocr_available(),
+        }), 200
 
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
