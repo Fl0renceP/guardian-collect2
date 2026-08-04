@@ -274,6 +274,17 @@ def create_app(config_object=Config):
             except ValueError:
                 return None
 
+        # Client-side blink check (build guide §5). Tri-state on purpose: a
+        # caller that says nothing is recorded as None ("not checked"), which
+        # is a different fact from False ("checked, no blink seen") and must
+        # not be silently collapsed into it.
+        _liveness_raw = request.form.get("liveness_confirmed", "").strip().lower()
+        liveness_confirmed = (
+            True if _liveness_raw in ("1", "true", "yes")
+            else False if _liveness_raw in ("0", "false", "no")
+            else None
+        )
+
         request_started = time.perf_counter()
         logger.info(
             "scan-face request received: filename=%s bytes=%s remote=%s",
@@ -335,6 +346,7 @@ def create_app(config_object=Config):
                 camera_id=camera_id,
                 lat=_coord("location_lat"),
                 lng=_coord("location_lng"),
+                liveness_confirmed=liveness_confirmed,
             )
             if detection_ids:
                 # One id per identified face, in the same order as result["faces"].

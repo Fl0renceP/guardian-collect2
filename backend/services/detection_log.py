@@ -18,12 +18,14 @@ INSERT INTO detections (
     camera_id, location_lat, location_lng,
     matched_person_id, matched_name, match_label,
     match_score, match_threshold, margin_to_next,
-    alert_sent, faces_detected, capture_quality, quality_passed
+    alert_sent, faces_detected, capture_quality, quality_passed,
+    liveness_confirmed
 ) VALUES (
     %(camera_id)s, %(lat)s, %(lng)s,
     %(person_id)s, %(person_name)s, %(label)s,
     %(score)s, %(threshold)s, %(margin)s,
-    %(alert)s, %(faces)s, %(quality)s, %(quality_passed)s
+    %(alert)s, %(faces)s, %(quality)s, %(quality_passed)s,
+    %(liveness)s
 )
 RETURNING id;
 """
@@ -46,7 +48,8 @@ def _face_label(face):
     return "no_match"
 
 
-def record(conn, result, threshold, camera_id="demo_upload", lat=None, lng=None):
+def record(conn, result, threshold, camera_id="demo_upload", lat=None, lng=None,
+           liveness_confirmed=None):
     """Write the detection rows for one scan. Returns the row ids.
 
     ONE ROW PER FACE, not per frame. Three people walking past a camera together
@@ -83,6 +86,9 @@ def record(conn, result, threshold, camera_id="demo_upload", lat=None, lng=None)
                 "faces": result.get("faces_detected"),
                 "quality": quality.get("quality_score"),
                 "quality_passed": quality.get("passes"),
+                # None, not False, when the client did not report — "we did not
+                # check" and "we checked and saw no blink" are different facts.
+                "liveness": liveness_confirmed,
             })
     else:
         quality = result.get("capture_quality") or {}
@@ -100,6 +106,7 @@ def record(conn, result, threshold, camera_id="demo_upload", lat=None, lng=None)
             "faces": result.get("faces_detected") or 0,
             "quality": quality.get("quality_score"),
             "quality_passed": quality.get("passes"),
+            "liveness": liveness_confirmed,
         })
 
     try:

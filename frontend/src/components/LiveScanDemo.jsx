@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Webcam from 'react-webcam'
-import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision'
+import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const SCAN_INTERVAL_MS = 1500
@@ -18,9 +18,35 @@ const LIVE_CROP_INTERVAL_MS = 700
 const MODEL_LABEL = 'Facenet512 / Cosine'
 const MEDIAPIPE_WASM_ROOT =
   import.meta.env.VITE_MEDIAPIPE_WASM_ROOT || 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+// FaceLandmarker rather than FaceDetector: it returns the same face position
+// AND per-frame blendshapes, which is what the blink check reads. Running a
+// separate detector alongside it would pay for face-finding twice.
 const MEDIAPIPE_MODEL_PATH =
   import.meta.env.VITE_MEDIAPIPE_MODEL_PATH ||
-  'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite'
+  'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task'
+
+// ---------------------------------------------------------------------------
+// Liveness (build guide §5).
+//
+// A photo held up to the camera does not blink. Tracking eye-closure across
+// frames is the cheapest check that separates a live person from a printed
+// face or a phone screen, and it is the difference between "any face in frame
+// = match" and something defensible.
+//
+// Deliberately NOT a hard gate on scanning: an un-blinked face still gets
+// checked, it is just reported as unverified. Blocking the scan outright would
+// mean a still, staring person — exactly what a doorbell camera catches — goes
+// unrecognised, which is a worse failure than a flagged spoof.
+// ---------------------------------------------------------------------------
+const BLINK_CLOSED_SCORE = 0.45   // above this, the eye counts as shut
+const BLINK_OPEN_SCORE = 0.2      // back below this completes the blink
+const LIVENESS_WINDOW_MS = 12000  // a blink counts as recent for this long
+
+const LIVENESS = {
+  PENDING: 'pending',
+  LIVE: 'live',
+  UNAVAILABLE: 'unavailable',
+}
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 
@@ -186,8 +212,13 @@ const drawReticle = (ctx, box, state, scorePct) => {
   }
 
   ctx.setLineDash([])
-  ctx.font = '700 12px ui-monospace, SFMono-Regular, Menlo, monospace'
-  ctx.fillText(`${scorePct}%`, box.x, Math.max(14, box.y - 6))
+  // Only the real match confidence is drawn. The landmarker exposes no
+  // detection-confidence score, and a made-up number on the face is worse
+  // than no number.
+  if (typeof scorePct === 'number') {
+    ctx.font = '700 12px ui-monospace, SFMono-Regular, Menlo, monospace'
+    ctx.fillText(`${scorePct}%`, box.x, Math.max(14, box.y - 6))
+  }
   ctx.restore()
 }
 
@@ -213,6 +244,9 @@ export default function LiveScanDemo() {
   const failureCountRef = useRef(0)
   const nextScanAllowedAtRef = useRef(0)
   const statusBtnRef = useRef(null)
+  // Blink state machine: eyes must go shut and then open again to count.
+  const eyesClosedRef = useRef(false)
+  const lastBlinkAtRef = useRef(0)
 
   const [modelState, setModelState] = useState('loading')
   const [modelError, setModelError] = useState('')
@@ -223,7 +257,8 @@ export default function LiveScanDemo() {
   const [webcamReady, setWebcamReady] = useState(false)
   const [webcamError, setWebcamError] = useState('')
   const [hasFaceInFrame, setHasFaceInFrame] = useState(false)
-  const [faceScore, setFaceScore] = useState(0)
+  const [liveness, setLiveness] = useState(LIVENESS.PENDING)
+  const [blinkCount, setBlinkCount] = useState(0)
   const [fps, setFps] = useState(null)
   const [memberCount, setMemberCount] = useState(null)
   const [liveCrop, setLiveCrop] = useState(null)
@@ -297,12 +332,15 @@ export default function LiveScanDemo() {
 
         const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_ROOT)
 
-        detectorRef.current = await FaceDetector.createFromOptions(vision, {
+        detectorRef.current = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: MEDIAPIPE_MODEL_PATH,
           },
           runningMode: 'VIDEO',
-          minDetectionConfidence: 0.52,
+          numFaces: 1,
+          // The blink check reads eyeBlinkLeft / eyeBlinkRight from here.
+          outputFaceBlendshapes: true,
+          minFaceDetectionConfidence: 0.52,
         })
 
         setModelState('ready')
@@ -442,37 +480,80 @@ export default function LiveScanDemo() {
           )
 
           const results = detector.detectForVideo(video, now)
-          const detections = results?.detections || []
+          const landmarks = results?.faceLandmarks?.[0]
 
           canvas.width = rw
           canvas.height = rh
           const ctx = canvas.getContext('2d')
           ctx.clearRect(0, 0, rw, rh)
 
-          if (detections.length > 0) {
-            const best = [...detections].sort(
-              (a, b) => (b.categories?.[0]?.score || 0) - (a.categories?.[0]?.score || 0)
-            )[0]
+          if (landmarks && landmarks.length) {
+            // Landmarks are normalised 0..1; the box is their extent.
+            let minX = 1, minY = 1, maxX = 0, maxY = 0
+            for (const p of landmarks) {
+              if (p.x < minX) minX = p.x
+              if (p.y < minY) minY = p.y
+              if (p.x > maxX) maxX = p.x
+              if (p.y > maxY) maxY = p.y
+            }
+            const src = {
+              x: minX * vw,
+              y: minY * vh,
+              w: (maxX - minX) * vw,
+              h: (maxY - minY) * vh,
+            }
 
-            const b = best.boundingBox
             const { scale, offX, offY } = coverTransform(vw, vh, rw, rh)
             const box = {
-              x: b.originX * scale + offX,
-              y: b.originY * scale + offY,
-              w: b.width * scale,
-              h: b.height * scale,
+              x: src.x * scale + offX,
+              y: src.y * scale + offY,
+              w: src.w * scale,
+              h: src.h * scale,
             }
-            const score = best.categories?.[0]?.score || 0
 
-            faceBoxRef.current = { x: b.originX, y: b.originY, w: b.width, h: b.height }
+            faceBoxRef.current = src
             setHasFaceInFrame(true)
-            setFaceScore(score)
 
-            drawReticle(ctx, box, faceVerdict.state, Math.round(score * 100))
+            // ---- blink / liveness ----
+            const shapes = results?.faceBlendshapes?.[0]?.categories
+            if (shapes && shapes.length) {
+              let left = 0
+              let right = 0
+              for (const c of shapes) {
+                if (c.categoryName === 'eyeBlinkLeft') left = c.score
+                else if (c.categoryName === 'eyeBlinkRight') right = c.score
+              }
+              // Both eyes, so a wink or a one-sided shadow does not count.
+              const closed = Math.min(left, right)
+              if (!eyesClosedRef.current && closed > BLINK_CLOSED_SCORE) {
+                eyesClosedRef.current = true
+              } else if (eyesClosedRef.current && closed < BLINK_OPEN_SCORE) {
+                // Shut then open again — one complete blink.
+                eyesClosedRef.current = false
+                lastBlinkAtRef.current = Date.now()
+                setBlinkCount((n) => n + 1)
+              }
+              setLiveness(
+                Date.now() - lastBlinkAtRef.current < LIVENESS_WINDOW_MS
+                  ? LIVENESS.LIVE
+                  : LIVENESS.PENDING,
+              )
+            } else {
+              // Blendshapes absent (older model asset / unsupported build).
+              // Say so rather than reporting a liveness result we do not have.
+              setLiveness(LIVENESS.UNAVAILABLE)
+            }
+
+            drawReticle(
+              ctx,
+              box,
+              faceVerdict.state,
+              typeof matchResult?.matchConfidence === 'number' ? matchResult.matchConfidence : null,
+            )
           } else {
             faceBoxRef.current = null
             setHasFaceInFrame(false)
-            setFaceScore(0)
+            eyesClosedRef.current = false
           }
         }
       }
@@ -482,7 +563,7 @@ export default function LiveScanDemo() {
 
     if (isModelLoaded) run()
     return () => cancelAnimationFrame(frameId)
-  }, [isModelLoaded, webcamReady, faceVerdict.state])
+  }, [isModelLoaded, webcamReady, faceVerdict.state, matchResult?.matchConfidence])
 
   const sendFrameToBackend = useCallback(async () => {
     const webcam = webcamRef.current
@@ -507,6 +588,10 @@ export default function LiveScanDemo() {
 
       const formData = new FormData()
       formData.append('file', blob, 'live_scan.jpg')
+      // Read from the ref, not state: this callback is memoised and a state
+      // read here would be a stale closure.
+      const livenessConfirmed = Date.now() - lastBlinkAtRef.current < LIVENESS_WINDOW_MS
+      formData.append('liveness_confirmed', livenessConfirmed ? 'true' : 'false')
 
       const response = await fetch(`${API_BASE_URL}/api/v1/scan-face`, {
         method: 'POST',
@@ -945,7 +1030,15 @@ export default function LiveScanDemo() {
 
               <div className="ls-overlay-top-left">
                 <span className="ls-chip">REC / LIVE{fps ? ` ${fps} FPS` : ''}</span>
-                {hasFaceInFrame ? <span className="ls-chip">Face {(faceScore * 100).toFixed(0)}%</span> : null}
+                {hasFaceInFrame ? (
+                  <span className="ls-chip">
+                    {liveness === LIVENESS.LIVE
+                      ? '✓ LIVE PERSON'
+                      : liveness === LIVENESS.UNAVAILABLE
+                      ? 'LIVENESS N/A'
+                      : 'BLINK TO VERIFY'}
+                  </span>
+                ) : null}
               </div>
 
               <div className="ls-overlay-top-right">
@@ -964,6 +1057,31 @@ export default function LiveScanDemo() {
               {faceVerdict.state === STATE.ALERT || faceVerdict.state === STATE.CLEAR ? (
                 <p className="ls-confidence">
                   Confidence: <b>{confidencePct}%</b>
+                </p>
+              ) : null}
+
+              {/* Liveness is reported separately from the match, never folded
+                  into it — "we recognised this face" and "this was a live
+                  person" are two different claims (build guide §5). */}
+              {hasFaceInFrame ? (
+                <p className="ls-explain" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <i
+                    className="ls-dot"
+                    aria-hidden="true"
+                    style={{
+                      color:
+                        liveness === LIVENESS.LIVE
+                          ? 'var(--status-clear)'
+                          : liveness === LIVENESS.UNAVAILABLE
+                          ? 'var(--status-unknown)'
+                          : 'var(--status-caution)',
+                    }}
+                  />
+                  {liveness === LIVENESS.LIVE
+                    ? 'Liveness confirmed — blink detected'
+                    : liveness === LIVENESS.UNAVAILABLE
+                    ? 'Liveness check unavailable on this device'
+                    : 'Liveness unconfirmed — a photo does not blink'}
                 </p>
               ) : null}
             </div>
@@ -1114,6 +1232,8 @@ export default function LiveScanDemo() {
             <div className="ls-kv"><span>Scan interval</span><span>{SCAN_INTERVAL_MS} ms</span></div>
             <div className="ls-kv"><span>Plate interval</span><span>{PLATE_SCAN_INTERVAL_MS} ms</span></div>
             <div className="ls-kv"><span>Detector FPS</span><span>{fps ?? '--'}</span></div>
+            <div className="ls-kv"><span>Liveness</span><span>{liveness}</span></div>
+            <div className="ls-kv"><span>Blinks seen</span><span>{blinkCount}</span></div>
             <div className="ls-kv"><span>Round trip</span><span>{roundtripMs ?? '--'} ms</span></div>
             <div className="ls-kv"><span>Cosine distance</span><span>{typeof matchResult?.matchDistance === 'number' ? matchResult.matchDistance.toFixed(4) : '--'}</span></div>
             <div className="ls-kv"><span>Registry status</span><span>{(matchResult?.status || 'none').toUpperCase()}</span></div>
