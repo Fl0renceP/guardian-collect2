@@ -46,6 +46,32 @@ _CONFUSIONS = str.maketrans({
 MIN_PLATE_LENGTH = int(os.getenv("PLATE_MIN_LENGTH", "5"))
 MAX_PLATE_LENGTH = int(os.getenv("PLATE_MAX_LENGTH", "10"))
 
+# South African registration formats, matched against the CLEANED value —
+# separators stripped, upper-cased, but BEFORE the confusion table runs.
+# Confusion mapping turns O->0 and S->5, which would destroy the letter/digit
+# shape these patterns depend on.
+#
+# Province suffixes for the letter-suffix formats.
+_SA_PROVINCE_SUFFIX = "(?:GP|MP|NW|EC|FS|NC|WC|ZN|L)"
+_SA_PLATE_PATTERNS = (
+    # Western/Eastern/Northern Cape and Free State: letters then digits.
+    # Covers the seeded demo plates (CA123456, CF41043, CAA227793).
+    re.compile(r"^[A-Z]{2,3}\d{3,6}$"),
+    # Gauteng and the other suffix provinces: ABC 123 GP.
+    re.compile(r"^[A-Z]{3}\d{3}" + _SA_PROVINCE_SUFFIX + r"$"),
+    # Older / shorter suffix-province issues: AB 1234 GP.
+    re.compile(r"^[A-Z]{1,3}\d{2,4}" + _SA_PROVINCE_SUFFIX + r"$"),
+    # Personalised plates, which are free-form but still province-suffixed.
+    re.compile(r"^[A-Z0-9]{2,8}" + _SA_PROVINCE_SUFFIX + r"$"),
+)
+
+# Whether a candidate that passes the generic shape test but matches no SA
+# format is dropped outright. Off by default: the shape test already removes
+# most signage, and a hard reject would silently discard a legitimate plate
+# this list does not anticipate (trailers, diplomatic, cross-border). Turn it
+# on where precision matters more than recall.
+STRICT_SA_FORMAT = os.getenv("PLATE_STRICT_SA_FORMAT", "false").strip().lower() in ("1", "true", "yes")
+
 
 def configured():
     return bool(getattr(Config, "AZURE_VISION_ENDPOINT", None)
@@ -111,6 +137,17 @@ def normalise(plate):
     return clean(plate).translate(_CONFUSIONS)
 
 
+def matches_sa_format(candidate):
+    """True when the candidate matches a known South African plate layout.
+
+    Reported alongside every candidate rather than used as a silent filter, so
+    a read that is plate-shaped but not SA-shaped is visible as such instead of
+    disappearing. See STRICT_SA_FORMAT for the filtering behaviour.
+    """
+    value = clean(candidate)
+    return any(p.match(value) for p in _SA_PLATE_PATTERNS)
+
+
 def looks_like_plate(candidate):
     """Shape test, so shop signage and bumper stickers do not reach the database."""
     if not (MIN_PLATE_LENGTH <= len(candidate) <= MAX_PLATE_LENGTH):
@@ -119,7 +156,11 @@ def looks_like_plate(candidate):
     has_alpha = any(c.isalpha() for c in candidate)
     # Almost every plate mixes letters and digits. A pure-digit string of the
     # right length is usually a phone number or a price.
-    return has_digit and has_alpha
+    if not (has_digit and has_alpha):
+        return False
+    if STRICT_SA_FORMAT and not matches_sa_format(candidate):
+        return False
+    return True
 
 
 def extract_candidates(lines):
@@ -141,6 +182,7 @@ def extract_candidates(lines):
                 "normalised": normalise(value),
                 "confidence": confidence,
                 "source": source,
+                "sa_format": matches_sa_format(value),
             }
 
     for index, line in enumerate(lines):
@@ -153,7 +195,14 @@ def extract_candidates(lines):
             )
             offer(line["text"] + nxt["text"], joined_confidence, "joined-lines")
 
-    return sorted(candidates.values(), key=lambda c: -(c["confidence"] or 0))
+    # A read that matches a real SA layout outranks a higher-confidence read
+    # that does not. OCR confidence measures glyph legibility, not whether the
+    # string is a registration — a crisply-read shop sign scores well on the
+    # first and fails the second.
+    return sorted(
+        candidates.values(),
+        key=lambda c: (not c["sa_format"], -(c["confidence"] or 0)),
+    )
 
 
 def match_plate(cursor, candidates):
