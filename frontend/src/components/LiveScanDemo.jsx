@@ -1,6 +1,5 @@
-import React, { useMemo, useRef, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Webcam from 'react-webcam'
-import { Link } from 'react-router-dom'
 import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
@@ -12,6 +11,10 @@ const SCAN_INTERVAL_MS = 1500
 // there is no point queueing frames the backend cannot reach.
 const PLATE_SCAN_INTERVAL_MS = 2000
 const HISTORY_LIMIT = 30
+// The live half of the reference comparison is refreshed from the local
+// MediaPipe box, not from a scan response, so the tile fills as soon as a face
+// is in frame — including when the backend is unreachable.
+const LIVE_CROP_INTERVAL_MS = 700
 const MODEL_LABEL = 'Facenet512 / Cosine'
 const MEDIAPIPE_WASM_ROOT =
   import.meta.env.VITE_MEDIAPIPE_WASM_ROOT || 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
@@ -27,40 +30,68 @@ const formatTimestamp = (iso) => {
   return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString()
 }
 
-const toneClassFromResult = ({ hasFace, isAnalyzing, matchResult }) => {
-  if (matchResult?.isAlert) return 'alert'
-  if (matchResult?.isKnownUser) return 'ok'
-  if (!hasFace) return 'unknown'
-  if (isAnalyzing) return 'unknown'
-  return 'unknown'
+const formatClock = (iso) => {
+  if (!iso) return null
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleTimeString()
 }
 
-const toneLabelFromResult = ({ hasFace, isAnalyzing, matchResult }) => {
-  if (matchResult?.isAlert) return 'FLAGGED'
-  if (matchResult?.isKnownUser) return 'RECOGNISED'
-  if (!hasFace) return 'NO TARGET'
-  if (isAnalyzing) return 'SCANNING'
-  return 'UNREGISTERED'
+// ---------------------------------------------------------------------------
+// The four-state status system (design spec §7).
+//
+// Every result on this screen — face or plate — resolves to exactly one of
+// these. It is the single semantic language of the page: the user learns the
+// traffic light once and reads both panels the same way. Anything that needs a
+// fifth state is a design change, not a local special case.
+// ---------------------------------------------------------------------------
+const STATE = {
+  SCANNING: 'scanning',
+  UNKNOWN: 'unknown',
+  ALERT: 'alert',
+  CLEAR: 'clear',
 }
 
-const auditTone = (entry) => {
-  const status = (entry?.status || '').toLowerCase()
-  if (status === 'offender' || status === 'suspect' || entry?.isAlert) return 'alert'
-  if (entry?.isKnownUser || status === 'verified') return 'ok'
-  return 'unknown'
+// Registry status -> screen state. The registry owns the vocabulary; this map
+// is the only place it is translated, so a new registry status needs one line
+// here rather than a redesign.
+const registryStateFor = (status) => {
+  const s = (status || '').toLowerCase()
+  if (s === 'offender' || s === 'suspect') return STATE.ALERT
+  if (s === 'verified') return STATE.CLEAR
+  return STATE.UNKNOWN
+}
+
+// ---------------------------------------------------------------------------
+// Reference URLs are SAS-signed, so everything from the '?' on is a token.
+// Strip it before parsing or the entire signature gets rendered on screen.
+// ---------------------------------------------------------------------------
+const parsePoseFromUrl = (url) => {
+  if (!url) return '-'
+  const path = String(url).split(/[?#]/)[0]
+  let name = path.split('/').pop() || ''
+  try {
+    name = decodeURIComponent(name)
+  } catch {
+    // Leave the raw segment if it is not valid percent-encoding.
+  }
+  const stripped = name.replace(/\.[a-zA-Z0-9]+$/, '')
+  const parts = stripped.split('_').filter(Boolean)
+  return parts.length < 2 ? '-' : parts.slice(1).join(' ')
+}
+
+// Per-stage server timings, for the System status panel only. JSON.stringify
+// dumps an unreadable blob into a table cell.
+const formatStageTiming = (timings) => {
+  if (!timings || typeof timings !== 'object') return '--'
+  const parts = Object.entries(timings)
+    .filter(([, v]) => typeof v === 'number')
+    .map(([k, v]) => `${k.replace(/_/g, ' ')} ${Math.round(v)}ms`)
+  return parts.length ? parts.join(' · ') : '--'
 }
 
 const toConfidencePct = (distance) => {
   if (typeof distance !== 'number') return 0
   return clamp(Math.round((1 - distance / 0.6) * 100), 0, 100)
-}
-
-const parsePoseFromUrl = (url) => {
-  if (!url) return '-'
-  const name = url.split('/').pop() || ''
-  const stripped = name.replace(/\.[a-zA-Z0-9]+$/, '')
-  const parts = stripped.split('_').filter(Boolean)
-  return parts.length < 2 ? '-' : parts.slice(1).join(' ')
 }
 
 const captureCrop = (video, bbox) => {
@@ -101,9 +132,31 @@ const captureFrameBlob = (video, quality = 0.72, maxWidth = 720) => {
   })
 }
 
-const drawReticle = (ctx, box, toneClass, scorePct) => {
-  const color = toneClass === 'alert' ? '#b3261e' : toneClass === 'ok' ? '#186b3c' : '#7a5c00'
-  const dashed = toneClass === 'unknown'
+// The video is rendered with object-fit: cover, so it is scaled uniformly and
+// centre-cropped. Overlay boxes have to undergo the same transform or they sit
+// beside the thing they are meant to be marking. Previously the video used
+// object-fit: fill and the boxes assumed a per-axis stretch, which put every
+// box slightly off whenever the camera's aspect ratio was not exactly 4:3.
+const coverTransform = (srcW, srcH, dstW, dstH) => {
+  if (!srcW || !srcH || !dstW || !dstH) return { scale: 1, offX: 0, offY: 0 }
+  const scale = Math.max(dstW / srcW, dstH / srcH)
+  return {
+    scale,
+    offX: (dstW - srcW * scale) / 2,
+    offY: (dstH - srcH * scale) / 2,
+  }
+}
+
+const STATUS_HEX = {
+  [STATE.SCANNING]: '#E3A438',
+  [STATE.UNKNOWN]: '#7C8299',
+  [STATE.ALERT]: '#E14F4F',
+  [STATE.CLEAR]: '#3FBF7F',
+}
+
+const drawReticle = (ctx, box, state, scorePct) => {
+  const color = STATUS_HEX[state] || STATUS_HEX[STATE.UNKNOWN]
+  const dashed = state === STATE.UNKNOWN || state === STATE.SCANNING
 
   ctx.save()
   ctx.strokeStyle = color
@@ -138,6 +191,18 @@ const drawReticle = (ctx, box, toneClass, scorePct) => {
   ctx.restore()
 }
 
+// Status is never colour-only: the word travels with the dot so the screen
+// still reads for colourblind users and in the black-and-white printouts
+// judges take notes on (spec §8).
+function StatusPill({ state, label }) {
+  return (
+    <span className={`ls-pill ls-pill--${state}`}>
+      <i className={`ls-dot${state === STATE.SCANNING ? ' ls-dot--pulse' : ''}`} aria-hidden="true" />
+      {label}
+    </span>
+  )
+}
+
 export default function LiveScanDemo() {
   const webcamRef = useRef(null)
   const canvasRef = useRef(null)
@@ -147,6 +212,7 @@ export default function LiveScanDemo() {
   const faceBoxRef = useRef(null)
   const failureCountRef = useRef(0)
   const nextScanAllowedAtRef = useRef(0)
+  const statusBtnRef = useRef(null)
 
   const [modelState, setModelState] = useState('loading')
   const [modelError, setModelError] = useState('')
@@ -158,13 +224,16 @@ export default function LiveScanDemo() {
   const [webcamError, setWebcamError] = useState('')
   const [hasFaceInFrame, setHasFaceInFrame] = useState(false)
   const [faceScore, setFaceScore] = useState(0)
-  const [fps, setFps] = useState(0)
+  const [fps, setFps] = useState(null)
   const [memberCount, setMemberCount] = useState(null)
   const [liveCrop, setLiveCrop] = useState(null)
+  const [liveCropAt, setLiveCropAt] = useState(null)
   const [roundtripMs, setRoundtripMs] = useState(null)
   const [history, setHistory] = useState([])
   const [selectedHistoryId, setSelectedHistoryId] = useState(null)
   const [dbImageBroken, setDbImageBroken] = useState(false)
+  const [systemPanelOpen, setSystemPanelOpen] = useState(false)
+  const [videoGeom, setVideoGeom] = useState(null)
 
   const [plateResult, setPlateResult] = useState(null)
   const [plateError, setPlateError] = useState('')
@@ -250,8 +319,89 @@ export default function LiveScanDemo() {
     }
   }, [])
 
-  const toneClass = toneClassFromResult({ hasFace: hasFaceInFrame, isAnalyzing, matchResult })
-  const toneLabel = toneLabelFromResult({ hasFace: hasFaceInFrame, isAnalyzing, matchResult })
+  // ------------------------------------------------------------------
+  // Face verdict, expressed in the four-state language.
+  // ------------------------------------------------------------------
+  const faceVerdict = useMemo(() => {
+    if (matchResult?.isKnownUser || matchResult?.status) {
+      const state = registryStateFor(matchResult.status)
+      if (state === STATE.ALERT) {
+        return {
+          state,
+          label: 'SUSPECT',
+          name: matchResult.fullName,
+          // The registry owns this copy. Where it has no reason field we say
+          // what we actually know rather than inventing an offence.
+          detail:
+            matchResult.reason ||
+            (matchResult.status ? `Flagged on the registry as ${matchResult.status}` : 'Flagged on the registry'),
+        }
+      }
+      if (state === STATE.CLEAR) {
+        return {
+          state,
+          label: 'RESIDENT',
+          name: matchResult.fullName,
+          detail: matchResult.reason || 'Registered community member',
+        }
+      }
+    }
+    if (isAnalyzing) {
+      return { state: STATE.SCANNING, label: 'SCANNING', name: null, detail: 'Checking this face against the registry' }
+    }
+    if (matchResult) {
+      // Name is deliberately not rendered for UNKNOWN (spec §4.2).
+      return { state: STATE.UNKNOWN, label: 'UNKNOWN', name: null, detail: 'Not in the safety registry' }
+    }
+    if (hasFaceInFrame) {
+      return { state: STATE.SCANNING, label: 'SCANNING', name: null, detail: 'Face detected — reading' }
+    }
+    return { state: STATE.UNKNOWN, label: 'NO FACE', name: null, detail: 'Step into frame to begin a scan' }
+  }, [matchResult, isAnalyzing, hasFaceInFrame])
+
+  // ------------------------------------------------------------------
+  // Plate verdict, same four states so both panels read identically.
+  // ------------------------------------------------------------------
+  const plateVerdict = useMemo(() => {
+    const text = plateResult?.extracted_text
+    const stability = plateResult?.stability
+
+    if (plateResult?.match_found) {
+      const state = registryStateFor(plateResult.status)
+      const owner = plateResult.plate?.owner_name
+      if (state === STATE.ALERT) {
+        return {
+          state,
+          label: 'FLAGGED',
+          plate: plateResult.plate?.plate_number || text,
+          detail: plateResult.reason || owner || 'Flagged on the vehicle registry',
+        }
+      }
+      return {
+        state: STATE.CLEAR,
+        label: 'REGISTERED',
+        plate: plateResult.plate?.plate_number || text,
+        detail: owner ? `Registered to ${owner}` : 'On the vehicle registry',
+      }
+    }
+
+    if (text && stability && !stability.confirmed) {
+      return {
+        state: STATE.SCANNING,
+        label: 'SCANNING',
+        plate: text,
+        detail: `Reading plate — ${stability.agreeing_frames || 0} of ${stability.required_frames} frames agree`,
+      }
+    }
+
+    if (text) {
+      return { state: STATE.UNKNOWN, label: 'UNKNOWN', plate: text, detail: 'Not in the vehicle registry' }
+    }
+
+    // Never a bare em-dash: an empty state has to read as "working", not
+    // "broken" (spec §5).
+    return { state: STATE.SCANNING, label: 'SCANNING', plate: null, detail: 'Looking for a plate in frame' }
+  }, [plateResult])
 
   useEffect(() => {
     let frameId
@@ -285,6 +435,12 @@ export default function LiveScanDemo() {
           const rw = video.clientWidth || vw
           const rh = video.clientHeight || vh
 
+          setVideoGeom((prev) =>
+            prev && prev.vw === vw && prev.vh === vh && prev.rw === rw && prev.rh === rh
+              ? prev
+              : { vw, vh, rw, rh },
+          )
+
           const results = detector.detectForVideo(video, now)
           const detections = results?.detections || []
 
@@ -299,13 +455,12 @@ export default function LiveScanDemo() {
             )[0]
 
             const b = best.boundingBox
-            const sx = rw / vw
-            const sy = rh / vh
+            const { scale, offX, offY } = coverTransform(vw, vh, rw, rh)
             const box = {
-              x: b.originX * sx,
-              y: b.originY * sy,
-              w: b.width * sx,
-              h: b.height * sy,
+              x: b.originX * scale + offX,
+              y: b.originY * scale + offY,
+              w: b.width * scale,
+              h: b.height * scale,
             }
             const score = best.categories?.[0]?.score || 0
 
@@ -313,7 +468,7 @@ export default function LiveScanDemo() {
             setHasFaceInFrame(true)
             setFaceScore(score)
 
-            drawReticle(ctx, box, toneClass, Math.round(score * 100))
+            drawReticle(ctx, box, faceVerdict.state, Math.round(score * 100))
           } else {
             faceBoxRef.current = null
             setHasFaceInFrame(false)
@@ -327,88 +482,9 @@ export default function LiveScanDemo() {
 
     if (isModelLoaded) run()
     return () => cancelAnimationFrame(frameId)
-  }, [isModelLoaded, webcamReady, toneClass])
+  }, [isModelLoaded, webcamReady, faceVerdict.state])
 
-  useEffect(() => {
-    if (!isModelLoaded || !webcamReady || !backendReady) return undefined
-
-    const id = setInterval(() => {
-      if (!isAnalyzing && !scanBusyRef.current && hasFaceInFrame) {
-        sendFrameToBackend()
-      }
-    }, SCAN_INTERVAL_MS)
-
-    return () => clearInterval(id)
-  }, [isModelLoaded, webcamReady, backendReady, isAnalyzing, hasFaceInFrame])
-
-  const sendPlateFrame = async () => {
-    const video = webcamRef.current?.video
-    if (!video || scanBusyRef.current) return
-
-    scanBusyRef.current = true
-    try {
-      const blob = await captureFrameBlob(video, 0.72, 720)
-      if (!blob) return
-
-      const formData = new FormData()
-      formData.append('file', blob, 'live_plate.jpg')
-      formData.append('stream_id', plateStreamIdRef.current)
-
-      const response = await fetch(`${API_BASE_URL}/api/v1/scan-plate-live`, {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`)
-
-      setPlateResult(data)
-      setPlateError('')
-
-      // Only the frame the vote lands on. A car parked in view would otherwise
-      // add a row every couple of seconds for as long as it sits there.
-      if (data?.stability?.newly_confirmed && data?.match_found) {
-        setPlateSightings((prev) => [
-          {
-            id: `plate-${Date.now()}`,
-            plateNumber: data.plate?.plate_number,
-            status: data.status,
-            ownerName: data.plate?.owner_name,
-            alert: !!data.alert,
-            at: new Date().toISOString(),
-          },
-          ...prev,
-        ].slice(0, 10))
-      }
-    } catch (err) {
-      setPlateError(err?.message || 'Plate scan failed.')
-    } finally {
-      scanBusyRef.current = false
-    }
-  }
-
-  useEffect(() => {
-    if (!webcamReady || !backendReady) return undefined
-
-    const id = setInterval(() => {
-      // Yields to the face scan: a face in frame is the higher-value read, and
-      // the plate is usually still there a beat later.
-      if (!isAnalyzing && !scanBusyRef.current) {
-        sendPlateFrame()
-      }
-    }, PLATE_SCAN_INTERVAL_MS)
-
-    return () => clearInterval(id)
-  }, [webcamReady, backendReady, isAnalyzing])
-
-  const addHistory = (entry) => {
-    setHistory((prev) => {
-      const next = [entry, ...prev].slice(0, HISTORY_LIMIT)
-      if (!selectedHistoryId) setSelectedHistoryId(entry.id)
-      return next
-    })
-  }
-
-  const sendFrameToBackend = async () => {
+  const sendFrameToBackend = useCallback(async () => {
     const webcam = webcamRef.current
     const video = webcam?.video
     if (!webcam || !video) return
@@ -464,6 +540,8 @@ export default function LiveScanDemo() {
         isAlert: !!data?.alert,
         status: data?.status || null,
         fullName: data?.person?.full_name || 'Unknown Identity',
+        // Rendered verbatim when present; never synthesised (spec §7).
+        reason: data?.person?.reason || data?.reason || null,
         matchDistance: distance,
         matchConfidence: confidence,
         error: data?.error || null,
@@ -473,6 +551,7 @@ export default function LiveScanDemo() {
         personImageUrl: data?.person?.image_url || null,
         sourceImageUrl: capture?.image_url || data?.person?.image_url || null,
         sourceText: capture?.source || 'Registry Seed',
+        capturedAt: capture?.captured_at || null,
         liveCrop: localCrop,
         latencyMs: durationMs,
         stageTiming: data?.timings_ms || null,
@@ -480,8 +559,17 @@ export default function LiveScanDemo() {
 
       setDbImageBroken(false)
       setMatchResult(normalized)
-      setLiveCrop(localCrop)
-      addHistory(normalized)
+      // Prefer the frame the match was actually made against, but never blank
+      // the tile if this particular frame had no usable box.
+      if (localCrop) {
+        setLiveCrop(localCrop)
+        setLiveCropAt(ts)
+      }
+      setHistory((prev) => {
+        const next = [normalized, ...prev].slice(0, HISTORY_LIMIT)
+        return next
+      })
+      setSelectedHistoryId((prev) => prev || normalized.id)
       failureCountRef.current = 0
       nextScanAllowedAtRef.current = 0
     } catch (err) {
@@ -494,121 +582,318 @@ export default function LiveScanDemo() {
       setIsAnalyzing(false)
       scanBusyRef.current = false
     }
-  }
+  }, [webcamReady, backendReady])
+
+  useEffect(() => {
+    if (!isModelLoaded || !webcamReady || !backendReady) return undefined
+
+    const id = setInterval(() => {
+      if (!isAnalyzing && !scanBusyRef.current && hasFaceInFrame) {
+        sendFrameToBackend()
+      }
+    }, SCAN_INTERVAL_MS)
+
+    return () => clearInterval(id)
+  }, [isModelLoaded, webcamReady, backendReady, isAnalyzing, hasFaceInFrame, sendFrameToBackend])
+
+  const sendPlateFrame = useCallback(async () => {
+    const video = webcamRef.current?.video
+    if (!video || scanBusyRef.current) return
+
+    scanBusyRef.current = true
+    try {
+      const blob = await captureFrameBlob(video, 0.72, 720)
+      if (!blob) return
+
+      const formData = new FormData()
+      formData.append('file', blob, 'live_plate.jpg')
+      formData.append('stream_id', plateStreamIdRef.current)
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/scan-plate-live`, {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`)
+
+      setPlateResult(data)
+      setPlateError('')
+
+      // Only the frame the vote lands on. A car parked in view would otherwise
+      // add a row every couple of seconds for as long as it sits there.
+      if (data?.stability?.newly_confirmed && data?.match_found) {
+        setPlateSightings((prev) => [
+          {
+            id: `plate-${Date.now()}`,
+            plateNumber: data.plate?.plate_number,
+            status: data.status,
+            ownerName: data.plate?.owner_name,
+            alert: !!data.alert,
+            at: new Date().toISOString(),
+          },
+          ...prev,
+        ].slice(0, 10))
+      }
+    } catch (err) {
+      setPlateError(err?.message || 'Plate scan failed.')
+    } finally {
+      scanBusyRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!webcamReady || !backendReady) return undefined
+
+    const id = setInterval(() => {
+      // Yields to the face scan: a face in frame is the higher-value read, and
+      // the plate is usually still there a beat later.
+      if (!isAnalyzing && !scanBusyRef.current) {
+        sendPlateFrame()
+      }
+    }, PLATE_SCAN_INTERVAL_MS)
+
+    return () => clearInterval(id)
+  }, [webcamReady, backendReady, isAnalyzing, sendPlateFrame])
+
+  // Keep the live comparison tile current off the local detector. Cheap: one
+  // 180x180 canvas draw, and only while a face is actually in frame.
+  useEffect(() => {
+    if (!webcamReady || !hasFaceInFrame) return undefined
+
+    const capture = () => {
+      const video = webcamRef.current?.video
+      if (!video || !faceBoxRef.current) return
+      const crop = captureCrop(video, faceBoxRef.current)
+      if (crop) {
+        setLiveCrop(crop)
+        setLiveCropAt(new Date().toISOString())
+      }
+    }
+
+    capture()
+    const id = setInterval(capture, LIVE_CROP_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [webcamReady, hasFaceInFrame])
+
+  // Esc closes the diagnostics slide-over and returns focus to its trigger.
+  useEffect(() => {
+    if (!systemPanelOpen) return undefined
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setSystemPanelOpen(false)
+        statusBtnRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [systemPanelOpen])
 
   const activeEntry = useMemo(() => {
     if (!history.length) return null
     return history.find((h) => h.id === selectedHistoryId) || history[0]
   }, [history, selectedHistoryId])
 
-  const dbImageUrl = activeEntry?.sourceImageUrl || activeEntry?.personImageUrl || matchResult?.sourceImageUrl || matchResult?.personImageUrl || null
-
-  const readiness = [
-    { label: 'Camera', ok: webcamReady },
-    { label: 'Detector', ok: isModelLoaded },
-    { label: 'Backend', ok: backendReady },
-  ]
+  const dbImageUrl =
+    activeEntry?.sourceImageUrl ||
+    activeEntry?.personImageUrl ||
+    matchResult?.sourceImageUrl ||
+    matchResult?.personImageUrl ||
+    null
 
   const confidencePct = typeof matchResult?.matchConfidence === 'number' ? matchResult.matchConfidence : 0
+
+  const plateBoxes =
+    videoGeom && plateResult?.frame?.width > 0
+      ? (plateResult.regions || []).map((r, i) => {
+          // Region coords are in captured-frame pixels; the capture is a
+          // uniformly scaled copy of the video, so convert to video pixels
+          // first, then apply the same cover transform the video gets.
+          const toVideo = videoGeom.vw / plateResult.frame.width
+          const { scale, offX, offY } = coverTransform(
+            videoGeom.vw,
+            videoGeom.vh,
+            videoGeom.rw,
+            videoGeom.rh,
+          )
+          return {
+            key: i,
+            left: r.x * toVideo * scale + offX,
+            top: r.y * toVideo * scale + offY,
+            width: r.w * toVideo * scale,
+            height: r.h * toVideo * scale,
+          }
+        })
+      : []
 
   return (
     <div className="ls-wrap">
       <style>{`
-        :root {
-          --bg:#f6f7f9; --panel:#ffffff; --fg:#16181d; --muted:#666c78; --line:#e2e5ea;
-          --alert:#b3261e; --alert-bg:#fdeceb; --ok:#186b3c; --ok-bg:#e9f6ee;
-          --unknown:#7a5c00; --unknown-bg:#fdf5e0; --accent:#1c4fd8;
+        /* Tokens are scoped to .ls-wrap, not :root. The previous version
+           declared them globally, which collided with the app theme's
+           --accent and re-coloured the surrounding chrome. */
+        .ls-wrap {
+          --bg-canvas:#0B0F1A; --bg-panel:#151B2C; --bg-panel-elevated:#111624;
+          --bg-panel-inset:#0D111C; --border-hairline:#252C40;
+          --accent-brand-a:#2FD5C8; --accent-brand-b:#B14CE0; --accent-line:#E23B8C;
+          --text-primary:#F4F6FB; --text-secondary:#8B93A7;
+          --status-unknown:#7C8299; --status-caution:#E3A438;
+          --status-alert:#E14F4F; --status-clear:#3FBF7F;
+
+          background: var(--bg-canvas);
+          color: var(--text-primary);
+          min-height: 100%;
+          padding: 24px 16px 64px;
+          width: 100%;
+          overflow-x: clip;
+          font-synthesis-weight: none;
         }
-        @media (prefers-color-scheme: dark) {
-          :root {
-            --bg:#131519; --panel:#1b1e24; --fg:#e9eaee; --muted:#9aa1ad; --line:#2b3038;
-            --alert:#ff9a92; --alert-bg:#3a1c1a; --ok:#7fd4a0; --ok-bg:#14301f;
-            --unknown:#e8c86a; --unknown-bg:#312713; --accent:#8fb0ff;
-          }
+        .ls-shell { max-width: 1180px; margin: 0 auto; }
+
+        .ls-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+        .ls-title { font-size: 28px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+        .ls-sysbtn {
+          display: inline-flex; align-items: center; gap: 7px;
+          background: transparent; border: 1px solid var(--border-hairline);
+          color: var(--text-secondary); border-radius: 999px;
+          padding: 7px 13px; font-size: 13px; font-weight: 500; cursor: pointer;
         }
-        .ls-wrap { background: var(--bg); color: var(--fg); min-height: 100vh; padding: 24px 16px 64px; width: 100%; max-width: 100%; overflow-x: clip; }
-        .ls-shell { max-width: 1180px; margin: 0 auto; width: 100%; max-width: 100%; }
-        .ls-sub { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
-        .ls-grid { display: grid; grid-template-columns: minmax(420px, 2fr) minmax(320px, 1fr); gap: 14px; }
+        .ls-sysbtn:hover { color: var(--text-primary); border-color: var(--accent-brand-a); }
+
+        .ls-grid { display: grid; grid-template-columns: 62fr 38fr; gap: 14px; align-items: start; }
         .ls-grid > * { min-width: 0; }
-        .ls-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+        .ls-card { background: var(--bg-panel); border: 1px solid var(--border-hairline); border-radius: 14px; }
         .ls-pad { padding: 16px; }
-        .ls-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; font-size: 12px; color: var(--muted); }
-        .ls-camera { position: relative; width: 100%; aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #000; }
-        .ls-chip { display: inline-block; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: rgba(0,0,0,0.35); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .03em; }
-        .ls-overlay-top-left { position: absolute; top: 10px; left: 10px; z-index: 4; display: grid; gap: 6px; }
+        .ls-eyebrow {
+          font-size: 12px; font-weight: 600; text-transform: uppercase;
+          letter-spacing: .08em; color: var(--text-secondary); margin: 0 0 10px;
+        }
+
+        .ls-camera {
+          position: relative; width: 100%; aspect-ratio: 4/3;
+          border-radius: 12px; overflow: hidden;
+          border: 1px solid var(--border-hairline); background: var(--bg-panel-inset);
+        }
+        .ls-chip {
+          display: inline-block; padding: 4px 9px; border-radius: 999px;
+          border: 1px solid rgba(255,255,255,.14); background: rgba(11,15,26,.62);
+          color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .03em;
+          backdrop-filter: blur(3px);
+        }
+        .ls-overlay-top-left { position: absolute; top: 10px; left: 10px; z-index: 4; display: grid; gap: 6px; justify-items: start; }
         .ls-overlay-top-right { position: absolute; top: 10px; right: 10px; z-index: 4; }
-        .ls-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
-        .ls-row > * { min-width: 0; overflow-wrap: anywhere; }
-        .ls-verdict { border-radius: 12px; padding: 14px; border: 1px solid; margin-bottom: 12px; }
-        .ls-verdict.alert { background: var(--alert-bg); border-color: var(--alert); color: var(--alert); }
-        .ls-verdict.ok { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
-        .ls-verdict.unknown { background: var(--unknown-bg); border-color: var(--unknown); color: var(--unknown); }
-        .ls-kv { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+
+        /* --- the four-state pill: colour AND word, never colour alone --- */
+        .ls-pill {
+          display: inline-flex; align-items: center; gap: 7px;
+          font-size: 13px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: .06em; padding: 5px 11px; border-radius: 999px;
+          border: 1px solid currentColor;
+        }
+        .ls-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+        .ls-dot--pulse { animation: ls-pulse 1.4s ease-in-out infinite; }
+        @keyframes ls-pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+        @media (prefers-reduced-motion: reduce) { .ls-dot--pulse { animation: none } }
+
+        .ls-pill--scanning { color: var(--status-caution); background: rgba(227,164,56,.12); }
+        .ls-pill--unknown  { color: var(--status-unknown);  background: rgba(124,130,153,.14); }
+        .ls-pill--alert    { color: var(--status-alert);    background: rgba(225,79,79,.14); }
+        .ls-pill--clear    { color: var(--status-clear);    background: rgba(63,191,127,.13); }
+
+        .ls-verdict { display: grid; gap: 10px; }
+        .ls-identity { font-size: 22px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+        .ls-explain { font-size: 14px; font-weight: 400; color: var(--text-secondary); margin: 0; overflow-wrap: anywhere; }
+        .ls-confidence { font-size: 14px; margin: 2px 0 0; }
+        .ls-confidence b { font-size: 22px; font-weight: 600; }
+
+        .ls-plateno {
+          display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 22px; font-weight: 600; letter-spacing: .12em;
+          padding: 7px 14px; border-radius: 8px;
+          border: 1px solid var(--border-hairline); background: var(--bg-panel-inset);
+        }
+
+        .ls-compare { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; }
+        .ls-tile { border-radius: 10px; overflow: hidden; aspect-ratio: 1/1; background: var(--bg-panel-inset); border: 1px solid var(--border-hairline); }
+        .ls-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .ls-tile--empty {
+          border: 1px dashed var(--status-unknown); display: grid; place-items: center;
+          text-align: center; color: var(--status-unknown); font-size: 12px; padding: 10px; gap: 6px;
+        }
+        .ls-swap { color: var(--text-secondary); font-size: 20px; user-select: none; }
+        .ls-caption { color: var(--text-secondary); font-size: 12px; margin-top: 6px; }
+        .ls-similarity { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-hairline); font-size: 14px; }
+
+        .ls-audit { max-height: 240px; overflow-y: auto; display: grid; gap: 6px; align-content: start; }
+        .ls-audit button {
+          text-align: left; border-radius: 9px; border: 1px solid var(--border-hairline);
+          background: var(--bg-panel-elevated); color: var(--text-primary);
+          padding: 9px 10px; cursor: pointer; font-family: inherit; font-size: 12px;
+        }
+        .ls-audit button.active { border-color: var(--accent-brand-a); }
+        .ls-audit button.alert { border-left: 3px solid var(--status-alert); }
+        .ls-audit button.clear { border-left: 3px solid var(--status-clear); }
+        .ls-audit button.unknown { border-left: 3px solid var(--status-unknown); }
+        .ls-audit-time { color: var(--text-secondary); }
+
+        .ls-kv { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--border-hairline); }
         .ls-kv:last-child { border-bottom: 0; }
-        .ls-kv span:first-child { color: var(--muted); }
-        .ls-kv span:last-child { min-width: 0; max-width: 62%; text-align: right; overflow-wrap: anywhere; word-break: break-word; }
-        .ls-meter { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 8px 0 10px; }
-        .ls-meter > i { display: block; height: 100%; }
-        .ls-ready { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-        .ls-ready > span { font-size: 12px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); }
-        .ls-ready .ok { border-color: var(--ok); color: var(--ok); }
-        .ls-ready .bad { border-color: var(--unknown); color: var(--unknown); }
-        .ls-side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .ls-thumb-wrap { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--bg); aspect-ratio: 1/1; }
-        .ls-thumb-wrap img { width: 100%; height: 100%; object-fit: cover; }
-        .ls-caption { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-        .ls-audit { max-height: 220px; overflow-y: auto; display: grid; gap: 6px; }
-        .ls-audit button { text-align: left; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 8px 9px; cursor: pointer; font-size: 12px; }
-        .ls-audit button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
-        .ls-audit button.alert { border-color: var(--alert); background: color-mix(in srgb, var(--alert) 14%, var(--panel)); color: var(--alert); }
-        .ls-audit button.ok { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, var(--panel)); color: var(--ok); }
-        .ls-audit button.unknown { border-color: var(--unknown); background: color-mix(in srgb, var(--unknown) 12%, var(--panel)); color: var(--unknown); }
-        .ls-audit button.alert.active,
-        .ls-audit button.ok.active,
-        .ls-audit button.unknown.active { box-shadow: inset 0 0 0 1px var(--accent); }
-        .ls-warn { margin-top: 12px; font-size: 13px; color: var(--unknown); }
+        .ls-kv span:first-child { color: var(--text-secondary); }
+        .ls-kv span:last-child { max-width: 62%; text-align: right; overflow-wrap: anywhere; }
+
+        .ls-warn { margin-top: 12px; font-size: 13px; color: var(--status-caution); }
+
+        /* diagnostics slide-over */
+        .ls-scrim { position: fixed; inset: 0; background: rgba(4,6,12,.55); z-index: 40; }
+        .ls-slide {
+          position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 92vw);
+          background: var(--bg-panel); border-left: 1px solid var(--border-hairline);
+          z-index: 41; padding: 20px; overflow-y: auto;
+          --text-primary:#F4F6FB; --text-secondary:#8B93A7; --border-hairline:#252C40;
+          --bg-panel-inset:#0D111C; --accent-brand-a:#2FD5C8;
+          --status-caution:#E3A438; --status-clear:#3FBF7F; --status-alert:#E14F4F;
+          color: var(--text-primary);
+        }
+        .ls-slide h2 { font-size: 16px; margin: 0 0 4px; }
+        .ls-slide .ls-sub { color: var(--text-secondary); font-size: 13px; margin: 0 0 16px; }
+        .ls-close { position: absolute; top: 16px; right: 16px; background: transparent; border: 0; color: var(--text-secondary); font-size: 20px; cursor: pointer; line-height: 1; }
+        .ls-ready { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 16px; }
+        .ls-ready > span { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-hairline); color: var(--text-secondary); }
+        .ls-ready .on { color: var(--status-clear); border-color: var(--status-clear); }
+        .ls-ready .off { color: var(--status-caution); border-color: var(--status-caution); }
+
+        .ls-wrap :focus-visible, .ls-slide :focus-visible {
+          outline: 2px solid var(--accent-brand-a); outline-offset: 2px; border-radius: 6px;
+        }
+
         @media (max-width: 980px) {
           .ls-grid { grid-template-columns: 1fr; }
-          .ls-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .ls-side-by-side { grid-template-columns: 1fr 1fr; }
         }
         @media (max-width: 640px) {
-          .ls-wrap { padding: 14px 10px 42px; }
-          .ls-meta { grid-template-columns: 1fr; }
-          .ls-side-by-side { grid-template-columns: 1fr; }
-          .ls-kv { flex-direction: column; align-items: flex-start; gap: 4px; }
+          .ls-wrap { padding: 16px 12px 48px; }
+          .ls-title { font-size: 24px; }
+          .ls-kv { flex-direction: column; align-items: flex-start; gap: 3px; }
           .ls-kv span:last-child { max-width: 100%; text-align: left; }
-          .ls-audit-grid { grid-template-columns: 1fr !important; }
+          .ls-compare { grid-template-columns: 1fr; }
+          .ls-swap { justify-self: center; transform: rotate(90deg); }
         }
       `}</style>
 
       <div className="ls-shell">
-        <h1>Live Scan — Faces &amp; Plates</h1>
-        <p className="ls-sub">
-          One camera, both registries. Faces are scanned when a face is in frame;
-          plates are read continuously and must agree across several frames before
-          they raise an alert.{' '}
-          <Link to="/">Return home</Link>
-        </p>
-
-        <div className="ls-card ls-pad" style={{ marginBottom: 14 }}>
-          <div className="ls-meta">
-            <div>Match Latency: {roundtripMs ?? '--'} ms</div>
-            <div>Model: {MODEL_LABEL}</div>
-            <div>Indexed Identities: {memberCount ?? '--'}</div>
-            <div>Scan Interval: {SCAN_INTERVAL_MS} ms</div>
-          </div>
-          <div className="ls-ready">
-            {readiness.map((item) => (
-              <span key={item.label} className={item.ok ? 'ok' : 'bad'}>
-                {item.label}: {item.ok ? 'Ready' : 'Waiting'}
-              </span>
-            ))}
-          </div>
-        </div>
+        <header className="ls-head">
+          <h1 className="ls-title">Live scan</h1>
+          <button
+            type="button"
+            ref={statusBtnRef}
+            className="ls-sysbtn"
+            aria-expanded={systemPanelOpen}
+            onClick={() => setSystemPanelOpen((v) => !v)}
+          >
+            <span aria-hidden="true">◍</span> System status
+          </button>
+        </header>
 
         <div className="ls-grid">
+          {/* ---------------- video ---------------- */}
           <div className="ls-card ls-pad">
             <div className="ls-camera">
               <Webcam
@@ -631,7 +916,7 @@ export default function LiveScanDemo() {
                   inset: 0,
                   width: '100%',
                   height: '100%',
-                  objectFit: 'fill',
+                  objectFit: 'cover',
                   zIndex: 1,
                 }}
               />
@@ -641,32 +926,16 @@ export default function LiveScanDemo() {
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 2 }}
               />
 
-              <div className="ls-overlay-top-left">
-                <span className="ls-chip">REC / LIVE {fps || 30} FPS</span>
-                <span className="ls-chip">Face: {(faceScore * 100).toFixed(1)}% • {toneLabel}</span>
-                {plateResult?.extracted_text && (
-                  <span className="ls-chip">
-                    Plate: {plateResult.extracted_text}
-                    {plateResult.stability && !plateResult.stability.confirmed
-                      ? ` • ${plateResult.stability.agreeing_frames}/${plateResult.stability.required_frames}`
-                      : plateResult.match_found ? ' • CONFIRMED' : ''}
-                  </span>
-                )}
-              </div>
-
-              {/* Plate boxes come back in captured-frame pixels, so they are
-                  scaled to percentages rather than assumed to match the video's
-                  rendered size. */}
-              {plateResult?.frame?.width > 0 && (plateResult.regions || []).map((r, i) => (
+              {plateBoxes.map((b) => (
                 <div
-                  key={i}
+                  key={b.key}
                   style={{
                     position: 'absolute',
-                    left: `${(r.x / plateResult.frame.width) * 100}%`,
-                    top: `${(r.y / plateResult.frame.height) * 100}%`,
-                    width: `${(r.w / plateResult.frame.width) * 100}%`,
-                    height: `${(r.h / plateResult.frame.height) * 100}%`,
-                    border: `2px solid ${plateResult.alert ? '#b3261e' : '#2f6feb'}`,
+                    left: b.left,
+                    top: b.top,
+                    width: b.width,
+                    height: b.height,
+                    border: `2px solid ${STATUS_HEX[plateVerdict.state]}`,
                     borderRadius: 4,
                     zIndex: 3,
                     pointerEvents: 'none',
@@ -674,176 +943,198 @@ export default function LiveScanDemo() {
                 />
               ))}
 
+              <div className="ls-overlay-top-left">
+                <span className="ls-chip">REC / LIVE{fps ? ` ${fps} FPS` : ''}</span>
+                {hasFaceInFrame ? <span className="ls-chip">Face {(faceScore * 100).toFixed(0)}%</span> : null}
+              </div>
+
               <div className="ls-overlay-top-right">
-                <span className="ls-chip">{formatTimestamp(matchResult?.timestamp || new Date().toISOString())}</span>
+                <span className="ls-chip">{formatClock(matchResult?.timestamp) || formatClock(new Date().toISOString())}</span>
               </div>
-            </div>
-
-            <div className="ls-card ls-pad" style={{ marginTop: 12 }}>
-              <h3 style={{ margin: '0 0 8px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>
-                Vehicle plate
-              </h3>
-              <div style={{
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                fontSize: 24, fontWeight: 700, letterSpacing: '.08em',
-                color: plateResult?.alert ? 'var(--unknown)' : 'var(--fg)',
-              }}>
-                {plateResult?.extracted_text || '—'}
-              </div>
-
-              {plateResult?.stability && (
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                  {plateResult.stability.confirmed
-                    ? 'Confirmed across frames'
-                    : `${plateResult.stability.agreeing_frames || 0} of ${plateResult.stability.required_frames} frames agree`}
-                </div>
-              )}
-
-              {plateResult?.match_found && (
-                <div style={{ fontSize: 13, marginTop: 8 }}>
-                  <strong>{plateResult.plate?.plate_number}</strong>
-                  {' — '}
-                  <span style={{ textTransform: 'uppercase' }}>{plateResult.status}</span>
-                  <div style={{ color: 'var(--muted)' }}>{plateResult.plate?.owner_name}</div>
-                </div>
-              )}
-
-              {plateResult?.message && (
-                <div style={{
-                  fontSize: 13, marginTop: 8,
-                  color: plateResult.alert ? 'var(--unknown)' : 'var(--muted)',
-                  fontWeight: plateResult.alert ? 600 : 400,
-                }}>
-                  {plateResult.message}
-                </div>
-              )}
-
-              {plateSightings.length > 0 && (
-                <div style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
-                  <div style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 4 }}>
-                    Plates seen this session
-                  </div>
-                  {plateSightings.map((s) => (
-                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
-                      <span style={{ fontFamily: 'ui-monospace, monospace' }}>{s.plateNumber}</span>
-                      <span>{s.status}</span>
-                      <span style={{ color: 'var(--muted)' }}>{new Date(s.at).toLocaleTimeString()}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {plateError && <div className="ls-warn">Plate: {plateError}</div>}
-            </div>
-
-            <div className="ls-warn">
-              {hasFaceInFrame
-                ? 'Target lock acquired. Scanning against identity registry.'
-                : 'No face in frame. Move closer and improve front lighting.'}
             </div>
           </div>
 
+          {/* ---------------- face verdict ---------------- */}
           <div className="ls-card ls-pad">
-            <div className={`ls-verdict ${toneClass}`}>
-              <h2 style={{ margin: 0 }}>
-                {matchResult?.isAlert
-                  ? 'Flagged identity detected'
-                  : matchResult?.isKnownUser
-                  ? 'Recognised identity'
-                  : 'Awaiting confident match'}
-              </h2>
-              <p style={{ margin: '8px 0 0', color: 'var(--fg)', fontWeight: 600 }}>{matchResult?.fullName || '-'}</p>
-              <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: 13 }}>{matchResult?.message || 'Live scan running.'}</p>
+            <p className="ls-eyebrow">Face registry</p>
+            <div className="ls-verdict">
+              <StatusPill state={faceVerdict.state} label={faceVerdict.label} />
+              {faceVerdict.name ? <p className="ls-identity">{faceVerdict.name}</p> : null}
+              <p className="ls-explain">{faceVerdict.detail}</p>
+              {faceVerdict.state === STATE.ALERT || faceVerdict.state === STATE.CLEAR ? (
+                <p className="ls-confidence">
+                  Confidence: <b>{confidencePct}%</b>
+                </p>
+              ) : null}
             </div>
-
-            <h3 style={{ margin: '0 0 8px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>How certain</h3>
-            <div className="ls-meter">
-              <i
-                style={{
-                  width: `${confidencePct}%`,
-                  background:
-                    toneClass === 'alert' ? 'var(--alert)' : toneClass === 'ok' ? 'var(--ok)' : 'var(--unknown)',
-                }}
-              />
-            </div>
-
-            <div className="ls-kv"><span>Confidence</span><span>{confidencePct}%</span></div>
-            <div className="ls-kv"><span>Cosine distance</span><span>{typeof matchResult?.matchDistance === 'number' ? matchResult.matchDistance.toFixed(4) : '--'}</span></div>
-            <div className="ls-kv"><span>Status</span><span>{(matchResult?.status || 'unknown').toUpperCase()}</span></div>
-            <div className="ls-kv"><span>Pose</span><span>{matchResult?.poseLabel || '-'}</span></div>
-            <div className="ls-kv"><span>Round trip</span><span>{roundtripMs ?? '--'} ms</span></div>
-            <div className="ls-kv"><span>Server stages</span><span>{matchResult?.stageTiming ? JSON.stringify(matchResult.stageTiming) : '--'}</span></div>
           </div>
         </div>
 
+        {/* ---------------- plate registry ---------------- */}
         <div className="ls-card ls-pad" style={{ marginTop: 14 }}>
-          <h3 style={{ margin: '0 0 10px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>
-            Reference comparison
-          </h3>
-          <div className="ls-side-by-side">
-            <div>
-              <div className="ls-caption">Live crop</div>
-              <div className="ls-thumb-wrap">{liveCrop ? <img src={liveCrop} alt="Live crop" /> : null}</div>
+          <p className="ls-eyebrow">License plate</p>
+          <div className="ls-verdict">
+            <StatusPill state={plateVerdict.state} label={plateVerdict.label} />
+            {plateVerdict.plate ? <span className="ls-plateno">{plateVerdict.plate}</span> : null}
+            <p className="ls-explain">{plateVerdict.detail}</p>
+          </div>
+
+          {plateSightings.length > 0 && (
+            <div style={{ marginTop: 14, borderTop: '1px solid var(--border-hairline)', paddingTop: 10 }}>
+              <p className="ls-eyebrow" style={{ marginBottom: 6 }}>Plates seen this session</p>
+              {plateSightings.map((s) => (
+                <div key={s.id} className="ls-kv">
+                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>{s.plateNumber}</span>
+                  <span>{(s.status || 'unknown').toUpperCase()} · {new Date(s.at).toLocaleTimeString()}</span>
+                </div>
+              ))}
             </div>
+          )}
+
+          {plateError ? <div className="ls-warn">Plate reader: {plateError}</div> : null}
+        </div>
+
+        {/* ---------------- reference comparison ----------------
+            Always rendered, directly below the plate panel. Both halves have
+            an explicit labelled placeholder so an un-run comparison reads as
+            "waiting", never as a broken empty box. */}
+        <div className="ls-card ls-pad" style={{ marginTop: 14 }}>
+          <p className="ls-eyebrow">Reference comparison</p>
+          <div className="ls-compare">
             <div>
-              <div className="ls-caption">DB seed photo</div>
-              <div className="ls-thumb-wrap">
-                {dbImageUrl && !dbImageBroken ? (
+              {liveCrop ? (
+                <div className="ls-tile">
+                  <img src={liveCrop} alt="Face captured from the live camera" />
+                </div>
+              ) : (
+                <div className="ls-tile ls-tile--empty">
+                  <span aria-hidden="true" style={{ fontSize: 18 }}>◌</span>
+                  <span>Waiting for a face in frame</span>
+                </div>
+              )}
+              <div className="ls-caption">
+                {liveCropAt ? `Live camera · captured ${formatClock(liveCropAt)}` : 'Live camera'}
+              </div>
+            </div>
+
+            <div className="ls-swap" aria-hidden="true">⇄</div>
+
+            <div>
+              {dbImageUrl && !dbImageBroken ? (
+                <div className="ls-tile">
                   <img
                     src={dbImageUrl}
-                    alt="Database reference"
+                    alt="Reference photo held on the identity registry"
                     onError={() => setDbImageBroken(true)}
                   />
-                ) : null}
+                </div>
+              ) : (
+                <div className="ls-tile ls-tile--empty">
+                  <span aria-hidden="true" style={{ fontSize: 18 }}>◌</span>
+                  <span>{dbImageBroken ? 'Reference photo unavailable' : 'No reference on file'}</span>
+                </div>
+              )}
+              <div className="ls-caption">
+                {activeEntry?.sourceText ? `On file · ${activeEntry.sourceText}` : 'Identity registry'}
               </div>
             </div>
           </div>
-          <div className="ls-row" style={{ marginTop: 10, color: 'var(--muted)', fontSize: 12 }}>
-            <span>Source: {matchResult?.sourceText || '-'}</span>
-            <span>Pose: {matchResult?.poseLabel || '-'}</span>
+
+          <div className="ls-similarity">
+            {typeof matchResult?.matchDistance === 'number' ? (
+              <>Similarity: <b>{confidencePct}% match</b></>
+            ) : (
+              <span style={{ color: 'var(--text-secondary)' }}>
+                No comparison yet — waiting for a registry match.
+              </span>
+            )}
           </div>
-          {dbImageBroken ? (
-            <div className="ls-warn" style={{ marginTop: 8 }}>
-              Stored reference photo could not be loaded from blob storage.
-            </div>
-          ) : null}
         </div>
 
+        {/* ---------------- audit log ---------------- */}
         <div className="ls-card ls-pad" style={{ marginTop: 14 }}>
-          <h3 style={{ margin: '0 0 10px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>Audit log</h3>
-          <div className="ls-audit-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
-            <div className="ls-audit">
-              {history.map((entry) => (
+          <p className="ls-eyebrow">Audit log</p>
+          <div className="ls-audit">
+            {history.map((entry) => {
+              const state = registryStateFor(entry.status)
+              return (
                 <button
                   key={entry.id}
-                  className={`${auditTone(entry)}${selectedHistoryId === entry.id ? ' active' : ''}`}
+                  type="button"
+                  className={`${state}${selectedHistoryId === entry.id ? ' active' : ''}`}
                   onClick={() => {
                     setSelectedHistoryId(entry.id)
                     setDbImageBroken(false)
                   }}
                 >
-                  {formatTimestamp(entry.timestamp)} - {entry.fullName} ({(entry.status || 'unknown').toUpperCase()}) -{' '}
-                  {typeof entry.matchConfidence === 'number' ? `${entry.matchConfidence.toFixed(1)}%` : '--'}
+                  <span className="ls-audit-time">{formatClock(entry.timestamp)}</span>
+                  {'  '}
+                  {registryStateFor(entry.status) === STATE.UNKNOWN ? 'Unregistered face' : entry.fullName}
+                  {'  ·  '}
+                  {entry.matchConfidence}%
                 </button>
-              ))}
-              {!history.length ? <div className="ls-sub">No detection events yet.</div> : null}
-            </div>
-
-            <div className="ls-card ls-pad">
-              <div style={{ fontWeight: 700 }}>{activeEntry?.fullName || 'Select an event'}</div>
-              <div className="ls-kv"><span>Status</span><span>{(activeEntry?.status || 'unknown').toUpperCase()}</span></div>
-              <div className="ls-kv"><span>Distance</span><span>{typeof activeEntry?.matchDistance === 'number' ? activeEntry.matchDistance.toFixed(4) : '--'}</span></div>
-              <div className="ls-kv"><span>Latency</span><span>{activeEntry?.latencyMs ?? '--'} ms</span></div>
-              {activeEntry?.liveCrop ? <img src={activeEntry.liveCrop} alt="Event crop" style={{ width: '100%', borderRadius: 8, marginTop: 10 }} /> : null}
-            </div>
+              )
+            })}
+            {!history.length ? <p className="ls-explain">No scans yet.</p> : null}
           </div>
         </div>
 
         {webcamError ? <div className="ls-warn">Camera unavailable: {webcamError}</div> : null}
         {scanError ? <div className="ls-warn">{scanError}</div> : null}
-        {modelState === 'loading' ? <div className="ls-sub">Initializing detector assets...</div> : null}
-        {modelState === 'failed' ? <div className="ls-warn">Model Load Failed: {modelError || 'Unknown error.'}</div> : null}
+        {modelState === 'failed' ? <div className="ls-warn">Detector failed to load: {modelError || 'Unknown error.'}</div> : null}
       </div>
+
+      {/* ---------------- diagnostics slide-over ---------------- */}
+      {systemPanelOpen ? (
+        <>
+          <div className="ls-scrim" onClick={() => setSystemPanelOpen(false)} />
+          <aside className="ls-slide" role="dialog" aria-modal="true" aria-label="System status">
+            <button
+              type="button"
+              className="ls-close"
+              aria-label="Close system status"
+              onClick={() => {
+                setSystemPanelOpen(false)
+                statusBtnRef.current?.focus()
+              }}
+            >
+              ✕
+            </button>
+            <h2>System status</h2>
+            <p className="ls-sub">Diagnostics for QA — not part of the operator view.</p>
+
+            <div className="ls-ready">
+              <span className={webcamReady ? 'on' : 'off'}>Camera: {webcamReady ? 'ready' : 'waiting'}</span>
+              <span className={isModelLoaded ? 'on' : 'off'}>Detector: {isModelLoaded ? 'ready' : 'waiting'}</span>
+              <span className={backendReady ? 'on' : 'off'}>Backend: {backendReady ? 'ready' : 'waiting'}</span>
+            </div>
+
+            <div className="ls-kv"><span>Model</span><span>{MODEL_LABEL}</span></div>
+            <div className="ls-kv"><span>Indexed identities</span><span>{memberCount ?? '--'}</span></div>
+            <div className="ls-kv"><span>Scan interval</span><span>{SCAN_INTERVAL_MS} ms</span></div>
+            <div className="ls-kv"><span>Plate interval</span><span>{PLATE_SCAN_INTERVAL_MS} ms</span></div>
+            <div className="ls-kv"><span>Detector FPS</span><span>{fps ?? '--'}</span></div>
+            <div className="ls-kv"><span>Round trip</span><span>{roundtripMs ?? '--'} ms</span></div>
+            <div className="ls-kv"><span>Cosine distance</span><span>{typeof matchResult?.matchDistance === 'number' ? matchResult.matchDistance.toFixed(4) : '--'}</span></div>
+            <div className="ls-kv"><span>Registry status</span><span>{(matchResult?.status || 'none').toUpperCase()}</span></div>
+            <div className="ls-kv"><span>Pose</span><span>{matchResult?.poseLabel || '-'}</span></div>
+            <div className="ls-kv"><span>Server stages</span><span>{formatStageTiming(matchResult?.stageTiming)}</span></div>
+            <div className="ls-kv"><span>Last message</span><span>{matchResult?.message || '--'}</span></div>
+
+            {activeEntry ? (
+              <>
+                <p className="ls-eyebrow" style={{ marginTop: 18 }}>Selected audit event</p>
+                <div className="ls-kv"><span>Name</span><span>{activeEntry.fullName}</span></div>
+                <div className="ls-kv"><span>Distance</span><span>{typeof activeEntry.matchDistance === 'number' ? activeEntry.matchDistance.toFixed(4) : '--'}</span></div>
+                <div className="ls-kv"><span>Latency</span><span>{activeEntry.latencyMs ?? '--'} ms</span></div>
+                {activeEntry.liveCrop ? (
+                  <img src={activeEntry.liveCrop} alt="Crop from the selected audit event" style={{ width: '100%', borderRadius: 8, marginTop: 10 }} />
+                ) : null}
+              </>
+            ) : null}
+          </aside>
+        </>
+      ) : null}
     </div>
   )
 }
