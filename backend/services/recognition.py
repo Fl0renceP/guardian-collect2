@@ -132,6 +132,26 @@ USE_5POINT_ALIGN = os.getenv("USE_5POINT_ALIGN", "true").strip().lower() in ("1"
 # somebody from an unreadable image. See services.face_geometry.assess_probe.
 ENFORCE_PROBE_QUALITY = os.getenv("ENFORCE_PROBE_QUALITY", "true").strip().lower() in ("1", "true", "yes")
 
+# CLAHE lighting normalisation before embedding. See face_geometry.equalize.
+#
+# OFF BY DEFAULT, and turning it on is a two-step change, not a flag flip.
+#
+# Measured on the seed gallery: embedding the SAME face with and without CLAHE
+# moves it by 0.1045 on average and 0.1555 at worst — and that worst case is
+# past MATCH_THRESHOLD (0.15). So equalising probes while the stored references
+# were embedded without it costs more than the technique gains: a genuine match
+# drifts out of the confirmed band on preprocessing mismatch alone.
+#
+#   Enable  ->  re-run reembed_references.py  ->  only then is matching valid.
+#
+# Until that re-embed finishes, matching is WORSE with this on than off.
+#
+# Worth re-measuring with calibrate_threshold.py after the re-embed. It helps
+# most on unevenly-lit captures and does close to nothing on the well-lit
+# re-photographed prints in the current seed gallery, so the honest result here
+# may be "no gain on this data, useful on real camera footage".
+USE_CLAHE = os.getenv("USE_CLAHE", "false").strip().lower() in ("1", "true", "yes")
+
 # Which face leads the response when several are present. An offender in the
 # background matters more than a verified member in the foreground.
 _SEVERITY = {"offender": 3, "suspect": 2, "verified": 1}
@@ -182,6 +202,29 @@ def _plain_crop(image, bbox, size=160):
     if crop.size == 0:
         return None
     return cv2.resize(crop, (size, size), interpolation=cv2.INTER_LINEAR)
+
+
+def _crop_for_face(image, face):
+    """The aligned crop, before any photometric normalisation.
+
+    Quality is judged on this, so the gate sees the exposure the camera
+    actually produced.
+    """
+    return (face_geometry.align(image, face.landmarks, 160)
+            if USE_5POINT_ALIGN else _plain_crop(image, face.bbox))
+
+
+def _for_embedding(aligned):
+    """The crop as the embedding model should see it.
+
+    The ONLY place equalisation is applied. The probe path and the
+    re-embedding path both call this, because the moment those two disagree
+    about preprocessing every stored reference stops lining up with every
+    probe — which is the failure this project has hit repeatedly.
+    """
+    if aligned is None or not USE_CLAHE:
+        return aligned
+    return face_geometry.equalize(aligned)
 
 
 # Collapsing to one row per PERSON (not per capture) matters: the runner-up has
@@ -271,14 +314,14 @@ def embed_image(image, model_name=None):
         return None, None, None
 
     face = faces[0]
-    aligned = (face_geometry.align(image, face.landmarks, 160)
-               if USE_5POINT_ALIGN else _plain_crop(image, face.bbox))
+    aligned = _crop_for_face(image, face)
     if aligned is None:
         return None, None, None
 
+    # Quality on the un-equalised crop, embedding on the equalised one.
     quality = face_geometry.assess_probe(image, face, aligned)
     embedded = DeepFace.represent(
-        img_path=aligned, model_name=model_name or _Config.FACE_MODEL,
+        img_path=_for_embedding(aligned), model_name=model_name or _Config.FACE_MODEL,
         detector_backend="skip", enforce_detection=False, align=False,
     )
     return embedded[0]["embedding"], face, quality
@@ -511,8 +554,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name=None,
         match_started = time.perf_counter()
         for index, face in enumerate(detected):
             box = face.as_dict()
-            aligned = (face_geometry.align(probe_image, face.landmarks, 160)
-                       if USE_5POINT_ALIGN else _plain_crop(probe_image, face.bbox))
+            aligned = _crop_for_face(probe_image, face)
             quality = face_geometry.assess_probe(probe_image, face, aligned)
 
             base = {
@@ -564,7 +606,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name=None,
 
             # detector_backend="skip": the crop IS the face, already aligned.
             embedded = DeepFace.represent(
-                img_path=aligned, model_name=model_name,
+                img_path=_for_embedding(aligned), model_name=model_name,
                 detector_backend="skip", enforce_detection=False, align=False,
             )
             vector = embedded[0]["embedding"]

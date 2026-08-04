@@ -153,6 +153,42 @@ def align(image, landmarks, size=160):
                           borderValue=0.0)
 
 
+def equalize(face_crop, clip_limit=2.0, tile_grid=8):
+    """Even out lighting across an aligned face crop.
+
+    CLAHE on the L channel of LAB, not cv2.equalizeHist on a greyscale copy.
+    Two reasons, and both matter here:
+
+    1. COLOUR IS KEPT. Facenet512 is trained on RGB. Converting to greyscale
+       before embedding throws away a channel the model expects and degrades
+       matching — the greyscale-first pipelines in the classical-CV literature
+       are feeding LDA and eigenface methods, not a deep embedding network.
+
+    2. LOCAL, NOT GLOBAL. Doorbell footage is typically a face lit from one
+       side against a bright sky. Global equalisation spends its dynamic range
+       on the sky and leaves the face as flat as it found it; CLAHE works per
+       tile, so the shadowed cheek is lifted without blowing out the
+       background. The clip limit is what stops it amplifying sensor noise in
+       the flat regions.
+
+    Applied for EMBEDDING ONLY. Quality assessment must see the real exposure —
+    equalising first would make an unreadably dark capture look well-lit and
+    walk it straight past the gate that exists to refuse it.
+    """
+    if face_crop is None or face_crop.size == 0:
+        return face_crop
+    if face_crop.ndim == 2:
+        # Already single-channel; equalise it directly.
+        return cv2.createCLAHE(clipLimit=clip_limit,
+                               tileGridSize=(tile_grid, tile_grid)).apply(face_crop)
+
+    lab = cv2.cvtColor(face_crop, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_grid, tile_grid))
+    lab = cv2.merge((clahe.apply(l), a, b))
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+
 def _bbox_from_landmarks(landmarks, shape):
     xs, ys = landmarks[:, 0], landmarks[:, 1]
     cx, cy = float(np.mean(xs)), float(np.mean(ys))
