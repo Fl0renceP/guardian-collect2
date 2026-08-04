@@ -63,6 +63,18 @@ SEED_PLATES = [
         "status": "offender",
         "owner_name": "Stolen Vehicle - Alert",
         "blob_name": "seed_offender_plate2.jpeg"
+    },
+    {
+        "plate_number": "CF 246-830",
+        "status": "verified",
+        "owner_name": "Stolen Vehicle - Alert",
+        "blob_name": "seed_verified_plate2.jpeg"
+    },
+    {
+        "plate_number": "CF 41043",
+        "status": "offender",
+        "owner_name": "Stolen Vehicle - Alert",
+        "blob_name": "seed_offender_plate3.jpeg"
     }
 ]
 
