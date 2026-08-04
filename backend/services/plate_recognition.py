@@ -4,6 +4,8 @@ import logging
 import numpy as np
 from PIL import Image
 
+from services import plate_ocr
+
 logger = logging.getLogger(__name__)
 
 # EasyOCR is imported lazily. Importing it at module scope took the whole
@@ -81,7 +83,8 @@ def process_incoming_plate_image(image_bytes: bytes, db_conn):
                         "plate_number": match[1],
                         "status": match[2],
                         "owner_name": match[3],
-                        "image_url": match[4]
+                        # Signed: the plate container is private.
+                        "image_url": plate_ocr.sign_image_url(match[4]),
                     }
                 }
 

@@ -82,11 +82,27 @@ def init_plate_storage_and_db():
     # 1. Create 'plate-images' blob container in Azure
     if AZURE_STORAGE_CONNECTION_STRING:
         blob_service_client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
+        # PRIVATE. This was public_access="container", which is the widest
+        # setting there is: it let anyone not merely read a known plate image
+        # but LIST the whole container and walk every vehicle on file. Plate
+        # images tie a registration to an owner name, so that is a personal
+        # information leak, not just an open image host.
         try:
-            blob_service_client.create_container(CONTAINER_NAME, public_access="container")
-            print(f"Created Azure container: '{CONTAINER_NAME}'")
+            blob_service_client.create_container(CONTAINER_NAME)
+            print(f"Created Azure container: '{CONTAINER_NAME}' (private)")
         except Exception as e:
             print(f"Container '{CONTAINER_NAME}' check/notice: {e}")
+
+        # Close it on an already-created container too — a deployment made
+        # before this change stays exposed until something revokes it.
+        try:
+            cc = blob_service_client.get_container_client(CONTAINER_NAME)
+            current = cc.get_container_properties().get("public_access")
+            if current:
+                cc.set_container_access_policy(signed_identifiers={}, public_access=None)
+                print(f"SECURITY: '{CONTAINER_NAME}' was public ('{current}') — access revoked.")
+        except Exception as e:
+            print(f"WARNING: could not revoke public access on '{CONTAINER_NAME}': {e}")
 
     # 2. Setup PostgreSQL schema
     conn = psycopg2.connect(DATABASE_URL)

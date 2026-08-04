@@ -137,6 +137,22 @@ def normalise(plate):
     return clean(plate).translate(_CONFUSIONS)
 
 
+def sign_image_url(url):
+    """Short-lived read link for a stored plate image.
+
+    Imported lazily and failure-tolerant: a storage misconfiguration should
+    cost a thumbnail, not the plate match that the alert depends on.
+    """
+    if not url:
+        return url
+    try:
+        from services.blob_storage import sign_url
+
+        return sign_url(url)
+    except Exception:
+        return url
+
+
 def matches_sa_format(candidate):
     """True when the candidate matches a known South African plate layout.
 
@@ -320,7 +336,8 @@ def process_plate_image(image_bytes, db_conn=None):
             "plate_number": plate_number,
             "status": status,
             "owner_name": owner_name,
-            "image_url": image_url,
+            # Signed: the plate container is private, so a raw URL would not load.
+            "image_url": sign_image_url(image_url),
         },
         "message": (f"ALERT: {status.upper()} VEHICLE — {plate_number} ({owner_name})"
                     if is_flagged else f"Vehicle {plate_number} is registered to {owner_name}."),

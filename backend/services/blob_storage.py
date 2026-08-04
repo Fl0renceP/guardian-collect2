@@ -45,18 +45,59 @@ def _sanitize_metadata(metadata):
     return cleaned or None
 
 
-def _blob_name_from_url(url):
+def _split_blob_url(url):
+    """(container, blob_name) for a blob URL, or (None, None)."""
     parsed = urlparse(url or "")
     path = parsed.path.lstrip("/")
     if not path:
-        return None
+        return None, None
     parts = path.split("/", 1)
     if len(parts) != 2:
-        return None
-    container_name, blob_name = parts
+        return None, None
+    return parts[0], parts[1]
+
+
+def _blob_name_from_url(url):
+    """Blob name, but only for the face container.
+
+    The container check is a safety guard, not a formality: delete_stored_url
+    relies on it so a row pointing somewhere unexpected cannot make the purge
+    delete an arbitrary blob.
+    """
+    container_name, blob_name = _split_blob_url(url)
     if container_name != CONTAINER_NAME:
         return None
     return blob_name
+
+
+def sign_url(url, minutes=None):
+    """Short-lived read link for any blob in this storage account.
+
+    Module-level and container-agnostic because plate images live in a
+    different container from faces, and both are private now — anything handed
+    to a client has to be signed or it simply will not load.
+
+    Falls back to the original URL when it cannot be signed, so a
+    misconfiguration degrades to a broken image rather than a failed scan.
+    """
+    if not url or not AZURE_STORAGE_CONNECTION_STRING:
+        return url
+    container_name, blob_name = _split_blob_url(url)
+    if not container_name or not blob_name:
+        return url
+    try:
+        client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
+        token = generate_blob_sas(
+            account_name=client.account_name,
+            container_name=container_name,
+            blob_name=blob_name,
+            account_key=client.credential.account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.now(timezone.utc) + timedelta(minutes=minutes or DEFAULT_READ_SAS_MINUTES),
+        )
+        return f"{client.get_blob_client(container_name, blob_name).url}?{token}"
+    except Exception:
+        return url
 
 class BlobStorageService:
     def __init__(self):
@@ -69,18 +110,43 @@ class BlobStorageService:
         self.container_client = self._get_or_create_container()
 
     def _get_or_create_container(self):
-        """Ensures the 'face-db2' container exists with public blob access."""
+        """Ensure the face container exists and is PRIVATE.
+
+        These blobs are faces — special personal information under POPIA. With
+        public access the URL is the only thing standing between a stored face
+        and the open internet, and blob URLs leak: they land in logs, in
+        database dumps, in screenshots, in a shared browser tab. Anyone holding
+        one could read the image forever, with no login and no audit trail.
+
+        Reads go through short-lived SAS links instead (see read_url), so
+        access is granted per request and expires.
+
+        The policy is re-asserted on every startup rather than only at creation
+        because this container was previously created public: a fresh
+        deployment would be private, but the existing one stays exposed until
+        something actively closes it.
+        """
         container_client = self.blob_service_client.get_container_client(CONTAINER_NAME)
         if not container_client.exists():
-            # Create container with public read access for individual blobs
-            container_client.create_container(public_access="blob")
-            print(f"✅ Container '{CONTAINER_NAME}' created successfully.")
+            container_client.create_container()  # private: no public_access
+            print(f"Container '{CONTAINER_NAME}' created (private).")
+            return container_client
 
-        # Keep access policy explicit for already-existing containers as well.
         try:
-            container_client.set_container_access_policy(public_access="blob")
+            props = container_client.get_container_properties()
+            current = props.get("public_access")
+            if current:
+                container_client.set_container_access_policy(signed_identifiers={}, public_access=None)
+                print(
+                    f"SECURITY: container '{CONTAINER_NAME}' was public "
+                    f"('{current}') — access has been revoked."
+                )
         except Exception as exc:
-            print(f"⚠️ Unable to enforce public blob access policy on '{CONTAINER_NAME}': {exc}")
+            # Loud, because failing to close this is a data-exposure problem,
+            # not a cosmetic one.
+            print(f"WARNING: could not verify/revoke public access on '{CONTAINER_NAME}': {exc}")
+
+        return container_client
 
         return container_client
 

@@ -350,7 +350,8 @@ def read_frame(image_bytes, db_conn=None, stream_id="default"):
             "plate_number": plate_number,
             "status": status,
             "owner_name": owner_name,
-            "image_url": image_url,
+            # Signed: the plate container is private, so a raw URL would not load.
+            "image_url": plate_ocr.sign_image_url(image_url),
         },
     })
 
