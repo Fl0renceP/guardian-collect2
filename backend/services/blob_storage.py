@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import uuid
@@ -8,6 +9,8 @@ from azure.storage.blob import BlobServiceClient, ContentSettings, BlobSasPermis
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 CONTAINER_NAME = "face-db2"
@@ -74,13 +77,20 @@ class BlobStorageService:
         if not container_client.exists():
             # Create container with public read access for individual blobs
             container_client.create_container(public_access="blob")
-            print(f"✅ Container '{CONTAINER_NAME}' created successfully.")
+            logger.info("Container '%s' created successfully.", CONTAINER_NAME)
 
         # Keep access policy explicit for already-existing containers as well.
+        # Storage accounts with public access disabled at the account level reject
+        # this, which is fine — every read path signs a short-lived SAS URL anyway.
+        # It must not be fatal: these were `print()` calls carrying emoji, and on a
+        # cp1252 Windows console the print itself raised UnicodeEncodeError. That
+        # escaped __init__, so constructing BlobStorageService failed outright and
+        # every caller fell back to unsigned URLs, which the account then 409s.
         try:
             container_client.set_container_access_policy(public_access="blob")
         except Exception as exc:
-            print(f"⚠️ Unable to enforce public blob access policy on '{CONTAINER_NAME}': {exc}")
+            logger.info("Public blob access not enforced on '%s' (%s); relying on SAS URLs.",
+                        CONTAINER_NAME, exc)
 
         return container_client
 

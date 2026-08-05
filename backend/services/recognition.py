@@ -1,13 +1,26 @@
+import logging
 import os
 import tempfile
 import time
+
+# retina-face and deepface are written against the legacy tf.keras API. From
+# TensorFlow 2.16 on, `tensorflow.keras` resolves to Keras 3 instead, and
+# building the RetinaFace graph dies with "A KerasTensor cannot be used as
+# input to a TensorFlow function". This flag points `tensorflow.keras` back at
+# tf_keras (a requirements.txt dependency) and must be set before TensorFlow is
+# imported — which the DeepFace import below does transitively.
+os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+
 import cv2
 import psycopg2
 import numpy as np
 from deepface import DeepFace
 
+from config import Config
 from services.blob_storage import BlobStorageService
 from services.face_quality import assess as assess_quality
+
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -25,10 +38,40 @@ MATCH_THRESHOLD = 0.30
 _blob_service = None
 
 
-def warm_recognition_pipeline(model_name="Facenet512"):
-    """Warm the DeepFace model so the first live scan avoids model boot latency."""
+def warm_recognition_pipeline(model_name="Facenet512", detector_backend=None):
+    """Warm both DeepFace models so the first live scan avoids model boot latency.
+
+    Warming the embedder alone left the DETECTOR to load on the first real scan,
+    so that scan paid a model download/build that this function exists to absorb.
+    A 1x1 pixel is enough to force the detector to instantiate; enforce_detection
+    is off because there is obviously no face in it and we only want the load.
+    """
     started = time.perf_counter()
     DeepFace.build_model(model_name)
+    backends = [detector_backend or Config.FACE_DETECTOR]
+    # The fallback too: it loads on the first frame that escalates to it, and
+    # that frame is by definition an awkward one already paying the slow path.
+    if Config.FACE_DETECTOR_FALLBACK and Config.FACE_DETECTOR_FALLBACK not in backends:
+        backends.append(Config.FACE_DETECTOR_FALLBACK)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+        tmp_path = tmp.name
+    try:
+        cv2.imwrite(tmp_path, np.zeros((1, 1, 3), dtype=np.uint8))
+        for backend in backends:
+            try:
+                DeepFace.represent(
+                    img_path=tmp_path,
+                    model_name=model_name,
+                    detector_backend=backend,
+                    enforce_detection=False,
+                )
+            except Exception:
+                # Warming is best-effort: a failure here costs latency on the first
+                # scan, not correctness, and must never stop the app from booting.
+                logger.info("Could not pre-warm detector '%s'.", backend)
+    finally:
+        os.remove(tmp_path)
     return round((time.perf_counter() - started) * 1000, 2)
 
 
@@ -36,6 +79,43 @@ def _face_area(face):
     """Pixel area of a detected face, used to pick the subject in a group shot."""
     area = face.get("facial_area") or {}
     return area.get("w", 0) * area.get("h", 0)
+
+
+def represent_face(img_path, model_name=None, detector_backend=None, fallback_backend=None):
+    """Embed the faces in an image, escalating detectors until one finds something.
+
+    THE ONE PLACE any face is turned into a vector — the live scan, enrolment,
+    the seed importer and the re-embed script all come through here. That is
+    deliberate: the detector picks the crop and the crop moves the embedding, so
+    a gallery built by one path and probed by another would be comparing subtly
+    different things. Keeping the cascade in a single function means the two
+    cannot drift apart without someone editing this line.
+
+    Returns (objs, detector_used). Raises whatever the last detector raised if
+    none of them find a face, so callers keep their existing failure handling.
+    """
+    model_name = model_name or Config.FACE_MODEL
+    primary = detector_backend or Config.FACE_DETECTOR
+    fallback = fallback_backend if fallback_backend is not None else Config.FACE_DETECTOR_FALLBACK
+
+    chain = [primary] + ([fallback] if fallback and fallback != primary else [])
+    last_error = None
+    for backend in chain:
+        try:
+            objs = DeepFace.represent(
+                img_path=img_path,
+                model_name=model_name,
+                detector_backend=backend,
+                enforce_detection=True,  # Fails cleanly if no face is detected
+            )
+            if objs:
+                return objs, backend
+        except Exception as exc:
+            last_error = exc
+            if backend != chain[-1]:
+                logger.info("Detector '%s' found no face; escalating.", backend)
+
+    raise last_error or ValueError("No face detected.")
 
 
 def _blob_signer():
@@ -58,7 +138,8 @@ def _readable_face_url(url):
         return url
 
 
-def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet", threshold=MATCH_THRESHOLD):
+def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet", threshold=MATCH_THRESHOLD,
+                                detector_backend=None):
     """
     Core facial recognition logic:
     1. Extracts an embedding for the largest face in the incoming image.
@@ -73,6 +154,8 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
     in a separate, deliberate admin action.
     """
     timings_ms = {}
+    # Must match the detector the gallery was embedded with — see Config.FACE_DETECTOR.
+    detector_backend = detector_backend or Config.FACE_DETECTOR
 
     # 1. Save uploaded image bytes to a temporary file for DeepFace processing
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
@@ -82,11 +165,8 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
     try:
         embed_started = time.perf_counter()
         # 2. Extract the 512-dim vector embedding (Facenet512 by default)
-        embeddings = DeepFace.represent(
-            img_path=tmp_path,
-            model_name=model_name,
-            detector_backend="retinaface",  # Faster for single face detection
-            enforce_detection=True  # Fails cleanly if no face is detected
+        embeddings, detector_used = represent_face(
+            tmp_path, model_name=model_name, detector_backend=detector_backend
         )
         timings_ms["embedding"] = round((time.perf_counter() - embed_started) * 1000, 2)
         # embeddings[0] is whichever face the detector happened to return first,
@@ -246,6 +326,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
                 "supporting_captures": captures,
                 "faces_detected": faces_detected,
                 "face_confidence": face_confidence,
+                "detector_used": detector_used,
                 "capture_quality": capture_quality,
                 "timings_ms": timings_ms,
                 "message": f"ALERT: {status.upper()} DETECTED!" if is_flagged else f"Member '{full_name}' is verified."
@@ -264,6 +345,7 @@ def process_incoming_face_image(image_bytes, db_conn=None, model_name="Facenet",
             "nearest_person": {"full_name": result[1], "status": result[2]} if result else None,
             "faces_detected": faces_detected,
             "face_confidence": face_confidence,
+            "detector_used": detector_used,
             "capture_quality": capture_quality,
             "timings_ms": timings_ms,
             "registered": False,

@@ -32,6 +32,7 @@ from deepface import DeepFace
 from config import Config
 from services.blob_storage import BlobStorageService
 from services.face_quality import assess
+from services.recognition import represent_face
 
 
 def list_gallery(cur):
@@ -96,14 +97,9 @@ def enroll(person_name, image_path, source, camera_id, captured_at, incident_ref
         if image is None:
             raise SystemExit(f"Could not read {image_path} as an image.")
 
-        # Same model and detector the scan endpoint uses, so the stored vector is
-        # directly comparable to what a live scan produces.
-        objs = DeepFace.represent(
-            img_path=image_path,
-            model_name=Config.FACE_MODEL,
-            detector_backend="retinaface",
-            enforce_detection=True,
-        )
+        # Same model and detector cascade the scan endpoint uses, so the stored
+        # vector is directly comparable to what a live scan produces.
+        objs, _ = represent_face(image_path, model_name=Config.FACE_MODEL)
         if not objs:
             raise SystemExit("No face detected — nothing enrolled.")
 

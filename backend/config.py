@@ -44,6 +44,34 @@ class Config:
     # 3. DeepFace Model Configuration
     # Options: "Facenet" (128-dim), "Facenet512" (512-dim), "ArcFace" (512-dim), "VGG-Face"
     FACE_MODEL = "Facenet512"
+    # Face DETECTOR, which is a separate model from the embedder above and was
+    # the entire cost of a scan. Measured on one 960x1280 seed photo, CPU, with
+    # the embedder pre-warmed so it is not charged to either backend:
+    # retinaface 40.4s, mtcnn 6.4s, yunet 1.2s — all finding the same one face.
+    # Downscaling does not rescue retinaface (still ~51s at 480x640); the cost is
+    # inherent to running it on CPU.
+    #
+    # yunet is NOT a straight replacement: it misses non-frontal faces. On this
+    # seed set it failed to find a face in 7 of 60 stored images — every one of
+    # them the offender, at quality 0.977-1.0, all off-angle (right, lower right,
+    # upper front). Those are not bad photos, they are profiles. Probing the same
+    # images through the endpoint returned "No face detected", i.e. a pure yunet
+    # swap silently stops flagging the offender at the angles a street camera is
+    # most likely to catch him from.
+    #
+    # So it is a cascade, not a swap: yunet carries the frontal case at ~1.2s, and
+    # only when it finds nothing does retinaface get its ~42s. Recall is identical
+    # to retinaface-alone by construction (the fallback runs on exactly the frames
+    # yunet drops); the win is that the common case no longer waits for it.
+    # Set FACE_DETECTOR_FALLBACK="" to disable the fallback and take the recall loss.
+    #
+    # The detector decides the crop, the crop decides the embedding, so PROBE AND
+    # GALLERY MUST USE THE SAME CASCADE. That is why this lives here rather than
+    # being passed at each call site: recognition.py, enroll_face.py, init_db.py
+    # and scripts/import_seed_faces.py all read it, so they cannot drift apart.
+    # Change either value and the gallery needs re-embedding — scripts/reembed_faces.py.
+    FACE_DETECTOR = os.getenv("FACE_DETECTOR", "yunet")
+    FACE_DETECTOR_FALLBACK = os.getenv("FACE_DETECTOR_FALLBACK", "retinaface")
     # Cosine distance match threshold for Facenet (lower = stricter match).
     # This is the value the endpoint actually uses — app.py passes it into
     # recognition.process_incoming_face_image, overriding that module's default.

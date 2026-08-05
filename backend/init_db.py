@@ -12,6 +12,7 @@ import os
 import psycopg2
 from deepface import DeepFace
 from dotenv import load_dotenv
+from config import Config
 from services.blob_storage import BlobStorageService
 
 load_dotenv()
@@ -92,7 +93,7 @@ def setup_and_seed():
 
             # Generate 128-dim FaceNet embedding via DeepFace using local image file
             print(f"Extracting facial embedding for {record['full_name']}...")
-            objs = DeepFace.represent(img_path=local_path, model_name="Facenet512", detector_backend="retinaface", enforce_detection=False)
+            objs = DeepFace.represent(img_path=local_path, model_name=Config.FACE_MODEL, detector_backend=Config.FACE_DETECTOR, enforce_detection=False)
             vector_embedding = str(objs[0]["embedding"])
 
             # Insert into persons table

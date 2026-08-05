@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import Config  # noqa: E402
 from services.blob_storage import BlobStorageService, CONTAINER_NAME  # noqa: E402
 from services.face_quality import assess as assess_quality  # noqa: E402
+from services.recognition import represent_face  # noqa: E402
 
 VALID_STATUSES = {"offender", "suspect", "verified"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
@@ -81,12 +82,9 @@ def _read_image_bytes(path):
 
 
 def _embedding_from_file(path):
-    objs = DeepFace.represent(
-        img_path=str(path),
-        model_name=Config.FACE_MODEL,
-        detector_backend="retinaface",
-        enforce_detection=True,
-    )
+    # Same cascade the scan endpoint uses, so a reference embedded here is
+    # directly comparable to the probe that will be matched against it.
+    objs, _ = represent_face(str(path), model_name=Config.FACE_MODEL)
     if not objs:
         raise ValueError("No face detected by DeepFace.")
 
