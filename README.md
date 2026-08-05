@@ -13,7 +13,8 @@ the frontend shows connection errors without it.
 
 ```bash
 # Backend: create a virtual environment and install into it
-python -m venv backend/.venv
+py -3.12 -m venv backend/.venv   # Windows (recommended for TensorFlow compatibility)
+# python3.12 -m venv backend/.venv   # macOS/Linux
 backend\.venv\Scripts\python -m pip install -r backend/requirements.txt   # Windows
 # source backend/.venv/bin/activate && pip install -r backend/requirements.txt   # macOS/Linux
 

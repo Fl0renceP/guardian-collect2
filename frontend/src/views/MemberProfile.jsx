@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import { api } from '../api'
+import LoadingGraphic from '../components/LoadingGraphic'
 import { useSession } from '../session'
 
 /* Optional home location.
@@ -158,7 +159,7 @@ export default function MemberProfile() {
     }
   }
 
-  if (!member) return <p className="muted">Loading…</p>
+  if (!member) return <LoadingGraphic label="Loading profile…" />
 
   const sharing = !!profile?.share_location
 

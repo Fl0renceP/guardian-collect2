@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
+import LoadingGraphic from '../components/LoadingGraphic'
 import { useSession } from '../session'
 
 const MAX_FILES = 6
@@ -138,7 +139,7 @@ export default function SubmitClaim() {
     }
   }
 
-  if (!member) return <p className="muted">Loading your details…</p>
+  if (!member) return <LoadingGraphic label="Loading your details…" />
 
   return (
     <>

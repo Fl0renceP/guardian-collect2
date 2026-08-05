@@ -201,3 +201,10 @@ class Config:
     # fastest loop and the risk-seeking one), so a six-vehicle plan is twelve
     # calls — sequential, that is a minute of staring at a spinner.
     PATROL_ROUTE_WORKERS = int(os.getenv("PATROL_ROUTE_WORKERS", "4"))
+
+    # 9. Web Push (VAPID) — browser/OS push for detection alerts. No vendor
+    # (Firebase/Azure Notification Hubs) needed: the key pair is self-issued.
+    # Generate one with backend/scripts/generate_vapid_keys.py.
+    VAPID_PUBLIC_KEY = _clean(os.getenv("VAPID_PUBLIC_KEY"))
+    VAPID_PRIVATE_KEY = _clean(os.getenv("VAPID_PRIVATE_KEY"))
+    VAPID_CLAIMS_EMAIL = _clean(os.getenv("VAPID_CLAIMS_EMAIL", "mailto:admin@example.com"))

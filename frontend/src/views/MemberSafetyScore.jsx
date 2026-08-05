@@ -27,12 +27,15 @@ const TIER_PILL = {
   Platinum: 'pill-approved',
 }
 
+const MILES_LOGO_SRC = '/discovery-miles-logo.png?v=4'
+
 export default function MemberSafetyScore() {
   const { member } = useSession()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [open, setOpen] = useState(null)
+  const [showMilesLogo, setShowMilesLogo] = useState(true)
 
   const load = useCallback(() => {
     if (!member) return
@@ -89,7 +92,19 @@ export default function MemberSafetyScore() {
             </span>
           </div>
 
-          <div className="score-miles" style={{ textAlign: 'right', minWidth: 170 }}>
+          <div className="safety-miles" style={{ textAlign: 'right', minWidth: 170 }}>
+            <div className="safety-miles-brand">
+              {showMilesLogo ? (
+                <img
+                  src={MILES_LOGO_SRC}
+                  alt="Discovery Miles"
+                  className="safety-miles-logo"
+                  onError={() => setShowMilesLogo(false)}
+                />
+              ) : (
+                <span className="safety-miles-fallback">Discovery Miles</span>
+              )}
+            </div>
             <div
               style={{
                 fontSize: 36,

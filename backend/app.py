@@ -21,7 +21,8 @@ from routes.member_score_routes import member_score_bp
 from routes.route_routes import route_bp
 from routes.safety_routes import safety_bp
 from routes.user_routes import user_bp
-from services import alerts_service
+from routes.push_routes import push_bp
+from services import alerts_service, push_service
 from services.claims_service import warm_cache
 
 logging.basicConfig(level=logging.INFO)
@@ -96,6 +97,7 @@ def _attach_face_alert(result):
     )
     result["alert_event"] = event
     result["alerts"] = [event] if event else []
+    push_service.notify_detection(event)
     return result
 
 
@@ -132,6 +134,7 @@ def _attach_plate_alert(result, *, source_endpoint):
     )
     result["alert_event"] = event
     result["alerts"] = [event] if event else []
+    push_service.notify_detection(event)
     return result
 
 
@@ -170,6 +173,7 @@ def create_app(config_object=Config):
     app.register_blueprint(user_bp)
     app.register_blueprint(safety_bp)
     app.register_blueprint(member_score_bp)
+    app.register_blueprint(push_bp)
 
     @app.route("/demos", methods=["GET"])
     def demos_page():

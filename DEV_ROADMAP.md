@@ -39,7 +39,25 @@ Goal: file upload of an image → detect face → compare against 3 seeded faces
 - [ ] Filter by location (radius around a member's address) — currently filterable by category/type/date only
 
 ## Phase 4 — Alerts + route optimization
-- [ ] Replace the Phase 1 `send_alert()` stub with real delivery: Azure Function trigger → Firebase Cloud Messaging
+- [x] **Push notification delivery** — Web Push (VAPID), replacing the earlier Azure Functions / Firebase Cloud Messaging plan. No extra cloud vendor: the backend already runs as a long-lived Flask/Gunicorn process on Railway, so it signs and sends pushes itself.
+
+  ```mermaid
+  flowchart LR
+      A[DeepFace / EasyOCR match] --> B["app.py: _attach_face_alert / _attach_plate_alert"]
+      B --> C[alerts_service.record_detection]
+      C --> D[push_service.notify_detection]
+      D --> V{{"VAPID: sign request with\nour private key + claims"}}
+      V --> E["pywebpush -> browser's push service\n(Chrome/Mozilla/Apple)"]
+      E --> P{{"Push service verifies signature\nagainst our public key\n(from original subscription)"}}
+      P --> F[Service worker on member/CPU device]
+      F --> G[OS notification]
+  ```
+
+  - [x] `pywebpush` dependency + `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` config (`backend/config.py`), generated once via `backend/scripts/generate_vapid_keys.py`
+  - [x] Subscriptions stored per user (`users_service.add_push_subscription` / `list_push_subscriptions`), `POST /api/push/subscribe` + `/unsubscribe` (`routes/push_routes.py`)
+  - [x] `push_service.notify_detection` wired into both `_attach_face_alert` and `_attach_plate_alert` in `app.py`, reusing the alert's existing `push_audience` (member/cpu — same rule as `audience_for`)
+  - [x] Frontend service worker (`frontend/public/sw.js`) + subscribe flow (`frontend/src/push.js`), with an "Enable alerts" button in the app bar for member/cpu roles
+  - [ ] iOS Safari note: push only reaches an installed (Home Screen) PWA, not a regular tab — a platform limit, not something this design works around
 - [x] Alert routing logic: members only get `offender` alerts; Crime Prevention Units get `offender` and `suspect` alerts — implemented in `alerts_service.audience_for`; every alert source passes through it, so wiring `/api/detect` in needs no changes to the rule
 - [x] **Member route optimisation** — `GET /api/risk` + `POST /api/routes/compare`, and the "Plan a route" view: fastest vs risk-avoiding route by travel mode and departure time, via Valhalla `exclude_polygons` (not Azure Maps — no key; see PROJECT_CONTEXT §6)
 - [x] **Crime Prevention Unit patrol routing** — `POST /api/patrol/plan` + the "Patrol planning" view: risk cells in the unit's area, split across vehicles by k-means, ordered into loops (nearest-neighbour + 2-opt), real road paths from Valhalla. Headline metric is risk covered per km driven

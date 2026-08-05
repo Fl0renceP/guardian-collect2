@@ -112,10 +112,10 @@ export default function HotspotMap() {
 
   const [options, setOptions] = useState(null)
   const [data, setData] = useState(null)
-  const [perils, setPerils] = useState([])
-  const [itemTypes, setItemTypes] = useState([])
+  const [peril, setPeril] = useState('')
+  const [itemType, setItemType] = useState('')
   const [range, setRange] = useState({ from: '', to: '' })
-  const [preset, setPreset] = useState('all')
+  const [rangeId, setRangeId] = useState('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showTable, setShowTable] = useState(false)
@@ -166,8 +166,8 @@ export default function HotspotMap() {
     setLoading(true)
     api
       .hotspots({
-        peril: perils.join(','),
-        item_type: itemTypes.join(','),
+        peril,
+        item_type: itemType,
         date_from: range.from,
         date_to: range.to,
       })
@@ -177,7 +177,7 @@ export default function HotspotMap() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [perils, itemTypes, range])
+  }, [peril, itemType, range])
 
   useEffect(load, [load])
 
@@ -239,8 +239,11 @@ export default function HotspotMap() {
     ]
   }, [options])
 
-  const toggle = (list, setList) => (value) =>
-    setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value])
+  useEffect(() => {
+    const selected = presets.find((p) => p.id === rangeId) || presets[0]
+    if (!selected) return
+    setRange({ from: selected.from, to: selected.to })
+  }, [presets, rangeId])
 
   const stats = useMemo(() => {
     if (!data) return null
@@ -269,110 +272,56 @@ export default function HotspotMap() {
           <span className="tiny" style={{ fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Date range
           </span>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <select
+            aria-label="Date range"
+            value={rangeId}
+            onChange={(e) => setRangeId(e.target.value)}
+            style={{ minWidth: 200 }}
+          >
             {presets.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={`btn btn-chip${preset === p.id ? ' btn-primary' : ''}`}
-                onClick={() => {
-                  setPreset(p.id)
-                  setRange({ from: p.from, to: p.to })
-                }}
-              >
+              <option key={p.id} value={p.id}>
                 {p.label}
-              </button>
+              </option>
             ))}
-          </div>
-        </div>
-
-        <div className="field" style={{ gap: 7 }}>
-          <span className="tiny" style={{ fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            Custom range
-          </span>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input
-              type="date"
-              aria-label="From date"
-              value={range.from}
-              min={options?.date_min}
-              max={options?.date_max}
-              onChange={(e) => {
-                setPreset(null)
-                setRange((r) => ({ ...r, from: e.target.value }))
-              }}
-              style={{ width: 'auto' }}
-            />
-            <span className="tiny">to</span>
-            <input
-              type="date"
-              aria-label="To date"
-              value={range.to}
-              min={options?.date_min}
-              max={options?.date_max}
-              onChange={(e) => {
-                setPreset(null)
-                setRange((r) => ({ ...r, to: e.target.value }))
-              }}
-              style={{ width: 'auto' }}
-            />
-          </div>
+          </select>
         </div>
 
         <div className="field" style={{ gap: 7 }}>
           <span className="tiny" style={{ fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Crime category
           </span>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: 620 }}>
-            <button
-              type="button"
-              className={`btn btn-chip${perils.length === 0 ? ' btn-primary' : ''}`}
-              onClick={() => setPerils([])}
-            >
-              All
-            </button>
+          <select
+            aria-label="Crime category"
+            value={peril}
+            onChange={(e) => setPeril(e.target.value)}
+            style={{ minWidth: 260 }}
+          >
+            <option value="">All categories</option>
             {(options?.perils || []).map((p) => (
-              <button
-                key={p.value}
-                type="button"
-                className={`btn btn-chip${perils.includes(p.value) ? ' btn-primary' : ''}`}
-                onClick={() => toggle(perils, setPerils)(p.value)}
-              >
-                {p.value}
-                <span style={{ marginLeft: 4, opacity: 0.65, fontSize: 11.5 }}>
-                  {num.format(p.count)}
-                </span>
-              </button>
+              <option key={p.value} value={p.value}>
+                {p.value} ({num.format(p.count)})
+              </option>
             ))}
-          </div>
+          </select>
         </div>
 
         <div className="field" style={{ gap: 7 }}>
           <span className="tiny" style={{ fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Item type
           </span>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className={`btn btn-chip${itemTypes.length === 0 ? ' btn-primary' : ''}`}
-              onClick={() => setItemTypes([])}
-            >
-              All
-            </button>
+          <select
+            aria-label="Item type"
+            value={itemType}
+            onChange={(e) => setItemType(e.target.value)}
+            style={{ minWidth: 220 }}
+          >
+            <option value="">All item types</option>
             {(options?.item_types || []).map((t) => (
-              <button
-                key={t.value}
-                type="button"
-                className={`btn btn-chip${itemTypes.includes(t.value) ? ' btn-primary' : ''}`}
-                onClick={() => toggle(itemTypes, setItemTypes)(t.value)}
-              >
-                {t.value}
-                <span style={{ marginLeft: 4, opacity: 0.65, fontSize: 11.5 }}>
-                  {num.format(t.count)}
-                </span>
-              </button>
+              <option key={t.value} value={t.value}>
+                {t.value} ({num.format(t.count)})
+              </option>
             ))}
-          </div>
+          </select>
         </div>
       </div>
 
@@ -454,10 +403,11 @@ export default function HotspotMap() {
 }
 
 function Tile({ k, v, m, stale }) {
+  const valueClass = k === 'Busiest suburb' ? 'tile-v tile-v-suburb' : 'tile-v'
   return (
     <div className="card tile" style={{ opacity: stale ? 0.55 : 1, transition: 'opacity 120ms ease' }}>
       <div className="tiny tile-k">{k}</div>
-      <div className="tile-v">{v}</div>
+      <div className={valueClass}>{v}</div>
       {m ? <div className="muted tile-m">{m}</div> : null}
     </div>
   )

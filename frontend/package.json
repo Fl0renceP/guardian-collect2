@@ -12,6 +12,8 @@
     "@mediapipe/tasks-vision": "^0.10.14",
     "leaflet": "^1.9.4",
     "leaflet.heat": "^0.2.0",
+    "motion": "^12.43.0",
+    "ogl": "^1.0.11",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",

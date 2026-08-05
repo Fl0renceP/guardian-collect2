@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { api, formatDate, formatDateTime, money } from '../api'
+import LoadingGraphic from '../components/LoadingGraphic'
 import { useSession } from '../session'
 import StatusPill from '../components/StatusPill'
 
@@ -51,7 +52,7 @@ export default function MyClaims() {
       .catch(() => setDetail(null))
   }
 
-  if (!member) return <p className="muted">Loading your details…</p>
+  if (!member) return <LoadingGraphic label="Loading your details…" />
 
   const declined = claims.filter((c) => c.status === 'denied')
 
@@ -84,7 +85,7 @@ export default function MyClaims() {
         </div>
       ) : null}
 
-      {loading && !claims.length ? <p className="muted">Loading…</p> : null}
+      {loading && !claims.length ? <LoadingGraphic label="Loading claims…" /> : null}
 
       {!loading && !claims.length ? (
         <div className="card empty">
@@ -99,7 +100,7 @@ export default function MyClaims() {
         {claims.map((claim) => {
           const open = openId === claim.Incident
           return (
-            <article key={claim.Incident} className="card list-card">
+            <article key={claim.Incident} className="card list-card roomy-card">
               <div className="card-head">
                 <StatusPill status={claim.status} />
                 <strong style={{ fontSize: 14.5 }}>
@@ -165,7 +166,12 @@ export default function MyClaims() {
 }
 
 export function MediaStrip({ media, loading }) {
-  if (loading) return <p className="tiny" style={{ marginTop: 10 }}>Loading attachments…</p>
+  if (loading)
+    return (
+      <div style={{ marginTop: 10 }}>
+        <LoadingGraphic label="Loading attachments…" compact />
+      </div>
+    )
   if (!media || !media.length)
     return <p className="tiny" style={{ marginTop: 10 }}>No photos or video attached.</p>
 
