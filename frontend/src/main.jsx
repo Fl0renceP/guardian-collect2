@@ -8,6 +8,7 @@ import 'leaflet/dist/leaflet.css'
 import Layout from './components/Layout'
 import { SessionProvider } from './session'
 import AlertsFeed from './views/AlertsFeed'
+import BehaviourReview from './views/BehaviourReview'
 import HotspotMap from './views/HotspotMap'
 import MemberProfile from './views/MemberProfile'
 import MyClaims from './views/MyClaims'
@@ -30,6 +31,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <Route path="my-claims" element={<MyClaims />} />
             <Route path="profile" element={<MemberProfile />} />
             <Route path="review" element={<ReviewQueue />} />
+            {/* Mock screen — see BEHAVIOUR_REVIEW_API.md. No API wired yet. */}
+            <Route path="behaviour-review" element={<BehaviourReview />} />
             <Route path="safety-score" element={<MemberSafetyScore />} />
             <Route path="alerts" element={<AlertsFeed />} />
             <Route path="patrol" element={<PatrolPlan />} />

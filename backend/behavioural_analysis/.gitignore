@@ -1,0 +1,15 @@
+# Audit output — generated at runtime, not source. Also: these hold behavioural
+# event records, which should never be committed to a repo even though they
+# carry no identity data.
+behavioural_audit.db
+behavioural_audit.jsonl
+*_events.json
+zones_snippet.yaml
+
+# Downloaded model weights (~12MB), fetched automatically on first run.
+models/
+yolov8n.pt
+*.pt
+
+__pycache__/
+*.pyc

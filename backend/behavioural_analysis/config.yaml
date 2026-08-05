@@ -1,0 +1,376 @@
+# Guardian Collective — Behavioural Analysis configuration
+#
+# EVERY threshold the heuristics use lives in this file. Nothing in
+# heuristics.py is allowed to contain a magic number, because these values are
+# the part of the system that decides whether an ordinary person gets flagged,
+# and they must be reviewable, tunable and arguable by a human who does not read
+# Python. See the bias notice at the top of heuristics.py.
+#
+# ---------------------------------------------------------------------------
+# UNITS — read this before changing anything
+# ---------------------------------------------------------------------------
+# There is no camera calibration in this system, so pixels mean nothing across
+# different cameras: 50px is a long stride on a wide street view and a hand
+# twitch on a doorbell close-up. Every spatial threshold below is therefore in
+# BODY HEIGHTS — the detected person's own bounding-box height in that frame.
+#
+#   distance 1.0  = one of that person's body heights away
+#   speed    1.0  = one body height travelled per second (a brisk walk is ~1.2)
+#
+# Posture thresholds are RATIOS AGAINST THE PERSON'S OWN BASELINE, captured from
+# their first upright frames. We never compare anyone to a population average —
+# that is what makes "crouched" mean "lower than this person normally stands"
+# rather than "shorter than average", and it is the single most important bias
+# mitigation in the module.
+
+# ---------------------------------------------------------------------------
+# Pipeline / model settings
+# ---------------------------------------------------------------------------
+pipeline:
+  # Ultralytics weights. yolov8n is the small/fast one — fine for a laptop demo.
+  # Downloaded automatically on first run.
+  yolo_model: "yolov8n.pt"
+  yolo_confidence: 0.35
+  # ByteTrack config shipped with ultralytics. bytetrack.yaml or botsort.yaml.
+  tracker: "bytetrack.yaml"
+  # Inference resolution. Lower is faster and blinder — small/distant people
+  # start being missed below about 480. 640 is the YOLO default.
+  yolo_imgsz: 640
+  # Process every Nth frame. 1 = every frame. On a laptop with no GPU, YOLO runs
+  # at roughly 1 frame/second here, so 1 would make a 30s clip take 15 minutes.
+  # The trajectory maths is time-based, not frame-based — timestamps come from
+  # the video — so raising this costs temporal resolution but never changes what
+  # a threshold means. Drop it to 1 for an accurate offline pass.
+  frame_stride: 3
+  # Cap on how long a track's history is kept, in seconds.
+  history_seconds: 30.0
+  # MediaPipe Pose complexity: 0 fast / 1 balanced / 2 accurate.
+  pose_model_complexity: 1
+  pose_min_detection_confidence: 0.4
+  pose_min_tracking_confidence: 0.4
+  # Smallest person crop worth running the pose model over. Height and width are
+  # gated separately BECAUSE a person's box is tall and narrow (~2.5:1): a single
+  # "smallest side" rule throws away almost every genuine person at distance.
+  # Below these, a pose is 33 confident-looking coordinates describing nothing —
+  # the same reasoning as MIN_FACE_PIXELS in backend/config.py.
+  pose_min_crop_height: 64
+  pose_min_crop_width: 24
+  # A landmark below this visibility is treated as not observed rather than as
+  # a coordinate. MediaPipe still returns a guess for occluded joints and acting
+  # on those guesses is how you invent a climbing posture from a blurry frame.
+  landmark_visibility_floor: 0.35
+  # A track needs this many observed frames before ANY heuristic may fire.
+  # Stops one noisy frame from becoming an event.
+  min_track_frames: 8
+  # Seconds of upright walking used to learn a track's own posture baseline.
+  baseline_seconds: 1.5
+
+# ---------------------------------------------------------------------------
+# Zones — camera-relative polygons, NOT map coordinates
+# ---------------------------------------------------------------------------
+# Coordinates are NORMALISED to the frame: (0,0) is top-left, (1,1) is
+# bottom-right. Normalised means the same config survives a resolution change
+# and can be authored off a screenshot without knowing the camera's pixel size.
+#
+# zone types the heuristics understand:
+#   property_boundary  — the line/area a person should walk past, not into
+#   gate               — gate, door, window: the probing target
+#   vertical_structure — wall or fence: the climbing target
+#   vehicle_zone       — driveway/parking bay where a vehicle sits
+#   street_frontage    — public pavement outside the property (loitering watch)
+#   exempt             — legitimately somewhere to stand still: bus stop, taxi
+#                        rank, bench, shop queue. Loitering NEVER fires here.
+#                        Add one wherever your camera overlooks a waiting spot.
+#
+# `risk` (0..1) is the claims-derived hot-spot risk for this zone. In the full
+# system it comes from services/risk_service.py's H3 surface; here it is set by
+# hand so the module runs standalone.
+zones:
+  - id: "front_boundary"
+    type: "property_boundary"
+    risk: 0.55
+    polygon: [[0.05, 0.55], [0.95, 0.55], [0.95, 0.95], [0.05, 0.95]]
+
+  - id: "front_gate"
+    type: "gate"
+    risk: 0.55
+    polygon: [[0.35, 0.35], [0.62, 0.35], [0.62, 0.80], [0.35, 0.80]]
+
+  - id: "perimeter_wall"
+    type: "vertical_structure"
+    risk: 0.55
+    polygon: [[0.0, 0.30], [0.35, 0.30], [0.35, 0.85], [0.0, 0.85]]
+
+  - id: "driveway"
+    type: "vehicle_zone"
+    risk: 0.60
+    polygon: [[0.60, 0.45], [1.0, 0.45], [1.0, 1.0], [0.60, 1.0]]
+
+  - id: "pavement"
+    type: "street_frontage"
+    risk: 0.40
+    polygon: [[0.0, 0.85], [1.0, 0.85], [1.0, 1.0], [0.0, 1.0]]
+
+  # Example of the bias guard. Uncomment and reshape to match a real waiting
+  # spot in your camera's view — a person standing at a taxi rank for ten
+  # minutes is waiting for a taxi, and this module should have nothing to say.
+  # - id: "taxi_rank"
+  #   type: "exempt"
+  #   risk: 0.0
+  #   polygon: [[0.0, 0.88], [0.22, 0.88], [0.22, 1.0], [0.0, 1.0]]
+
+# ---------------------------------------------------------------------------
+# Heuristic thresholds
+# ---------------------------------------------------------------------------
+heuristics:
+
+  # 1. Loitering / casing --------------------------------------------------
+  # BIAS-SENSITIVE. Standing still is not a crime and the reasons for it are
+  # overwhelmingly ordinary: waiting for a lift, resting, a mobility
+  # difference, a phone call, a delivery. These numbers are deliberately
+  # conservative and every trigger goes to a human, never to an action.
+  loitering:
+    enabled: true
+    window_seconds: 120.0
+    # Sustained presence near a boundary before it is even worth a human's
+    # attention. 45s is a long time to stand at a stranger's gate; it is also
+    # a perfectly normal time to answer a phone call, hence review-only.
+    dwell_seconds: 45.0
+    # Repeated passes matter more than one long stay — going back and forth is
+    # the "casing" signal, standing still once is usually just standing still.
+    min_passes: 3
+    # Below this speed the person counts as dwelling rather than passing.
+    dwell_speed_max: 0.25
+    # Confidence saturates at twice the dwell threshold.
+    dwell_saturation_multiplier: 2.0
+
+  # 2. Perimeter probing ---------------------------------------------------
+  probing:
+    enabled: true
+    window_seconds: 20.0
+    # How close to a gate/window zone counts as "at" it.
+    proximity: 0.60
+    # Approach must actually be an approach: distance closing at least this
+    # fast at some point in the window.
+    approach_speed_min: 0.20
+    # Then a pause of at least this long, below this speed.
+    pause_seconds: 2.5
+    pause_speed_max: 0.20
+    # Reaching: wrist extended past the shoulder toward the boundary by this
+    # multiple of the person's shoulder width.
+    reach_ratio: 0.55
+    # If false, a pause at the gate alone can trigger (lower confidence).
+    # True is stricter — it demands the reach as well.
+    require_reach: false
+
+  # 3. Climbing / scaling posture ------------------------------------------
+  climbing:
+    enabled: true
+    window_seconds: 8.0
+    # Must be near something climbable, or it is just someone stretching.
+    proximity: 0.75
+    # Hands above shoulder height for this many consecutive observed frames.
+    min_frames_hands_high: 4
+    # Ankle raised toward the hip: ankle-to-hip gap below this fraction of the
+    # person's body height means a knee is up.
+    knee_lift_ratio: 0.28
+    # Asymmetric limb extension, as a fraction of body height. Climbing is
+    # one-arm-then-the-other; a stretch or a wave tends to be symmetric.
+    limb_asymmetry: 0.15
+    # Whole body rising off the ground line, in body heights, over the window.
+    climb_rise_ratio: 0.18
+
+  # 4. Concealment approach ------------------------------------------------
+  # BIAS-SENSITIVE, ACUTELY SO. Covered faces are ordinary: winter clothing,
+  # sun, dust, religious dress, illness, or simply facing away from a camera
+  # nobody knew was there. This heuristic exists because it is the case where
+  # facial recognition cannot help, NOT because a covered face is suspicious.
+  # It requires sustained approach toward a property as well — a covered face
+  # alone can never trigger it, and must never be read as an accusation.
+  concealment:
+    enabled: true
+    window_seconds: 15.0
+    # Mean visibility of nose/eyes/ears below which the face is "not available".
+    face_visibility_min: 0.35
+    # Or head turned this far from camera (degrees, estimated from ear/nose
+    # offsets — approximate, and treated as such).
+    yaw_away_degrees: 55.0
+    # Must be closing on a property zone, not just walking past.
+    approach_speed_min: 0.15
+    # Sustained, so a glance over the shoulder does not qualify.
+    conceal_seconds: 4.0
+
+  # 5. Crouched proximity to a vehicle -------------------------------------
+  crouched_vehicle:
+    enabled: true
+    window_seconds: 20.0
+    # Torso height below this fraction of THIS PERSON'S OWN standing baseline.
+    # Self-referenced on purpose: see the units note at the top of this file.
+    crouch_ratio: 0.72
+    # Or a knee bent past this (degrees at hip-knee-ankle).
+    knee_angle_max: 115.0
+    # Horizontal distance to the nearest detected vehicle, in body heights.
+    vehicle_proximity: 1.20
+    # Sustained — tying a shoelace is a few seconds, not ten.
+    crouch_seconds: 6.0
+
+  # 6. Tampering motion ----------------------------------------------------
+  tampering:
+    enabled: true
+    window_seconds: 6.0
+    vehicle_proximity: 1.00
+    # Wrist oscillation amplitude, in body heights. Bounded at both ends: too
+    # small is tracker jitter, too large is a wave or a throw.
+    amplitude_min: 0.04
+    amplitude_max: 0.35
+    # Oscillation frequency band, Hz. Prying/jiggling is roughly 1-4 per second.
+    frequency_min: 0.8
+    frequency_max: 4.5
+    # Minimum direction reversals in the window to count as repetitive.
+    min_reversals: 6
+    # The body must be relatively still: arms working while the person stands
+    # in place is the signal. Someone walking past swinging their arms is not.
+    body_speed_max: 0.25
+
+  # 7. Group coordination (lookout + actor) --------------------------------
+  group:
+    enabled: true
+    # Both tracks must be on camera together for at least this long.
+    min_overlap_seconds: 8.0
+    # The lookout: still, for this long.
+    static_speed_max: 0.20
+    lookout_seconds: 10.0
+    # And standing back from where the action is, in body heights.
+    min_separation: 2.5
+    # Head-yaw variance suggesting scanning/looking around. Optional signal —
+    # contributes confidence, is not required.
+    scan_yaw_variance: 180.0
+    # Confidence multiplier when the actor independently triggered something
+    # else. Two signals agreeing is worth more than either alone.
+    corroboration_bonus: 1.35
+
+  # 8. Fleeing -------------------------------------------------------------
+  fleeing:
+    enabled: true
+    window_seconds: 6.0
+    # Body heights per second. A brisk walk is ~1.2; a run is ~3+.
+    walk_speed_max: 1.60
+    run_speed_min: 3.00
+    # The transition must be abrupt to count as fleeing rather than jogging.
+    accel_window_seconds: 1.50
+    # Must be moving away from a property/vehicle zone, not toward it.
+    require_away_from_zone: true
+    # If an incident from the claims data is timestamped within this many
+    # minutes of the event at this zone, confidence is lifted. This is the
+    # hook into Discovery's claims dataset.
+    incident_link_minutes: 20.0
+    incident_link_bonus: 1.30
+
+# ---------------------------------------------------------------------------
+# Risk fusion
+# ---------------------------------------------------------------------------
+fusion:
+  # Per-heuristic weight inside the noisy-OR. A weight is "how much does this
+  # single behaviour, on its own, deserve a human's attention" — NOT how
+  # suspicious the person is.
+  weights:
+    loitering: 0.45           # deliberately the lowest: most benign explanations
+    perimeter_probing: 0.70
+    climbing_posture: 0.90    # very few innocent reasons to scale a stranger's wall
+    concealment_approach: 0.65
+    crouched_near_vehicle: 0.70
+    tampering_motion: 0.85
+    group_coordination: 0.60
+    fleeing: 0.55             # running is not a crime; it is context
+
+  # Floor for a triggered heuristic's confidence. Each heuristic's confidence
+  # ramps up FROM its threshold, so a behaviour that only just qualifies would
+  # otherwise score ~0.01 and produce an event that says "something happened"
+  # and scores as if nothing did. Crossing a threshold that a human configured
+  # is itself evidence; the ramp above this floor says how far past it went.
+  min_trigger_confidence: 0.25
+
+  # How much a claims hot-spot may lift the behavioural score. Context can
+  # amplify evidence, never create it: at B=0 the lift is 0 no matter the zone.
+  # Kept low on purpose — the same reasoning as ROUTE_MIN_RISK_REDUCTION in
+  # backend/config.py. Suburb-level crime history must not become a reason to
+  # find people in that suburb more suspicious.
+  zone_weight: 0.20
+
+  # composite = behaviour_weight*B + face_weight*F + agreement_weight*(B*F)
+  behaviour_weight: 0.50
+  face_weight: 0.35
+  agreement_weight: 0.15
+
+  # Rule (a): face matched, behaviour completely ordinary -> damp the score.
+  # This is the false-positive brake on facial recognition.
+  face_trust_threshold: 0.60
+  normal_behaviour_ceiling: 0.20
+  benign_behaviour_damping: 0.60
+
+  # Rule (b): strong behaviour with no face match at all still reaches a human.
+  # This is the false-negative catch — concealment, bad light, unknown person.
+  behaviour_only_review_threshold: 0.55
+
+  # A "verified" face (household member, known resident) damps harder still:
+  # a resident crouching at their own car is not an event.
+  verified_damping: 0.35
+
+  # Composite at or above this goes into the human review queue.
+  review_threshold: 0.50
+
+# ---------------------------------------------------------------------------
+# Output and audit
+# ---------------------------------------------------------------------------
+output:
+  # Per (track, heuristic), suppress repeat events for this many seconds.
+  # Without it a 30s clip emits hundreds of duplicate events.
+  event_cooldown_seconds: 10.0
+  # Identifier for the camera's location, carried into the JSON. In the full
+  # system this maps to a suburb in the claims data.
+  location_zone_id: "demo_camera_01"
+  # Where push_to_flask_api() posts. Nothing is sent unless --push is passed on
+  # the CLI AND this is set — both, deliberately. The ingest endpoint exists
+  # (POST /api/v1/behaviour/events, see BEHAVIOUR_REVIEW_API.md §3), but the
+  # operating config stays unwired so that running this module never silently
+  # starts filling a review queue that nobody agreed to receive.
+  # For the demo backend:  http://localhost:5000/api/v1/behaviour/events
+  flask_api_url: null
+  api_timeout_seconds: 5.0
+
+# ---------------------------------------------------------------------------
+# Review clips
+# ---------------------------------------------------------------------------
+# A flag fires at the END of the behaviour, so footage is buffered continuously
+# and the clip is cut from BEFORE the trigger. Recording only from the trigger
+# onward would capture the aftermath and miss the event.
+#
+# Clips are written ONLY for flags that reached a human. Everything else stays
+# in a memory ring buffer of a few seconds and is never written anywhere.
+clips:
+  enabled: true
+  # Seconds before the trigger. Long enough to contain a 45s dwell? No — and
+  # deliberately not. A reviewer needs to see the behaviour, not the whole
+  # afternoon, and every extra second is more footage of people who did nothing.
+  pre_seconds: 12.0
+  # Seconds after, so the clip shows what happened next.
+  post_seconds: 5.0
+  # Ring-buffer ceiling. A camera running for hours must not slowly eat the
+  # machine it is watching from.
+  max_buffer_mb: 96
+  jpeg_quality: 70
+  # Playback rate of written clips. The pipeline samples at a few frames a
+  # second, so real time would be a slideshow; this plays it back watchably.
+  playback_fps: 6.0
+  output_dir: "clips"
+
+audit:
+  enabled: true
+  sqlite_path: "behavioural_audit.db"
+  jsonl_path: "behavioural_audit.jsonl"
+  # Raw MediaPipe landmark arrays are NOT written by default. The audit needs
+  # the numbers a decision was made from — dwell seconds, crouch ratio, speeds
+  # — and those are always written. A full skeleton track is body-geometry
+  # data with no added audit value, so it stays off unless deliberately
+  # enabled for debugging.
+  store_raw_keypoints: false

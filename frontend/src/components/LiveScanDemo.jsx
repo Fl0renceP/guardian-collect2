@@ -5,6 +5,9 @@ import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const SCAN_INTERVAL_MS = 1500
+// Which camera this stream represents. Echoed back on every scan and carried
+// into behavioural events, so the two signals can be correlated per location.
+const CAMERA_ID = import.meta.env.VITE_CAMERA_ID || 'live_scan_demo'
 const HISTORY_LIMIT = 30
 const MODEL_LABEL = 'Facenet512 / Cosine'
 const MEDIAPIPE_WASM_ROOT =
@@ -340,7 +343,11 @@ export default function LiveScanDemo() {
       return
     }
 
-    const localCrop = captureCrop(video, faceBoxRef.current)
+    // Snapshot the box now, alongside the crop. The detection loop runs on
+    // requestAnimationFrame and will have moved it on by the time the upload
+    // finishes, and the box has to describe the frame we actually send.
+    const faceBox = faceBoxRef.current
+    const localCrop = captureCrop(video, faceBox)
 
     try {
       setIsAnalyzing(true)
@@ -352,6 +359,23 @@ export default function LiveScanDemo() {
 
       const formData = new FormData()
       formData.append('file', blob, 'live_scan.jpg')
+
+      // WHERE the face was, not just that there was one. Without this a match
+      // cannot be attached to a tracked body once two people are in shot, and
+      // the behavioural signal has nothing to fuse with. See
+      // BEHAVIOUR_REVIEW_API.md §1.
+      //
+      // The box is in SOURCE video pixels while the uploaded JPEG is
+      // downscaled, so the source dimensions go with it — the backend
+      // normalises against those, and normalised coordinates are the part that
+      // survives every resolution change between here and the analysis.
+      if (faceBox && video.videoWidth && video.videoHeight) {
+        formData.append('face_box', JSON.stringify(faceBox))
+        formData.append('frame_width', String(video.videoWidth))
+        formData.append('frame_height', String(video.videoHeight))
+      }
+      formData.append('camera_id', CAMERA_ID)
+      formData.append('captured_at', new Date().toISOString())
 
       const response = await fetch(`${API_BASE_URL}/api/v1/scan-face`, {
         method: 'POST',
@@ -397,6 +421,11 @@ export default function LiveScanDemo() {
         liveCrop: localCrop,
         latencyMs: durationMs,
         stageTiming: data?.timings_ms || null,
+        // Echoed back by the backend. This is what a behavioural track gets
+        // joined on — displayed so the round-trip is visible while wiring it.
+        faceBoxNormalised: data?.face_box_normalised || null,
+        faceBoxCentre: data?.face_box_centre || null,
+        cameraId: data?.camera_id || null,
       }
 
       setDbImageBroken(false)
@@ -605,6 +634,19 @@ export default function LiveScanDemo() {
             <div className="ls-kv"><span>Status</span><span>{(matchResult?.status || 'unknown').toUpperCase()}</span></div>
             <div className="ls-kv"><span>Pose</span><span>{matchResult?.poseLabel || '-'}</span></div>
             <div className="ls-kv"><span>Round trip</span><span>{roundtripMs ?? '--'} ms</span></div>
+            <div className="ls-kv">
+              <span>Camera</span><span>{matchResult?.cameraId || '--'}</span>
+            </div>
+            <div className="ls-kv">
+              <span title="Face position as a fraction of the frame — what a behavioural body-track is joined on.">
+                Face position
+              </span>
+              <span>
+                {matchResult?.faceBoxCentre
+                  ? `centre ${matchResult.faceBoxCentre.x.toFixed(3)}, ${matchResult.faceBoxCentre.y.toFixed(3)}`
+                  : '--'}
+              </span>
+            </div>
             <div className="ls-kv"><span>Server stages</span><span>{matchResult?.stageTiming ? JSON.stringify(matchResult.stageTiming) : '--'}</span></div>
           </div>
         </div>

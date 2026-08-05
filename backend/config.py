@@ -41,6 +41,16 @@ class Config:
     # Per-file upload ceiling; Flask enforces the request total separately.
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_MB", "64")) * 1024 * 1024
 
+    # Behavioural review clips. Private container, same rules as claim media:
+    # never public, SAS generated per read, signed URLs never persisted.
+    # Footage of people outside their homes is at least as sensitive as a claim
+    # photo, and unlike a claim it was captured without anyone asking first.
+    BEHAVIOUR_CLIP_CONTAINER = _clean(os.getenv("BEHAVIOUR_CLIP_CONTAINER", "behaviour-clips"))
+    BEHAVIOUR_CLIP_SAS_MINUTES = int(os.getenv("BEHAVIOUR_CLIP_SAS_MINUTES", "30"))
+    # Clips are deleted once they are older than this. A review that nobody has
+    # opened in a fortnight does not justify keeping video of a bystander.
+    BEHAVIOUR_CLIP_RETENTION_DAYS = int(os.getenv("BEHAVIOUR_CLIP_RETENTION_DAYS", "14"))
+
     # 3. DeepFace Model Configuration
     # Options: "Facenet" (128-dim), "Facenet512" (512-dim), "ArcFace" (512-dim), "VGG-Face"
     FACE_MODEL = "Facenet512"

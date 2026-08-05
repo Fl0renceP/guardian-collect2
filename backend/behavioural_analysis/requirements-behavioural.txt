@@ -1,0 +1,25 @@
+# Extra dependencies for the behavioural analysis module only.
+#
+# Kept separate from backend/requirements.txt on purpose: the deployed Flask
+# backend serves claims, hot-spots and face scans, and does not need YOLO's
+# torch stack to do any of that. Installing these into the deploy target would
+# add hundreds of megabytes for a module that currently runs from the CLI.
+#
+#     pip install -r requirements-behavioural.txt
+#
+# Verified against Python 3.13.14 on Windows, in backend/.venv.
+
+# Object detection + ByteTrack multi-object tracking.
+# Pulls in torch, torchvision, matplotlib and lap (the tracker's assignment solver).
+ultralytics>=8.4.0
+
+# Skeletal keypoints.
+# NOTE: 1.0 removed the legacy `mp.solutions.pose` API — this module uses the
+# Tasks API (mediapipe.tasks.python.vision.PoseLandmarker), which downloads a
+# ~6MB .task model bundle on first run into behavioural_analysis/models/.
+mediapipe>=1.0.0
+
+# Already present in backend/requirements.txt, listed so this file stands alone:
+opencv-python>=4.8
+numpy>=1.24
+PyYAML>=6.0

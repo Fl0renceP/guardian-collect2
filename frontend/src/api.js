@@ -66,6 +66,24 @@ export const api = {
     }),
   suburbs: (q) => request(`/api/suburbs${qs({ q })}`),
 
+  // --- behavioural analysis ---
+  // Read-only for now. Confirm/deny is step 4 of BEHAVIOUR_REVIEW_API.md and
+  // deliberately has no client here yet — there is nothing to call.
+  behaviourQueue: (params) => request(`/api/v1/behaviour/review-queue${qs(params)}`),
+  behaviourReview: (id) =>
+    request(`/api/v1/behaviour/review-queue/${encodeURIComponent(id)}`),
+  behaviourHistory: (id) =>
+    request(`/api/v1/behaviour/review-queue/${encodeURIComponent(id)}/history`),
+  // reviewer_id is supplied by session.jsx and trusted by the API. On an
+  // identification decision that field is the audit trail's only signature —
+  // see the note in BEHAVIOUR_REVIEW_API.md §6.
+  behaviourDecide: (id, decision, payload) =>
+    request(`/api/v1/behaviour/review-queue/${encodeURIComponent(id)}/${decision}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+
   // --- crime prevention units ---
   alerts: (params) => request(`/api/alerts${qs(params)}`),
   patrolPlan: (payload) =>

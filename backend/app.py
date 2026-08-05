@@ -14,6 +14,7 @@ from flask_cors import CORS
 
 from config import Config
 
+from routes.behaviour_routes import behaviour_bp
 from routes.claim_routes import claim_bp
 from routes.cpu_routes import cpu_bp
 from routes.health_routes import health_bp
@@ -185,6 +186,7 @@ def create_app(config_object=Config):
     app.register_blueprint(user_bp)
     app.register_blueprint(safety_bp)
     app.register_blueprint(member_score_bp)
+    app.register_blueprint(behaviour_bp)
 
     @app.route("/demos", methods=["GET"])
     def demos_page():
@@ -241,11 +243,23 @@ def create_app(config_object=Config):
 
         image_bytes = file.read()
         request_started = time.perf_counter()
+
+        # Optional per-frame context. All fields are optional, so a caller that
+        # sends none of them gets exactly the previous behaviour. When a face
+        # box IS supplied it is echoed back normalised, which is what lets the
+        # behavioural module work out which tracked body this face belongs to
+        # (see BEHAVIOUR_REVIEW_API.md §1).
+        from services.frame_context import build_frame_context
+
+        frame_context = build_frame_context(request.form)
+
         logger.info(
-            "scan-face request received: filename=%s bytes=%s remote=%s",
+            "scan-face request received: filename=%s bytes=%s remote=%s camera=%s face_box=%s",
             file.filename,
             len(image_bytes),
             request.remote_addr,
+            frame_context["camera_id"],
+            "yes" if frame_context["face_box"] else "no",
         )
         try:
             conn = get_db_connection()
@@ -267,6 +281,18 @@ def create_app(config_object=Config):
                 return jsonify(result[0]), result[1]
 
             result = _attach_face_alert(result)
+            result.update(frame_context)
+
+            # THE JOIN. With a face box and a camera we can ask which tracked
+            # body that face was inside, and attach this match to it. The
+            # correlator refuses whenever it is not sure — no body tracking at
+            # that moment, the face outside every box, or two people too close
+            # to tell apart — because a wrong join puts one person's identity on
+            # another person's behaviour, which is worse than no match at all.
+            if frame_context.get("face_box_centre"):
+                from services.behaviour_track_service import correlate_scan
+
+                result["behavioural_link"] = correlate_scan(conn, result, frame_context)
             total_ms = round((time.perf_counter() - request_started) * 1000, 2)
             result["request_timing_ms"] = total_ms
             logger.info(

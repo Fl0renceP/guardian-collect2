@@ -1,0 +1,209 @@
+# Guardian Collective — DEMO configuration for the short sample clips
+#
+# ===========================================================================
+# THIS IS NOT THE OPERATING CONFIGURATION. USE config.yaml FOR THAT.
+# ===========================================================================
+# The sample clips are 18-33 seconds long. config.yaml's real thresholds ask
+# for a 45-second dwell before it will even look at loitering, which is correct
+# for a real camera and impossible to demonstrate on a 20-second clip.
+#
+# This file keeps the identical structure and every safeguard, and shortens the
+# DURATION thresholds so the mechanism can be seen working inside a clip. Where
+# a number differs from config.yaml the real value is noted beside it.
+#
+# The zones below are traced onto sample clip 2
+# ("WhatsApp Video 2026-08-05 at 16.30.34 (2).mp4", 848x480) — the one with a
+# person walking toward the camera. They will NOT match your other footage:
+# use `python tools/draw_zones.py --source <your clip>` to trace your own.
+
+pipeline:
+  yolo_model: "yolov8n.pt"
+  yolo_confidence: 0.35
+  tracker: "bytetrack.yaml"
+  yolo_imgsz: 640
+  # Stride 3 keeps track continuity better than 6 while still running at a
+  # watchable rate. ByteTrack needs consecutive-ish frames to hold an id.
+  frame_stride: 3
+  history_seconds: 30.0
+  pose_model_complexity: 1
+  pose_min_detection_confidence: 0.4
+  pose_min_tracking_confidence: 0.4
+  landmark_visibility_floor: 0.35
+  # config.yaml: 64 / 24. The people in this clip are 60-100px tall at the far
+  # end of a garden, so the gate is dropped to keep their poses.
+  pose_min_crop_height: 48
+  pose_min_crop_width: 18
+  # config.yaml: 8. Lowered because a short clip at stride 3 gives a track only
+  # a handful of frames before it leaves the shot.
+  min_track_frames: 4
+  baseline_seconds: 1.0
+
+# Zones traced onto the actual scene in sample clip 2: a night-time garden
+# camera looking at a brick perimeter wall (left), a driveway gate (centre
+# right) and a wooden side fence (right), with the garden in the foreground.
+# Retrace these for any other camera:  python tools/draw_zones.py --source <clip>
+zones:
+  # The brick boundary wall running across the frame — the climbing target.
+  - id: "perimeter_wall"
+    type: "vertical_structure"
+    risk: 0.60
+    polygon: [[0.00, 0.52], [0.66, 0.50], [0.66, 0.74], [0.00, 0.77]]
+
+  # The metal driveway gate on the right — the probing target.
+  - id: "driveway_gate"
+    type: "gate"
+    risk: 0.60
+    polygon: [[0.62, 0.50], [0.80, 0.50], [0.80, 0.88], [0.62, 0.88]]
+
+  # Wooden side fence, far right. Also climbable.
+  - id: "side_fence"
+    type: "vertical_structure"
+    risk: 0.55
+    polygon: [[0.79, 0.55], [1.00, 0.55], [1.00, 0.96], [0.79, 0.96]]
+
+  # Inside the property: the ground from the base of the wall forward. The top
+  # edge sits at the wall's foot (~0.65), which is where someone who has come
+  # over it actually stands — measured from the clip, not guessed.
+  - id: "garden"
+    type: "property_boundary"
+    risk: 0.60
+    polygon: [[0.00, 0.66], [0.80, 0.64], [0.80, 1.00], [0.00, 1.00]]
+
+  # The paved area bottom-left, where a car would stand.
+  - id: "parking_bay"
+    type: "vehicle_zone"
+    risk: 0.55
+    polygon: [[0.00, 0.80], [0.26, 0.78], [0.26, 1.00], [0.00, 1.00]]
+
+  # The bias guard, switched on so it is visible in the demo as a green overlay:
+  # the garden bench. Sitting on a bench for ten minutes is what benches are
+  # for, so loitering is never evaluated inside this polygon.
+  - id: "garden_bench"
+    type: "exempt"
+    risk: 0.0
+    polygon: [[0.26, 0.84], [0.42, 0.84], [0.42, 1.00], [0.26, 1.00]]
+
+heuristics:
+  loitering:
+    enabled: true
+    window_seconds: 60.0
+    dwell_seconds: 3.0          # config.yaml: 45.0
+    min_passes: 2               # config.yaml: 3
+    dwell_speed_max: 0.25
+    dwell_saturation_multiplier: 2.0
+
+  probing:
+    enabled: true
+    window_seconds: 20.0
+    proximity: 0.60
+    approach_speed_min: 0.10    # config.yaml: 0.20
+    pause_seconds: 1.5          # config.yaml: 2.5
+    pause_speed_max: 0.20
+    reach_ratio: 0.55
+    require_reach: false
+
+  climbing:
+    enabled: true
+    window_seconds: 8.0
+    proximity: 0.75
+    min_frames_hands_high: 3    # config.yaml: 4
+    knee_lift_ratio: 0.28
+    limb_asymmetry: 0.15
+    climb_rise_ratio: 0.18
+
+  concealment:
+    enabled: true
+    window_seconds: 15.0
+    face_visibility_min: 0.35
+    yaw_away_degrees: 55.0
+    approach_speed_min: 0.10    # config.yaml: 0.15
+    conceal_seconds: 2.0        # config.yaml: 4.0
+
+  crouched_vehicle:
+    enabled: true
+    window_seconds: 20.0
+    crouch_ratio: 0.72
+    knee_angle_max: 115.0
+    vehicle_proximity: 1.20
+    crouch_seconds: 2.5         # config.yaml: 6.0
+
+  tampering:
+    enabled: true
+    window_seconds: 6.0
+    vehicle_proximity: 1.00
+    amplitude_min: 0.04
+    amplitude_max: 0.35
+    frequency_min: 0.8
+    frequency_max: 4.5
+    min_reversals: 4            # config.yaml: 6
+    body_speed_max: 0.25
+
+  group:
+    enabled: true
+    min_overlap_seconds: 4.0    # config.yaml: 8.0
+    static_speed_max: 0.20
+    lookout_seconds: 4.0        # config.yaml: 10.0
+    min_separation: 2.5
+    scan_yaw_variance: 180.0
+    corroboration_bonus: 1.35
+
+  fleeing:
+    enabled: true
+    window_seconds: 6.0
+    walk_speed_max: 1.60
+    run_speed_min: 3.00
+    accel_window_seconds: 1.50
+    require_away_from_zone: true
+    incident_link_minutes: 20.0
+    incident_link_bonus: 1.30
+
+# Fusion is IDENTICAL to config.yaml. The demo shortens how long a behaviour
+# must last before it counts; it does not change how anything is scored, and it
+# does not weaken a single safeguard.
+fusion:
+  weights:
+    loitering: 0.45
+    perimeter_probing: 0.70
+    climbing_posture: 0.90
+    concealment_approach: 0.65
+    crouched_near_vehicle: 0.70
+    tampering_motion: 0.85
+    group_coordination: 0.60
+    fleeing: 0.55
+  min_trigger_confidence: 0.25
+  zone_weight: 0.20
+  behaviour_weight: 0.50
+  face_weight: 0.35
+  agreement_weight: 0.15
+  face_trust_threshold: 0.60
+  normal_behaviour_ceiling: 0.20
+  benign_behaviour_damping: 0.60
+  behaviour_only_review_threshold: 0.55
+  verified_damping: 0.35
+  review_threshold: 0.50
+
+output:
+  event_cooldown_seconds: 5.0   # config.yaml: 10.0
+  location_zone_id: "demo_camera_01"
+  # Wired to the ingest endpoint (BEHAVIOUR_REVIEW_API.md §3). Events are only
+  # POSTed when --push is passed; without it the module still runs and still
+  # writes its own local audit log, and the backend never hears from it.
+  flask_api_url: "http://localhost:5000/api/v1/behaviour/events"
+  api_timeout_seconds: 5.0
+
+# Review clips. Same behaviour as config.yaml; shorter pre-roll because
+# these configs are for short clips and live demos.
+clips:
+  enabled: true
+  pre_seconds: 8.0            # config.yaml: 12.0
+  post_seconds: 4.0           # config.yaml: 5.0
+  max_buffer_mb: 96
+  jpeg_quality: 70
+  playback_fps: 6.0
+  output_dir: "clips"
+
+audit:
+  enabled: true
+  sqlite_path: "behavioural_audit.db"
+  jsonl_path: "behavioural_audit.jsonl"
+  store_raw_keypoints: false

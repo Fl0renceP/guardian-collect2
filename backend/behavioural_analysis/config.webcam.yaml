@@ -1,0 +1,209 @@
+# Guardian Collective — WEBCAM configuration (live demo)
+#
+# ===========================================================================
+# NOT THE OPERATING CONFIGURATION. See config.yaml for that.
+# ===========================================================================
+# For acting the behaviours out in front of a laptop camera. On a webcam you
+# are large and well-lit, so MediaPipe resolves a full skeleton — which means
+# the four pose-based heuristics (climbing, concealment, crouch, tampering)
+# can actually demonstrate themselves, unlike on distant night footage.
+#
+# Durations are shortened so a behaviour shows in seconds rather than minutes.
+# Every safeguard, weight and fusion rule is unchanged from config.yaml.
+#
+# ZONES ARE GENERIC BANDS, not a real property. They divide the camera's view
+# into thirds so each heuristic has something to trigger against:
+#
+#     +----------------------------------------------------+
+#     |                  (upper frame)                      |
+#     |  WALL band   |   GATE band   |    VEHICLE band      |
+#     |  (left 35%)  |   (centre)    |    (right 40%)       |
+#     |----------------------------------------------------|
+#     |         PROPERTY band (lower half, full width)      |
+#     |  bench (exempt, bottom-left corner)                 |
+#     +----------------------------------------------------+
+#
+# WHAT TO DO IN FRONT OF THE CAMERA:
+#   loitering    — stand still, centre frame, ~4 seconds
+#   climbing     — stand at the LEFT of frame, raise both hands above your
+#                  shoulders, lift one knee
+#   tampering    — stand at the RIGHT of frame, hold still, and jiggle one
+#                  hand back and forth (about twice a second)
+#   crouch       — walk side to side first (that teaches the system YOUR
+#                  standing height), then crouch down on the RIGHT
+#   concealment  — cover your face or turn away, and walk toward the camera
+#   probing      — walk to the CENTRE, stop, and reach a hand forward
+
+pipeline:
+  yolo_model: "yolov8n.pt"
+  yolo_confidence: 0.35
+  tracker: "bytetrack.yaml"
+  yolo_imgsz: 640
+  # A live camera is wall-clock timed, so stride sets how much reality is
+  # sampled. 2 keeps it responsive on a CPU without losing track continuity.
+  frame_stride: 2
+  history_seconds: 30.0
+  pose_model_complexity: 1
+  pose_min_detection_confidence: 0.4
+  pose_min_tracking_confidence: 0.4
+  landmark_visibility_floor: 0.35
+  # You fill the frame on a webcam, so the crop gate can stay at the real value.
+  pose_min_crop_height: 64
+  pose_min_crop_width: 24
+  min_track_frames: 4         # config.yaml: 8
+  baseline_seconds: 1.0
+
+zones:
+  # Left band — the "wall" to raise your hands against.
+  - id: "wall_left"
+    type: "vertical_structure"
+    risk: 0.50
+    polygon: [[0.00, 0.10], [0.35, 0.10], [0.35, 1.00], [0.00, 1.00]]
+
+  # Centre band — the "gate" to walk up to and pause at.
+  - id: "gate_centre"
+    type: "gate"
+    risk: 0.50
+    polygon: [[0.36, 0.25], [0.62, 0.25], [0.62, 1.00], [0.36, 1.00]]
+
+  # Right band — the "vehicle" to crouch beside and work at.
+  - id: "vehicle_right"
+    type: "vehicle_zone"
+    risk: 0.55
+    polygon: [[0.63, 0.15], [1.00, 0.15], [1.00, 1.00], [0.63, 1.00]]
+
+  # Lower half — "inside the property", for loitering and approach.
+  - id: "property_area"
+    type: "property_boundary"
+    risk: 0.50
+    polygon: [[0.00, 0.55], [1.00, 0.55], [1.00, 1.00], [0.00, 1.00]]
+
+  # The bias guard, visible in green: stand in the bottom-left corner and
+  # loitering will refuse to fire, however long you stay there.
+  - id: "bench_exempt"
+    type: "exempt"
+    risk: 0.0
+    polygon: [[0.00, 0.86], [0.18, 0.86], [0.18, 1.00], [0.00, 1.00]]
+
+heuristics:
+  loitering:
+    enabled: true
+    window_seconds: 60.0
+    dwell_seconds: 4.0          # config.yaml: 45.0
+    min_passes: 2               # config.yaml: 3
+    dwell_speed_max: 0.25
+    dwell_saturation_multiplier: 2.0
+
+  probing:
+    enabled: true
+    window_seconds: 20.0
+    proximity: 0.80             # config.yaml: 0.60
+    approach_speed_min: 0.08    # config.yaml: 0.20
+    pause_seconds: 1.5          # config.yaml: 2.5
+    pause_speed_max: 0.25
+    reach_ratio: 0.50
+    require_reach: false
+
+  climbing:
+    enabled: true
+    window_seconds: 8.0
+    proximity: 1.00             # config.yaml: 0.75
+    min_frames_hands_high: 3    # config.yaml: 4
+    knee_lift_ratio: 0.30
+    limb_asymmetry: 0.12        # config.yaml: 0.15
+    climb_rise_ratio: 0.18
+
+  concealment:
+    enabled: true
+    window_seconds: 15.0
+    face_visibility_min: 0.35
+    yaw_away_degrees: 55.0
+    approach_speed_min: 0.08    # config.yaml: 0.15
+    conceal_seconds: 2.0        # config.yaml: 4.0
+
+  crouched_vehicle:
+    enabled: true
+    window_seconds: 20.0
+    crouch_ratio: 0.75          # config.yaml: 0.72
+    knee_angle_max: 115.0
+    vehicle_proximity: 1.50     # config.yaml: 1.20
+    crouch_seconds: 2.0         # config.yaml: 6.0
+
+  tampering:
+    enabled: true
+    window_seconds: 6.0
+    vehicle_proximity: 1.50     # config.yaml: 1.00
+    amplitude_min: 0.02         # config.yaml: 0.04
+    amplitude_max: 0.50         # config.yaml: 0.35
+    frequency_min: 0.5          # config.yaml: 0.8
+    frequency_max: 5.0
+    min_reversals: 4            # config.yaml: 6
+    body_speed_max: 0.30
+
+  group:
+    enabled: true
+    min_overlap_seconds: 4.0
+    static_speed_max: 0.20
+    lookout_seconds: 4.0
+    min_separation: 1.5         # config.yaml: 2.5 — a room is small
+    scan_yaw_variance: 180.0
+    corroboration_bonus: 1.35
+
+  fleeing:
+    enabled: true
+    window_seconds: 6.0
+    walk_speed_max: 1.60
+    run_speed_min: 2.50         # config.yaml: 3.00 — no room to sprint indoors
+    accel_window_seconds: 1.50
+    require_away_from_zone: false   # config.yaml: true — every direction is a zone here
+    incident_link_minutes: 20.0
+    incident_link_bonus: 1.30
+
+# Identical to config.yaml. The demo changes how LONG a behaviour must last,
+# never how it is scored.
+fusion:
+  weights:
+    loitering: 0.45
+    perimeter_probing: 0.70
+    climbing_posture: 0.90
+    concealment_approach: 0.65
+    crouched_near_vehicle: 0.70
+    tampering_motion: 0.85
+    group_coordination: 0.60
+    fleeing: 0.55
+  min_trigger_confidence: 0.25
+  zone_weight: 0.20
+  behaviour_weight: 0.50
+  face_weight: 0.35
+  agreement_weight: 0.15
+  face_trust_threshold: 0.60
+  normal_behaviour_ceiling: 0.20
+  benign_behaviour_damping: 0.60
+  behaviour_only_review_threshold: 0.55
+  verified_damping: 0.35
+  review_threshold: 0.50
+
+output:
+  event_cooldown_seconds: 6.0
+  location_zone_id: "webcam_demo"
+  # Wired to the ingest endpoint (BEHAVIOUR_REVIEW_API.md §3). Still only POSTs
+  # when --push is passed, so a plain run stays local.
+  flask_api_url: "http://localhost:5000/api/v1/behaviour/events"
+  api_timeout_seconds: 5.0
+
+# Review clips. Same behaviour as config.yaml; shorter pre-roll because
+# these configs are for short clips and live demos.
+clips:
+  enabled: true
+  pre_seconds: 8.0            # config.yaml: 12.0
+  post_seconds: 4.0           # config.yaml: 5.0
+  max_buffer_mb: 96
+  jpeg_quality: 70
+  playback_fps: 6.0
+  output_dir: "clips"
+
+audit:
+  enabled: true
+  sqlite_path: "behavioural_audit.db"
+  jsonl_path: "behavioural_audit.jsonl"
+  store_raw_keypoints: false

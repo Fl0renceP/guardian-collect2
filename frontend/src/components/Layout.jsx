@@ -20,11 +20,13 @@ const NAV_BY_ROLE = {
     { to: '/', label: 'Hot-spots', end: true },
     { to: '/live-scan', label: 'Live scan' },
     { to: '/review', label: 'Review queue', badge: 'pending' },
+    { to: '/behaviour-review', label: 'Behaviour review' },
   ],
   cpu: [
     { to: '/', label: 'Hot-spots', end: true },
     { to: '/live-scan', label: 'Live scan' },
     { to: '/alerts', label: 'Alerts', badge: 'alerts' },
+    { to: '/behaviour-review', label: 'Behaviour review' },
     { to: '/patrol', label: 'Patrol planning' },
   ],
 }
