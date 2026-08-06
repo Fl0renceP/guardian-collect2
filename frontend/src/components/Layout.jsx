@@ -22,13 +22,10 @@ const NAV_BY_ROLE = {
     { to: '/my-claims', label: 'My claims' },
     { to: '/profile', label: 'Profile' },
   ],
-  // Behaviour review sits directly after Live scan in both: the two are the
-  // same act seen twice — the face signal, then what the person was doing —
-  // and reading them in that order is how the fusion is meant to be understood.
-  // Members do not get this tab. BEHAVIOUR_REVIEW_API.md §6: a behavioural flag
-  // is unconfirmed by definition, and members see confirmed `offender` matches
-  // only. Putting maybes in front of residents is the alarm fatigue the routing
-  // rule exists to prevent.
+  // Behaviour review sits directly after Live scan on every role: the two are
+  // the same act seen twice — who the face module thinks this is, then what
+  // that person was doing — and reading them in that order is how the filter is
+  // meant to be understood.
   employee: [
     { to: '/', label: 'Hot-spots', end: true },
     { to: '/live-scan', label: 'Live scan' },

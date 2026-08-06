@@ -189,9 +189,13 @@ def record_event(event, db_conn):
         inserted = cursor.fetchone() is not None
 
         review_id = None
-        if event["requires_human_review"]:
-            # Only events that reached the threshold open a review. The rest are
-            # kept as the denominator, not shown to anyone.
+        escalate, gate_reason, gate_context = escalation_gate(cursor, event)
+
+        if escalate:
+            # Reaching a human takes BOTH: behaviour over the threshold, and an
+            # already-flagged high-risk identity on that body. Everything else
+            # is stored as the denominator — it is what measures how much the
+            # filter suppresses, which is the only evidence the filter works.
             cursor.execute(
                 """
                 INSERT INTO behavioural_reviews (event_id)
@@ -215,16 +219,24 @@ def record_event(event, db_conn):
     db_conn.commit()
 
     logger.info(
-        "behavioural event %s stored (new=%s) track=%s composite=%.2f review=%s",
+        "behavioural event %s stored (new=%s) track=%s composite=%.2f review=%s gate=%s",
         event["event_id"], inserted, event["track_id"],
-        event["composite_risk_score"], review_id or "none",
+        event["composite_risk_score"], review_id or "none", gate_reason,
     )
 
     return {
         "event_id": event["event_id"],
         "review_id": review_id,
-        "queued_for_review": bool(event["requires_human_review"]),
+        "queued_for_review": bool(review_id),
         "duplicate": not inserted,
+        # Why this event did or did not reach a human. A suppressed event that
+        # cannot say why it was suppressed is indistinguishable from a bug.
+        "escalation": {
+            "escalated": bool(review_id),
+            "reason": gate_reason,
+            "behaviour_would_flag": bool(event["requires_human_review"]),
+            "identity": gate_context,
+        },
     }
 
 
@@ -343,6 +355,71 @@ _IDENTITY_JOIN = f"""
     LEFT JOIN persons lp ON lp.id = l.person_id
 """
 
+# --- the conditional filter -------------------------------------------------
+#
+# Behaviour is NOT a second detector running in parallel with face recognition.
+# Run that way it produces a flag for every person who stands still too long,
+# which on a busy camera is most of them, and a queue of those is a queue nobody
+# reads. It works as a CONDITIONAL FILTER: it narrows an already-flagged
+# high-risk context, and it escalates nothing on its own.
+#
+# So an event opens a review only where a face match of a high-risk label is
+# already attached to that body. Unusual movement by someone unmatched, or by a
+# known resident, is recorded and not escalated.
+#
+# WHAT THIS GIVES UP, STATED PLAINLY: the false-negative catch. The original
+# design escalated strong behaviour with no face match precisely because that is
+# the case facial recognition cannot cover — a covered face, or someone not in
+# the registry. Under this rule that person reaches nobody. The gain is that a
+# face match alone no longer escalates either: ordinary movement suppresses it.
+# That trade is the point of the filter framing, and it is a product decision
+# rather than a technical one, so it lives here where it can be found and argued
+# with rather than buried in a threshold.
+HIGH_RISK_LABELS = ("offender", "suspect")
+
+
+def escalation_gate(cursor, event):
+    """Should this event reach a human? Returns (escalate, reason, context).
+
+    `reason` is written into the ingest response so a suppressed event says why
+    it was suppressed. A filter that silently drops things cannot be tuned.
+    """
+    if not event["requires_human_review"]:
+        return False, "behaviour_below_threshold", None
+
+    cursor.execute(
+        f"""
+        SELECT l.person_id, l.label, l.confidence, p.full_name
+        FROM behavioural_face_links l
+        LEFT JOIN persons p ON p.id = l.person_id
+        WHERE l.camera_id = %s
+          AND l.track_id = %s
+          AND l.scan_captured_at IS NOT NULL
+          AND ABS(EXTRACT(EPOCH FROM (l.scan_captured_at - %s::timestamptz)))
+              <= {LINK_VALIDITY_MINUTES} * 60
+        """,
+        (event["camera_id"], event["track_id"], event["occurred_at"]),
+    )
+    link = cursor.fetchone()
+
+    if link is None:
+        return False, "no_identity_attached", None
+
+    person_id, label, confidence, full_name = link
+    context = {
+        "person_id": str(person_id) if person_id else None,
+        "full_name": full_name,
+        "label": label,
+        "confidence": confidence,
+    }
+
+    if label not in HIGH_RISK_LABELS:
+        # A known resident behaving oddly at their own house is the textbook
+        # false positive this filter exists to swallow.
+        return False, f"identity_not_high_risk ({label})", context
+
+    return True, f"high_risk_identity_confirmed ({label})", context
+
 
 def list_reviews(db_conn, *, status="pending", camera_id=None, limit=50):
     """The review queue: one row per event that reached a human."""
@@ -419,6 +496,45 @@ def list_reviews(db_conn, *, status="pending", camera_id=None, limit=50):
     }
 
 
+def _reference_photo(cursor, person_id):
+    """The registry photo for a matched person, signed for reading now.
+
+    This is the picture a reviewer compares against the footage, so it comes
+    from the enrolment record rather than from anything the camera captured —
+    the whole question being asked is whether the person on camera is the person
+    in the registry, and answering it with two frames of the same camera would
+    be circular.
+
+    Signed per read and short-lived, like every other face image here. Never
+    stored on the review.
+    """
+    if not person_id:
+        return None
+
+    cursor.execute(
+        """
+        SELECT image_url FROM person_faces
+        WHERE person_id = %s AND image_url IS NOT NULL
+        ORDER BY quality_score DESC NULLS LAST, created_at ASC
+        LIMIT 1
+        """,
+        (person_id,),
+    )
+    row = cursor.fetchone()
+    if not row or not row[0]:
+        return None
+
+    try:
+        from services.recognition import _readable_face_url
+
+        return _readable_face_url(row[0])
+    except Exception:
+        # An unsigned URL against a private container simply will not load, and
+        # the card handles a missing photo. Better than failing the whole read.
+        logger.warning("Could not sign reference photo for person %s", person_id)
+        return None
+
+
 def get_review(db_conn, review_id):
     """One full review card. Returns None when the id is unknown."""
     with db_conn.cursor() as cursor:
@@ -439,10 +555,11 @@ def get_review(db_conn, review_id):
         )
         row = cursor.fetchone()
 
-    if row is None:
-        return None
+        if row is None:
+            return None
 
-    identity = _identity_block(row[17:28])
+        identity = _identity_block(row[17:28])
+        identity["reference_image_url"] = _reference_photo(cursor, identity.get("person_id"))
 
     return {
         "review_id": row[0],

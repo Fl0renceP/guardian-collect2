@@ -290,6 +290,87 @@ function DecisionTrail({ trail }) {
   )
 }
 
+/* The registry photo of whoever the face module matched, under the footage.
+ *
+ * It sits BELOW the video deliberately. The question a reviewer is answering is
+ * "is the person in this footage the person in this photograph" — putting the
+ * name and face first invites them to read the footage looking for confirmation
+ * of a name they have already been given, which is how a wrong match survives
+ * review. Footage first, then the claim being made about it.
+ */
+function MatchedFace({ identity }) {
+  const [imageFailed, setImageFailed] = useState(false)
+
+  if (!identity?.attached) return null
+
+  const isResident = identity.label === 'verified'
+  const photo = identity.reference_image_url
+
+  return (
+    <div
+      className="card"
+      style={{
+        marginTop: 14,
+        display: 'flex',
+        gap: 12,
+        alignItems: 'flex-start',
+        background: isResident ? 'var(--good-wash)' : 'var(--critical-wash)',
+        borderColor: isResident ? 'var(--good)' : 'var(--critical)',
+      }}
+    >
+      {photo && !imageFailed ? (
+        <img
+          src={photo}
+          alt={`Registry photograph of ${identity.full_name || 'the matched person'}`}
+          onError={() => setImageFailed(true)}
+          style={{
+            width: 96,
+            height: 96,
+            objectFit: 'cover',
+            borderRadius: 'var(--radius-sm)',
+            border: '2px solid var(--hairline)',
+            flexShrink: 0,
+          }}
+        />
+      ) : (
+        <div
+          className="tiny"
+          style={{
+            width: 96,
+            height: 96,
+            display: 'grid',
+            placeItems: 'center',
+            textAlign: 'center',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px dashed var(--hairline)',
+            flexShrink: 0,
+            padding: 6,
+          }}
+        >
+          No photo on file
+        </div>
+      )}
+
+      <div style={{ minWidth: 0 }}>
+        <div className="card-head" style={{ marginBottom: 4 }}>
+          <strong style={{ fontSize: 15 }}>{identity.full_name || 'Matched person'}</strong>
+          <span className={`pill pill-${isResident ? 'approved' : 'denied'}`}>
+            <span className="dot" aria-hidden="true" />
+            {LABEL_TEXT[identity.label] || identity.label}
+          </span>
+        </div>
+        <p className="tiny" style={{ margin: 0 }}>
+          Registry photograph{identity.confidence != null
+            ? ` · facial match ${pct(identity.confidence)}% confident`
+            : ''}
+          . <strong>Compare it against the footage above.</strong> The match is what put this
+          card in front of you; it is not what settles it.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function ReviewDetail({ review, trail, busy, onConfirm, onDeny, onReopen, error }) {
   const { identity, behaviour, decision } = review
   const tone = riskTone(behaviour.composite_risk_score)
@@ -299,10 +380,14 @@ function ReviewDetail({ review, trail, busy, onConfirm, onDeny, onReopen, error 
 
   return (
     <div style={{ marginTop: 14, borderTop: '1px solid var(--hairline)', paddingTop: 14 }}>
-      <h2 style={{ fontSize: 14, margin: '0 0 8px' }}>1 · Identity</h2>
-      <IdentityPanel identity={identity} />
+      {/* Only shown when nothing is attached — which the conditional filter now
+          prevents from reaching the queue at all, so it means a card raised
+          before that rule existed. Kept, because those cards are still real. */}
+      {!identity.attached ? <IdentityPanel identity={identity} /> : null}
 
-      <h2 style={{ fontSize: 14, margin: '18px 0 8px' }}>2 · What they were doing</h2>
+      <h2 style={{ fontSize: 14, margin: identity.attached ? '0 0 8px' : '18px 0 8px' }}>
+        1 · What they were doing
+      </h2>
       <div className="behaviour-split">
         <div>
           <LiveFeed cameraId={review.camera_id} occurredAt={review.occurred_at || review.opened_at} />
@@ -354,34 +439,63 @@ function ReviewDetail({ review, trail, busy, onConfirm, onDeny, onReopen, error 
               </span>
             </div>
           )}
+
+          {/* The face goes under the footage, not above it — see MatchedFace. */}
+          <MatchedFace identity={identity} />
         </div>
 
         <div>
-          <ScoreBar
-            label="Behaviour alone"
-            value={behaviour.behavioural_risk_score}
-            tone={riskTone(behaviour.behavioural_risk_score)}
-          />
-          <ScoreBar
-            label="Face match"
-            value={identity.confidence}
-            tone="accent"
-            absentText="no match"
-          />
-          <ScoreBar label="Composite" value={behaviour.composite_risk_score} tone={tone} />
-
-          <h3 className="tiny" style={{ margin: '14px 0 6px', textTransform: 'uppercase' }}>
-            Why this was flagged
+          {/* The summary leads, because it is the only part of this card a
+              reviewer can disagree with. Scores rank cards; sentences are what
+              a person actually weighs. */}
+          <h3 className="tiny" style={{ margin: '0 0 6px', textTransform: 'uppercase' }}>
+            What was observed
           </h3>
-          {behaviour.triggered_heuristics.map((h) => (
-            <div key={h.type} style={{ marginBottom: 10 }}>
-              <strong style={{ fontSize: 13 }}>
+          {behaviour.triggered_heuristics.map((h, i) => (
+            <div
+              key={h.type}
+              style={{
+                marginBottom: 12,
+                paddingLeft: 10,
+                borderLeft: `3px solid var(--${i === 0 ? riskTone(h.confidence ?? 0) : 'hairline'})`,
+              }}
+            >
+              <strong style={{ fontSize: 14 }}>
                 {HEURISTIC_LABELS[h.type] || h.type}{' '}
                 <span className="tiny" style={{ fontWeight: 400 }}>({pct(h.confidence)}%)</span>
               </strong>
-              <p className="tiny" style={{ margin: '2px 0 0' }}>{h.explanation}</p>
+              <p className="tiny" style={{ margin: '3px 0 0' }}>{h.explanation}</p>
             </div>
           ))}
+
+          {!behaviour.triggered_heuristics?.length ? (
+            <p className="tiny" style={{ marginTop: 0 }}>
+              No heuristic explanation was recorded with this event.
+            </p>
+          ) : null}
+
+          <div style={{ marginTop: 16 }}>
+            <ScoreBar
+              label="Behaviour alone"
+              value={behaviour.behavioural_risk_score}
+              tone={riskTone(behaviour.behavioural_risk_score)}
+            />
+            <ScoreBar
+              label="Face match"
+              value={identity.confidence}
+              tone="accent"
+              absentText="no match"
+            />
+            <ScoreBar label="Composite" value={behaviour.composite_risk_score} tone={tone} />
+          </div>
+
+          {/* Why this card exists at all, given the filter suppresses most. */}
+          <p className="tiny" style={{ margin: '12px 0 0', opacity: 0.85 }}>
+            This reached you because the movement crossed its threshold <em>and</em> the body was
+            already matched to a person flagged as{' '}
+            <strong>{LABEL_TEXT[identity.label]?.toLowerCase() || 'high risk'}</strong>. Movement
+            alone does not open a card, and neither does a face match alone.
+          </p>
         </div>
       </div>
 
@@ -396,7 +510,7 @@ function ReviewDetail({ review, trail, busy, onConfirm, onDeny, onReopen, error 
         </details>
       ) : null}
 
-      <h2 style={{ fontSize: 14, margin: '18px 0 8px' }}>3 · Your decision</h2>
+      <h2 style={{ fontSize: 14, margin: '18px 0 8px' }}>2 · Your decision</h2>
 
       {error ? (
         <div className="banner banner-bad" role="alert" style={{ marginBottom: 10 }}>

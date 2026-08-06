@@ -90,6 +90,30 @@ export const api = {
   behaviourLiveUrl: (cameraId, nonce) =>
     `${BASE_URL}/api/v1/behaviour/live${qs({ camera_id: cameraId, t: nonce })}`,
 
+  // --- behavioural analysis ---
+  behaviourQueue: (params) => request(`/api/v1/behaviour/review-queue${qs(params)}`),
+  behaviourReview: (id) =>
+    request(`/api/v1/behaviour/review-queue/${encodeURIComponent(id)}`),
+  behaviourHistory: (id) =>
+    request(`/api/v1/behaviour/review-queue/${encodeURIComponent(id)}/history`),
+  // reviewer_id is supplied by session.jsx and trusted by the API. On an
+  // identification decision that field is the audit trail's only signature —
+  // see the note in BEHAVIOUR_REVIEW_API.md §6.
+  behaviourDecide: (id, decision, payload) =>
+    request(`/api/v1/behaviour/review-queue/${encodeURIComponent(id)}/${decision}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  // Is a pipeline pushing frames for this camera right now?
+  behaviourLiveStatus: (cameraId) =>
+    request(`/api/v1/behaviour/live/status${qs({ camera_id: cameraId })}`),
+  // Not fetched — this is an MJPEG stream and the consumer is an <img src>.
+  // The cache-buster matters: without it a browser reuses the closed stream
+  // from a previous mount and the feed never restarts.
+  behaviourLiveUrl: (cameraId, nonce) =>
+    `${BASE_URL}/api/v1/behaviour/live${qs({ camera_id: cameraId, t: nonce })}`,
+
   // --- crime prevention units ---
   alerts: (params) => request(`/api/alerts${qs(params)}`),
   patrolPlan: (payload) =>
