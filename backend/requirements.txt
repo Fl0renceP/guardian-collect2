@@ -1,3 +1,7 @@
+# Offline OCR fallback (easyocr) is NOT listed here on purpose — it pulls
+# torch, which adds gigabytes to the deployed image. Plate scanning treats it
+# as optional and reports offline_fallback:false when it is absent. To enable
+# it, install requirements-offline.txt alongside this file.
 absl-py
 astunparse
 azure-ai-vision-imageanalysis>=1.0.0

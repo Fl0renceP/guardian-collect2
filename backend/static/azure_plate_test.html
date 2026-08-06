@@ -222,25 +222,57 @@
       heading = "\u2713 Verified vehicle";
       who = `${esc(data.plate.plate_number)}<span class="badge verified">verified</span>`;
       note = data.message || "Known vehicle matched with verified status.";
+    } else if (success && data.throttled) {
+      cls = "unknown";
+      heading = "Scan paced";
+      note = data.message || "Azure Vision free-tier budget reached for this minute.";
+    } else if (success && !data.plate_detected) {
+      cls = "unknown";
+      heading = "No plate found in image";
+      note = data.message || "No South African plate pattern was found.";
     } else if (success && !data.match_found) {
       cls = "unknown";
       heading = "Plate not in registry";
       note = data.message || "The plate text was read but no registered vehicle matched.";
     }
 
+    // A tolerant match is real information, but it is a guess about one or two
+    // characters — say so rather than presenting it as a confirmed hit.
+    if (hasMatch && data.match_confidence === "probable") {
+      heading = "Probable match — needs confirmation";
+      who += `<span class="badge">probable</span>`;
+    }
+
     const detailsBlock = `
       <div class="card pad">
         <h3>Scan details</h3>
         ${row("Extracted plate text", data.extracted_text)}
+        ${row("As read by OCR", data.raw_text)}
         ${row("Matched plate", hasMatch ? data.plate.plate_number : null)}
         ${row("Owner", hasMatch ? data.plate.owner_name : null)}
         ${row("Status", hasMatch ? plateStatus : "unknown")}
-        ${row("Match type", data.match_type)}
-        ${row("OCR confidence", data.confidence)}
-        ${row("Provider", data.provider)}
+        ${row("Match confidence", data.match_confidence)}
+        ${row("Match reason", (data.match_reason || "").replace(/_/g, " "))}
+        ${row("Reading type", data.detection_kind)}
+        ${row("OCR confidence", typeof data.ocr_confidence === "number"
+              ? Math.round(data.ocr_confidence * 100) + "%" : null)}
+        ${row("Engine", data.engine === "easyocr" ? "EasyOCR (offline fallback)" : data.engine)}
+        ${row("OCR passes used", data.passes_used)}
+        ${row("Azure calls left this minute", data.azure_calls_remaining)}
         ${row("Time taken", elapsed + " s")}
         ${row("HTTP status", httpStatus)}
       </div>`;
+
+    // The point of the whole exercise: everything else written on the vehicle
+    // was read and then deliberately thrown away.
+    const ignored = Array.isArray(data.ignored_text) ? data.ignored_text : [];
+    const ignoredBlock = ignored.length ? `
+      <div class="card pad">
+        <h3>Text ignored as non-plate</h3>
+        <p class="note">Read by OCR, rejected because it does not match a South African
+        plate pattern — vehicle make, model, dealer branding and plate furniture.</p>
+        <p>${ignored.map(t => `<code style="text-decoration:line-through;margin-right:8px">${esc(t)}</code>`).join("")}</p>
+      </div>` : "";
 
     resultEl.innerHTML = `
       <div class="verdict ${cls}">
@@ -249,6 +281,7 @@
         <p class="note">${esc(note)}</p>
       </div>
       ${detailsBlock}
+      ${ignoredBlock}
       <details><summary>Raw response</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre></details>`;
   }
 

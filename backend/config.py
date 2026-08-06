@@ -86,6 +86,34 @@ class Config:
     # a perfectly usable dim photo (91), so no isotropic threshold separates them.
     MIN_BLUR_DIRECTIONAL_RATIO = float(os.getenv("MIN_BLUR_DIRECTIONAL_RATIO", "0.25"))
 
+    # 3c. Licence-plate recognition (Azure AI Vision — Image Analysis READ).
+    AZURE_VISION_ENDPOINT = _clean(os.getenv("AZURE_VISION_ENDPOINT"))
+    AZURE_VISION_KEY = _clean(os.getenv("AZURE_VISION_KEY"))
+
+    # The free F0 tier allows 20 transactions per minute across the whole
+    # subscription and returns 429 past that. A live camera outruns it in
+    # seconds, so calls are metered locally and a refused scan is reported as
+    # pacing rather than an error. 18 not 20: Azure's window will not line up
+    # with ours, and a burst of 429s reads to the user as a broken scanner.
+    AZURE_VISION_RATE_LIMIT_PER_MIN = int(os.getenv("AZURE_VISION_RATE_LIMIT_PER_MIN", "18"))
+
+    # Plate crops are upscaled to this width before being sent. A plate at the
+    # end of a driveway can be 40px wide in the frame; Azure will not resolve
+    # characters at that size, and it rejects anything under 50x50 outright.
+    PLATE_TARGET_WIDTH = int(os.getenv("PLATE_TARGET_WIDTH", "720"))
+    PLATE_MAX_SEND_WIDTH = int(os.getenv("PLATE_MAX_SEND_WIDTH", "1600"))
+    PLATE_JPEG_QUALITY = int(os.getenv("PLATE_JPEG_QUALITY", "92"))
+
+    # How long the plate registry is held in memory. Fuzzy matching needs every
+    # row, and the live loop scans every few seconds — re-reading a seven-row
+    # table per frame buys nothing.
+    PLATE_REGISTRY_TTL_SECONDS = float(os.getenv("PLATE_REGISTRY_TTL_SECONDS", "30"))
+
+    # A second OCR pass (whole frame, unlocalised) only runs when this many
+    # calls remain in the current minute. It exists to cover a bad crop, which
+    # is not worth starving the next ten scans for.
+    PLATE_SECOND_PASS_MIN_BUDGET = int(os.getenv("PLATE_SECOND_PASS_MIN_BUDGET", "8"))
+
     # 4. Claims / hot-spot data
     # Azure Cosmos DB is the source of truth: it's writable, so claims submitted
     # and approved through the app show up on the hot-spot map without a redeploy.

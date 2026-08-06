@@ -90,6 +90,9 @@ export default function PatrolPlan() {
     })
     mapRef.current = map
     layerRef.current = L.layerGroup().addTo(map)
+    // The container can appear after initial effects; force Leaflet to measure
+    // once mounted so tiles and overlays paint reliably.
+    map.invalidateSize()
     return () => {
       map.remove()
       mapRef.current = null
@@ -110,7 +113,7 @@ export default function PatrolPlan() {
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
     }).addTo(map)
     tileRef.current.bringToBack()
-  }, [theme])
+  }, [theme, container])
 
   /* ---------- data ---------- */
   // Planning takes several seconds (one routing call per vehicle), so changing
