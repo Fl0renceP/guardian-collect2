@@ -1,84 +1,69 @@
-import React, { useMemo, useRef, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Webcam from 'react-webcam'
-import { Link } from 'react-router-dom'
-import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision'
+import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const SCAN_INTERVAL_MS = 1500
-const HISTORY_LIMIT = 50
+// Plates get their own cadence because they are gated differently: the face
+// scan only fires when MediaPipe sees a face, so on a frame with a car and no
+// visible driver the face path is idle and the plate path is the only one
+// working. Slower than the face interval because plate OCR costs ~1.2s and
+// there is no point queueing frames the backend cannot reach.
+const PLATE_SCAN_INTERVAL_MS = 2000
+const HISTORY_LIMIT = 30
+// The live half of the reference comparison is refreshed from the local
+// MediaPipe box, not from a scan response, so the tile fills as soon as a face
+// is in frame — including when the backend is unreachable.
+const LIVE_CROP_INTERVAL_MS = 700
 const MODEL_LABEL = 'Facenet512 / Cosine'
-
-// One person standing in front of the camera is one sighting, not forty. The
-// feed scans every 1.5s and now resolves every face at once, so without this the
-// audit log would hold about five seconds of the same handful of people and an
-// operator would never scroll back to a real event. Matches the server-side
-// alert window in spirit; the log is deliberately the shorter of the two.
-const AUDIT_DEDUPE_MS = 30000
-
-// How long the identities from one scan keep annotating the live boxes. Long
-// enough to bridge the gap between scans (plus the round trip), short enough
-// that a name never lingers on a face after the person has walked out.
-const LABEL_TTL_MS = 4500
-// Overlap below which a returned identity is assumed to belong to a different
-// face than the one currently being drawn, and so is not attached to it.
-const MIN_LABEL_IOU = 0.25
-
 const MEDIAPIPE_WASM_ROOT =
   import.meta.env.VITE_MEDIAPIPE_WASM_ROOT || 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+// FaceLandmarker rather than FaceDetector: it returns the same face position
+// AND per-frame blendshapes, which is what the blink check reads. Running a
+// separate detector alongside it would pay for face-finding twice.
 const MEDIAPIPE_MODEL_PATH =
   import.meta.env.VITE_MEDIAPIPE_MODEL_PATH ||
-  'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite'
+  'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task'
 
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+// ---------------------------------------------------------------------------
+// Liveness (build guide §5).
+//
+// A photo held up to the camera does not blink. Tracking eye-closure across
+// frames is the cheapest check that separates a live person from a printed
+// face or a phone screen, and it is the difference between "any face in frame
+// = match" and something defensible.
+//
+// Deliberately NOT a hard gate on scanning: an un-blinked face still gets
+// checked, it is just reported as unverified. Blocking the scan outright would
+// mean a still, staring person — exactly what a doorbell camera catches — goes
+// unrecognised, which is a worse failure than a flagged spoof.
+// ---------------------------------------------------------------------------
+const BLINK_CLOSED_SCORE = 0.45   // above this, the eye counts as shut
+const BLINK_OPEN_SCORE = 0.2      // back below this completes the blink
+const LIVENESS_WINDOW_MS = 12000  // a blink counts as recent for this long
 
-const formatTimestamp = (iso) => {
-  if (!iso) return '-'
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString()
+const LIVENESS = {
+  PENDING: 'pending',
+  LIVE: 'live',
+  UNAVAILABLE: 'unavailable',
 }
 
-const toneForFace = (face) => {
-  if (!face) return 'unknown'
-  if (face.isAlert) return 'alert'
-  if (face.isKnownUser) return 'ok'
-  return 'unknown'
-}
-
-const labelForFace = (face) => {
-  if (!face) return 'UNREGISTERED'
-  if (face.isAlert) return 'FLAGGED'
-  if (face.isKnownUser) return 'RECOGNISED'
-  return 'UNREGISTERED'
-}
-
-// A frame's tone is its worst face: one flagged person among four verified ones
-// is still a flagged person, and the header must not average that away.
-const TONE_SEVERITY = { unknown: 0, ok: 1, alert: 2 }
-const frameTone = (faces) =>
-  faces.reduce((worst, face) => {
-    const tone = toneForFace(face)
-    return TONE_SEVERITY[tone] > TONE_SEVERITY[worst] ? tone : worst
-  }, 'unknown')
-
-const auditTone = (entry) => {
-  const status = (entry?.status || '').toLowerCase()
-  if (status === 'offender' || status === 'suspect' || entry?.isAlert) return 'alert'
-  if (entry?.isKnownUser || status === 'verified') return 'ok'
-  return 'unknown'
-}
-
-const toConfidencePct = (distance) => {
-  if (typeof distance !== 'number') return 0
-  return clamp(Math.round((1 - distance / 0.6) * 100), 0, 100)
-}
-
-const parsePoseFromUrl = (url) => {
-  if (!url) return '-'
-  const name = url.split('/').pop() || ''
-  const stripped = name.replace(/\.[a-zA-Z0-9]+$/, '')
-  const parts = stripped.split('_').filter(Boolean)
-  return parts.length < 2 ? '-' : parts.slice(1).join(' ')
-}
+// ---------------------------------------------------------------------------
+// Multiple faces.
+//
+// The backend resolves every face in the frame, so the overlay has to as well —
+// otherwise a group walks past and the screen marks one of them. The landmarker
+// gives no stable id across frames, so identities returned by a scan are
+// re-attached to whatever is on screen now by box overlap, every frame.
+//
+// Liveness stays on the largest face only. Blink tracking is a per-face state
+// machine and MediaPipe's face order is not stable between frames, so spreading
+// it across N faces would report blinks against whoever happened to be at that
+// index. Whose blink vouches for a frame is a real design question, not a loop.
+// ---------------------------------------------------------------------------
+const MAX_TRACKED_FACES = 8
+const LABEL_TTL_MS = 4500   // how long a scan's identities keep annotating boxes
+const MIN_LABEL_IOU = 0.25  // below this, the identity belongs to another face
 
 const boxIoU = (a, b) => {
   if (!a || !b) return 0
@@ -91,11 +76,99 @@ const boxIoU = (a, b) => {
   return inter / (a.w * a.h + b.w * b.h - inter)
 }
 
-// One frozen frame, kept as a canvas as well as a blob. The crops have to come
-// from the exact image the server saw: cropping the live video instead would
-// use whatever the subjects are doing a round trip later, which in a group is
-// reliably the wrong faces in the wrong places.
-const captureFrameSnapshot = (video, quality = 0.72, maxWidth = 720) => {
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+
+const formatTimestamp = (iso) => {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString()
+}
+
+const formatClock = (iso) => {
+  if (!iso) return null
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleTimeString()
+}
+
+// ---------------------------------------------------------------------------
+// The four-state status system (design spec §7).
+//
+// Every result on this screen — face or plate — resolves to exactly one of
+// these. It is the single semantic language of the page: the user learns the
+// traffic light once and reads both panels the same way. Anything that needs a
+// fifth state is a design change, not a local special case.
+// ---------------------------------------------------------------------------
+const STATE = {
+  SCANNING: 'scanning',
+  UNKNOWN: 'unknown',
+  ALERT: 'alert',
+  CLEAR: 'clear',
+}
+
+// Registry status -> screen state. The registry owns the vocabulary; this map
+// is the only place it is translated, so a new registry status needs one line
+// here rather than a redesign.
+const registryStateFor = (status) => {
+  const s = (status || '').toLowerCase()
+  if (s === 'offender' || s === 'suspect') return STATE.ALERT
+  if (s === 'verified') return STATE.CLEAR
+  return STATE.UNKNOWN
+}
+
+// ---------------------------------------------------------------------------
+// Reference URLs are SAS-signed, so everything from the '?' on is a token.
+// Strip it before parsing or the entire signature gets rendered on screen.
+// ---------------------------------------------------------------------------
+const parsePoseFromUrl = (url) => {
+  if (!url) return '-'
+  const path = String(url).split(/[?#]/)[0]
+  let name = path.split('/').pop() || ''
+  try {
+    name = decodeURIComponent(name)
+  } catch {
+    // Leave the raw segment if it is not valid percent-encoding.
+  }
+  const stripped = name.replace(/\.[a-zA-Z0-9]+$/, '')
+  const parts = stripped.split('_').filter(Boolean)
+  return parts.length < 2 ? '-' : parts.slice(1).join(' ')
+}
+
+// Per-stage server timings, for the System status panel only. JSON.stringify
+// dumps an unreadable blob into a table cell.
+const formatStageTiming = (timings) => {
+  if (!timings || typeof timings !== 'object') return '--'
+  const parts = Object.entries(timings)
+    .filter(([, v]) => typeof v === 'number')
+    .map(([k, v]) => `${k.replace(/_/g, ' ')} ${Math.round(v)}ms`)
+  return parts.length ? parts.join(' · ') : '--'
+}
+
+const toConfidencePct = (distance) => {
+  if (typeof distance !== 'number') return 0
+  return clamp(Math.round((1 - distance / 0.6) * 100), 0, 100)
+}
+
+const captureCrop = (video, bbox) => {
+  if (!video || !bbox || !video.videoWidth || !video.videoHeight) return null
+
+  const padX = bbox.w * 0.2
+  const padY = bbox.h * 0.25
+  const sx = clamp(Math.floor(bbox.x - padX), 0, video.videoWidth - 1)
+  const sy = clamp(Math.floor(bbox.y - padY), 0, video.videoHeight - 1)
+  const ex = clamp(Math.ceil(bbox.x + bbox.w + padX), 1, video.videoWidth)
+  const ey = clamp(Math.ceil(bbox.y + bbox.h + padY), 1, video.videoHeight)
+  const sw = Math.max(1, ex - sx)
+  const sh = Math.max(1, ey - sy)
+
+  const c = document.createElement('canvas')
+  c.width = 180
+  c.height = 180
+  const g = c.getContext('2d')
+  g.drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height)
+  return c.toDataURL('image/jpeg', 0.8)
+}
+
+const captureFrameBlob = (video, quality = 0.72, maxWidth = 720) => {
   if (!video || !video.videoWidth || !video.videoHeight) return Promise.resolve(null)
 
   const ratio = Math.min(1, maxWidth / video.videoWidth)
@@ -105,39 +178,39 @@ const captureFrameSnapshot = (video, quality = 0.72, maxWidth = 720) => {
   const c = document.createElement('canvas')
   c.width = width
   c.height = height
-  c.getContext('2d').drawImage(video, 0, 0, width, height)
+  const g = c.getContext('2d')
+  g.drawImage(video, 0, 0, width, height)
 
   return new Promise((resolve) => {
-    c.toBlob(
-      (blob) => resolve(blob ? { blob, canvas: c, width, height } : null),
-      'image/jpeg',
-      quality
-    )
+    c.toBlob((blob) => resolve(blob), 'image/jpeg', quality)
   })
 }
 
-const cropFromCanvas = (source, bbox) => {
-  if (!source || !bbox || !bbox.w || !bbox.h) return null
-
-  const padX = bbox.w * 0.2
-  const padY = bbox.h * 0.25
-  const sx = clamp(Math.floor(bbox.x - padX), 0, source.width - 1)
-  const sy = clamp(Math.floor(bbox.y - padY), 0, source.height - 1)
-  const ex = clamp(Math.ceil(bbox.x + bbox.w + padX), 1, source.width)
-  const ey = clamp(Math.ceil(bbox.y + bbox.h + padY), 1, source.height)
-  const sw = Math.max(1, ex - sx)
-  const sh = Math.max(1, ey - sy)
-
-  const c = document.createElement('canvas')
-  c.width = 180
-  c.height = 180
-  c.getContext('2d').drawImage(source, sx, sy, sw, sh, 0, 0, c.width, c.height)
-  return c.toDataURL('image/jpeg', 0.8)
+// The video is rendered with object-fit: cover, so it is scaled uniformly and
+// centre-cropped. Overlay boxes have to undergo the same transform or they sit
+// beside the thing they are meant to be marking. Previously the video used
+// object-fit: fill and the boxes assumed a per-axis stretch, which put every
+// box slightly off whenever the camera's aspect ratio was not exactly 4:3.
+const coverTransform = (srcW, srcH, dstW, dstH) => {
+  if (!srcW || !srcH || !dstW || !dstH) return { scale: 1, offX: 0, offY: 0 }
+  const scale = Math.max(dstW / srcW, dstH / srcH)
+  return {
+    scale,
+    offX: (dstW - srcW * scale) / 2,
+    offY: (dstH - srcH * scale) / 2,
+  }
 }
 
-const drawReticle = (ctx, box, toneClass, caption) => {
-  const color = toneClass === 'alert' ? '#b3261e' : toneClass === 'ok' ? '#186b3c' : '#7a5c00'
-  const dashed = toneClass === 'unknown'
+const STATUS_HEX = {
+  [STATE.SCANNING]: '#E3A438',
+  [STATE.UNKNOWN]: '#7C8299',
+  [STATE.ALERT]: '#E14F4F',
+  [STATE.CLEAR]: '#3FBF7F',
+}
+
+const drawReticle = (ctx, box, state, scorePct, caption) => {
+  const color = STATUS_HEX[state] || STATUS_HEX[STATE.UNKNOWN]
+  const dashed = state === STATE.UNKNOWN || state === STATE.SCANNING
 
   ctx.save()
   ctx.strokeStyle = color
@@ -167,26 +240,49 @@ const drawReticle = (ctx, box, toneClass, caption) => {
   }
 
   ctx.setLineDash([])
-
-  // With several boxes on screen at once, a bare percentage is unreadable — each
-  // reticle has to say who it is. Chip behind the text so a name stays legible
+  // Only the real match confidence is drawn. The landmarker exposes no
+  // detection-confidence score, and a made-up number on the face is worse
+  // than no number.
+  //
+  // With several boxes on screen the number alone is unreadable — each reticle
+  // has to say WHO it is, so a name is drawn on a filled chip that stays legible
   // against a bright shirt or a window.
-  if (caption) {
+  const parts = []
+  if (caption) parts.push(caption)
+  if (typeof scorePct === 'number') parts.push(`${scorePct}%`)
+
+  if (parts.length) {
+    const text = parts.join(' · ')
     ctx.font = '700 12px ui-monospace, SFMono-Regular, Menlo, monospace'
-    const padding = 5
-    const textWidth = ctx.measureText(caption).width
-    const chipH = 18
-    const above = box.y - chipH - 4 >= 0
-    const chipX = clamp(box.x, 0, Math.max(0, ctx.canvas.width - textWidth - padding * 2))
-    const chipY = above ? box.y - chipH - 4 : box.y + 4
 
-    ctx.fillStyle = color
-    ctx.fillRect(chipX, chipY, textWidth + padding * 2, chipH)
-    ctx.fillStyle = '#ffffff'
-    ctx.fillText(caption, chipX + padding, chipY + chipH - 5)
+    if (caption) {
+      const padding = 5
+      const chipH = 18
+      const textW = ctx.measureText(text).width
+      const above = box.y - chipH - 4 >= 0
+      const chipX = clamp(box.x, 0, Math.max(0, ctx.canvas.width - textW - padding * 2))
+      const chipY = above ? box.y - chipH - 4 : box.y + 4
+      ctx.fillStyle = color
+      ctx.fillRect(chipX, chipY, textW + padding * 2, chipH)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillText(text, chipX + padding, chipY + chipH - 5)
+    } else {
+      ctx.fillText(text, box.x, Math.max(14, box.y - 6))
+    }
   }
-
   ctx.restore()
+}
+
+// Status is never colour-only: the word travels with the dot so the screen
+// still reads for colourblind users and in the black-and-white printouts
+// judges take notes on (spec §8).
+function StatusPill({ state, label }) {
+  return (
+    <span className={`ls-pill ls-pill--${state}`}>
+      <i className={`ls-dot${state === STATE.SCANNING ? ' ls-dot--pulse' : ''}`} aria-hidden="true" />
+      {label}
+    </span>
+  )
 }
 
 export default function LiveScanDemo() {
@@ -195,31 +291,54 @@ export default function LiveScanDemo() {
   const detectorRef = useRef(null)
   const lastVideoTimeRef = useRef(-1)
   const lastFrameAtRef = useRef(0)
+  const faceBoxRef = useRef(null)
   const failureCountRef = useRef(0)
   const nextScanAllowedAtRef = useRef(0)
-  // Identities from the most recent scan, in video-pixel coordinates, re-attached
-  // to whatever the detector is seeing right now on every animation frame.
+  const statusBtnRef = useRef(null)
+  // Blink state machine: eyes must go shut and then open again to count.
+  const eyesClosedRef = useRef(false)
+  const lastBlinkAtRef = useRef(0)
+  // Identities from the most recent scan, in video-pixel coordinates. Held in a
+  // ref, not state, so a new face in frame does not rebuild the animation loop.
   const labelsRef = useRef(null)
-  // face key -> when it last earned an audit entry. See AUDIT_DEDUPE_MS.
-  const lastLoggedRef = useRef(new Map())
 
   const [modelState, setModelState] = useState('loading')
   const [modelError, setModelError] = useState('')
   const [backendReady, setBackendReady] = useState(false)
+  const [matchResult, setMatchResult] = useState(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [scanError, setScanError] = useState('')
   const [webcamReady, setWebcamReady] = useState(false)
   const [webcamError, setWebcamError] = useState('')
+  const [hasFaceInFrame, setHasFaceInFrame] = useState(false)
   const [faceCount, setFaceCount] = useState(0)
-  const [fps, setFps] = useState(0)
-  const [memberCount, setMemberCount] = useState(null)
-  const [roundtripMs, setRoundtripMs] = useState(null)
+  // Everyone the last scan resolved, largest first — the panel list.
   const [frameFaces, setFrameFaces] = useState([])
-  const [truncatedFaces, setTruncatedFaces] = useState(0)
-  const [selectedFaceKey, setSelectedFaceKey] = useState(null)
+  const [liveness, setLiveness] = useState(LIVENESS.PENDING)
+  const [blinkCount, setBlinkCount] = useState(0)
+  const [fps, setFps] = useState(null)
+  const [memberCount, setMemberCount] = useState(null)
+  const [liveCrop, setLiveCrop] = useState(null)
+  const [liveCropAt, setLiveCropAt] = useState(null)
+  const [roundtripMs, setRoundtripMs] = useState(null)
   const [history, setHistory] = useState([])
   const [selectedHistoryId, setSelectedHistoryId] = useState(null)
   const [dbImageBroken, setDbImageBroken] = useState(false)
+  const [systemPanelOpen, setSystemPanelOpen] = useState(false)
+  const [videoGeom, setVideoGeom] = useState(null)
+
+  const [plateResult, setPlateResult] = useState(null)
+  const [plateError, setPlateError] = useState('')
+  const [plateSightings, setPlateSightings] = useState([])
+
+  // Face and plate requests are serialised through this. The dev server runs
+  // both concurrently if asked, but they contend for the same CPU — TensorFlow
+  // and EasyOCR each want it — so overlapping them makes both slower than
+  // running them in turn.
+  const scanBusyRef = useRef(false)
+  const plateStreamIdRef = useRef(
+    `livescan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  )
 
   const isModelLoaded = modelState === 'ready'
 
@@ -270,16 +389,15 @@ export default function LiveScanDemo() {
 
         const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_ROOT)
 
-        detectorRef.current = await FaceDetector.createFromOptions(vision, {
+        detectorRef.current = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: MEDIAPIPE_MODEL_PATH,
           },
           runningMode: 'VIDEO',
-          minDetectionConfidence: 0.52,
-          // BlazeFace returns every face it finds — there is no count to raise.
-          // What did limit us was suppression: adjacent people in a group get
-          // overlapping boxes, and the 0.3 default merges the pair into one.
-          minSuppressionThreshold: 0.45,
+          numFaces: MAX_TRACKED_FACES,
+          // The blink check reads eyeBlinkLeft / eyeBlinkRight from here.
+          outputFaceBlendshapes: true,
+          minFaceDetectionConfidence: 0.52,
         })
 
         setModelState('ready')
@@ -296,33 +414,109 @@ export default function LiveScanDemo() {
     }
   }, [])
 
-  // The overlay loop reads identities out of a ref rather than state, so adding
-  // a face to the frame doesn't tear down and rebuild the animation loop.
-  useEffect(() => {
-    let frameId
+  // ------------------------------------------------------------------
+  // Face verdict, expressed in the four-state language.
+  // ------------------------------------------------------------------
+  // Everyone in frame except the one the verdict card already describes.
+  const otherFaces = useMemo(() => frameFaces.filter((f) => !f.isPrimary), [frameFaces])
 
-    const findLabel = (videoBox, now) => {
-      const labels = labelsRef.current
-      if (!labels || now - labels.at > LABEL_TTL_MS) return null
-
-      let best = null
-      let bestScore = MIN_LABEL_IOU
-      for (const face of labels.faces) {
-        const score = boxIoU(videoBox, face.box)
-        if (score > bestScore) {
-          bestScore = score
-          best = face
+  const faceVerdict = useMemo(() => {
+    if (matchResult?.isKnownUser || matchResult?.status) {
+      const state = registryStateFor(matchResult.status)
+      if (state === STATE.ALERT) {
+        return {
+          state,
+          label: 'SUSPECT',
+          name: matchResult.fullName,
+          // The registry owns this copy. Where it has no reason field we say
+          // what we actually know rather than inventing an offence.
+          detail:
+            matchResult.reason ||
+            (matchResult.status ? `Flagged on the registry as ${matchResult.status}` : 'Flagged on the registry'),
         }
       }
-      return best
+      if (state === STATE.CLEAR) {
+        return {
+          state,
+          label: 'RESIDENT',
+          name: matchResult.fullName,
+          detail: matchResult.reason || 'Registered community member',
+        }
+      }
     }
+    if (isAnalyzing) {
+      return { state: STATE.SCANNING, label: 'SCANNING', name: null, detail: 'Checking this face against the registry' }
+    }
+    if (matchResult) {
+      // Name is deliberately not rendered for UNKNOWN (spec §4.2).
+      return { state: STATE.UNKNOWN, label: 'UNKNOWN', name: null, detail: 'Not in the safety registry' }
+    }
+    if (hasFaceInFrame) {
+      return { state: STATE.SCANNING, label: 'SCANNING', name: null, detail: 'Face detected — reading' }
+    }
+    return { state: STATE.UNKNOWN, label: 'NO FACE', name: null, detail: 'Step into frame to begin a scan' }
+  }, [matchResult, isAnalyzing, hasFaceInFrame])
+
+  // ------------------------------------------------------------------
+  // Plate verdict, same four states so both panels read identically.
+  // ------------------------------------------------------------------
+  const plateVerdict = useMemo(() => {
+    const text = plateResult?.extracted_text
+    const stability = plateResult?.stability
+
+    if (plateResult?.match_found) {
+      const state = registryStateFor(plateResult.status)
+      const owner = plateResult.plate?.owner_name
+      if (state === STATE.ALERT) {
+        return {
+          state,
+          label: 'FLAGGED',
+          plate: plateResult.plate?.plate_number || text,
+          detail: plateResult.reason || owner || 'Flagged on the vehicle registry',
+        }
+      }
+      return {
+        state: STATE.CLEAR,
+        label: 'REGISTERED',
+        plate: plateResult.plate?.plate_number || text,
+        detail: owner ? `Registered to ${owner}` : 'On the vehicle registry',
+      }
+    }
+
+    if (text && stability && !stability.confirmed) {
+      return {
+        state: STATE.SCANNING,
+        label: 'SCANNING',
+        plate: text,
+        detail: `Reading plate — ${stability.agreeing_frames || 0} of ${stability.required_frames} frames agree`,
+      }
+    }
+
+    if (text) {
+      return { state: STATE.UNKNOWN, label: 'UNKNOWN', plate: text, detail: 'Not in the vehicle registry' }
+    }
+
+    // Never a bare em-dash: an empty state has to read as "working", not
+    // "broken" (spec §5).
+    return { state: STATE.SCANNING, label: 'SCANNING', plate: null, detail: 'Looking for a plate in frame' }
+  }, [plateResult])
+
+  useEffect(() => {
+    let frameId
 
     const run = async () => {
       const video = webcamRef.current?.video
       const canvas = canvasRef.current
       const detector = detectorRef.current
 
-      if (video && canvas && detector && webcamReady && isModelLoaded && video.readyState === 4) {
+      if (
+        video &&
+        canvas &&
+        detector &&
+        webcamReady &&
+        isModelLoaded &&
+        video.readyState === 4
+      ) {
         const now = performance.now()
         if (lastFrameAtRef.current > 0) {
           const elapsed = now - lastFrameAtRef.current
@@ -339,33 +533,130 @@ export default function LiveScanDemo() {
           const rw = video.clientWidth || vw
           const rh = video.clientHeight || vh
 
+          setVideoGeom((prev) =>
+            prev && prev.vw === vw && prev.vh === vh && prev.rw === rw && prev.rh === rh
+              ? prev
+              : { vw, vh, rw, rh },
+          )
+
           const results = detector.detectForVideo(video, now)
-          const detections = results?.detections || []
+          const allLandmarks = results?.faceLandmarks || []
 
           canvas.width = rw
           canvas.height = rh
           const ctx = canvas.getContext('2d')
           ctx.clearRect(0, 0, rw, rh)
 
-          const sx = rw / vw
-          const sy = rh / vh
-          const wallClock = Date.now()
+          const { scale, offX, offY } = coverTransform(vw, vh, rw, rh)
 
-          for (const detection of detections) {
-            const b = detection.boundingBox
-            const videoBox = { x: b.originX, y: b.originY, w: b.width, h: b.height }
-            const drawBox = { x: b.originX * sx, y: b.originY * sy, w: b.width * sx, h: b.height * sy }
-            const score = detection.categories?.[0]?.score || 0
+          // Every face, largest first. The index is carried along because the
+          // blendshapes array is parallel to faceLandmarks and the liveness
+          // check below needs the shapes belonging to the largest face, not to
+          // whichever face the model happened to list first.
+          const found = allLandmarks.map((landmarks, i) => {
+            let minX = 1, minY = 1, maxX = 0, maxY = 0
+            for (const p of landmarks) {
+              if (p.x < minX) minX = p.x
+              if (p.y < minY) minY = p.y
+              if (p.x > maxX) maxX = p.x
+              if (p.y > maxY) maxY = p.y
+            }
+            const src = {
+              x: minX * vw,
+              y: minY * vh,
+              w: (maxX - minX) * vw,
+              h: (maxY - minY) * vh,
+            }
+            return { i, src, area: src.w * src.h }
+          })
+          found.sort((a, b) => b.area - a.area)
 
-            const label = findLabel(videoBox, wallClock)
-            const caption = label
-              ? `${label.fullName} · ${label.matchConfidence}%`
-              : `${Math.round(score * 100)}%`
+          setFaceCount(found.length)
 
-            drawReticle(ctx, drawBox, toneForFace(label), caption)
+          if (found.length) {
+            const primary = found[0]
+            const src = primary.src
+
+            faceBoxRef.current = src
+            setHasFaceInFrame(true)
+
+            // Draw every face. The primary one carries the verdict colour from
+            // the panel; the rest are coloured by their own identity, so a
+            // flagged person at the back of the frame is red even while the
+            // person at the camera is green.
+            const labels = labelsRef.current
+            const labelsFresh = labels && Date.now() - labels.at <= LABEL_TTL_MS
+
+            for (const face of found) {
+              const box = {
+                x: face.src.x * scale + offX,
+                y: face.src.y * scale + offY,
+                w: face.src.w * scale,
+                h: face.src.h * scale,
+              }
+
+              let matched = null
+              if (labelsFresh) {
+                let bestScore = MIN_LABEL_IOU
+                for (const candidate of labels.faces) {
+                  const score = boxIoU(face.src, candidate.box)
+                  if (score > bestScore) {
+                    bestScore = score
+                    matched = candidate
+                  }
+                }
+              }
+
+              if (matched) {
+                drawReticle(ctx, box, matched.state, matched.matchConfidence, matched.fullName)
+              } else if (face.i === primary.i) {
+                drawReticle(
+                  ctx,
+                  box,
+                  faceVerdict.state,
+                  typeof matchResult?.matchConfidence === 'number' ? matchResult.matchConfidence : null,
+                )
+              } else {
+                // Seen but not yet resolved by the backend. Marked, unnamed —
+                // never given the primary face's verdict, which is not its own.
+                drawReticle(ctx, box, STATE.SCANNING, null)
+              }
+            }
+
+            // ---- blink / liveness (largest face only, see MAX_TRACKED_FACES) ----
+            const shapes = results?.faceBlendshapes?.[primary.i]?.categories
+            if (shapes && shapes.length) {
+              let left = 0
+              let right = 0
+              for (const c of shapes) {
+                if (c.categoryName === 'eyeBlinkLeft') left = c.score
+                else if (c.categoryName === 'eyeBlinkRight') right = c.score
+              }
+              // Both eyes, so a wink or a one-sided shadow does not count.
+              const closed = Math.min(left, right)
+              if (!eyesClosedRef.current && closed > BLINK_CLOSED_SCORE) {
+                eyesClosedRef.current = true
+              } else if (eyesClosedRef.current && closed < BLINK_OPEN_SCORE) {
+                // Shut then open again — one complete blink.
+                eyesClosedRef.current = false
+                lastBlinkAtRef.current = Date.now()
+                setBlinkCount((n) => n + 1)
+              }
+              setLiveness(
+                Date.now() - lastBlinkAtRef.current < LIVENESS_WINDOW_MS
+                  ? LIVENESS.LIVE
+                  : LIVENESS.PENDING,
+              )
+            } else {
+              // Blendshapes absent (older model asset / unsupported build).
+              // Say so rather than reporting a liveness result we do not have.
+              setLiveness(LIVENESS.UNAVAILABLE)
+            }
+          } else {
+            faceBoxRef.current = null
+            setHasFaceInFrame(false)
+            eyesClosedRef.current = false
           }
-
-          setFaceCount(detections.length)
         }
       }
 
@@ -374,30 +665,9 @@ export default function LiveScanDemo() {
 
     if (isModelLoaded) run()
     return () => cancelAnimationFrame(frameId)
-  }, [isModelLoaded, webcamReady])
+  }, [isModelLoaded, webcamReady, faceVerdict.state, matchResult?.matchConfidence])
 
-  useEffect(() => {
-    if (!isModelLoaded || !webcamReady || !backendReady) return undefined
-
-    const id = setInterval(() => {
-      if (!isAnalyzing && faceCount > 0) {
-        sendFrameToBackend()
-      }
-    }, SCAN_INTERVAL_MS)
-
-    return () => clearInterval(id)
-  }, [isModelLoaded, webcamReady, backendReady, isAnalyzing, faceCount])
-
-  const addHistory = (entries) => {
-    if (!entries.length) return
-    setHistory((prev) => {
-      const next = [...entries, ...prev].slice(0, HISTORY_LIMIT)
-      if (!selectedHistoryId) setSelectedHistoryId(entries[0].id)
-      return next
-    })
-  }
-
-  const sendFrameToBackend = async () => {
+  const sendFrameToBackend = useCallback(async () => {
     const webcam = webcamRef.current
     const video = webcam?.video
     if (!webcam || !video) return
@@ -407,16 +677,23 @@ export default function LiveScanDemo() {
       return
     }
 
+    const localCrop = captureCrop(video, faceBoxRef.current)
+
     try {
+      scanBusyRef.current = true
       setIsAnalyzing(true)
       setScanError('')
 
       const started = performance.now()
-      const snapshot = await captureFrameSnapshot(video, 0.72, 720)
-      if (!snapshot) throw new Error('Camera frame unavailable.')
+      const blob = await captureFrameBlob(video, 0.72, 720)
+      if (!blob) throw new Error('Camera frame unavailable.')
 
       const formData = new FormData()
-      formData.append('file', snapshot.blob, 'live_scan.jpg')
+      formData.append('file', blob, 'live_scan.jpg')
+      // Read from the ref, not state: this callback is memoised and a state
+      // read here would be a stale closure.
+      const livenessConfirmed = Date.now() - lastBlinkAtRef.current < LIVENESS_WINDOW_MS
+      formData.append('liveness_confirmed', livenessConfirmed ? 'true' : 'false')
 
       const response = await fetch(`${API_BASE_URL}/api/v1/scan-face`, {
         method: 'POST',
@@ -437,102 +714,92 @@ export default function LiveScanDemo() {
         throw new Error(data?.error || `Scan failed with HTTP ${response.status}`)
       }
 
-      // `faces` is the multi-face response. Fall back to the flat single-face
-      // shape so this component still works against an older backend.
-      const rawFaces = Array.isArray(data?.faces)
-        ? data.faces
-        : data?.success
-        ? [{ ...data, index: 0, is_primary: true }]
-        : []
-
-      // Boxes come back in the coordinate space of the image that was uploaded,
-      // which is the snapshot, not the full-resolution video.
-      const serverWidth = data?.image_size?.width || snapshot.width
-      const cropScale = snapshot.width / serverWidth
-      const videoScale = (video.videoWidth || snapshot.width) / serverWidth
-
+      const distance = typeof data?.match_distance === 'number' ? data.match_distance : null
+      const confidence = toConfidencePct(distance)
+      const capture = Array.isArray(data?.supporting_captures) ? data.supporting_captures[0] : null
+      const poseLabel = parsePoseFromUrl(capture?.image_url || data?.person?.image_url)
       const ts = new Date().toISOString()
-      const stamp = Date.now()
-      const usedKeys = new Set()
 
-      const faces = rawFaces.map((face, i) => {
-        const area = face.facial_area || {}
-        const hasBox = typeof area.x === 'number' && area.w > 0 && area.h > 0
-        const scaleBox = (k) =>
-          hasBox
-            ? { x: area.x * k, y: area.y * k, w: area.w * k, h: area.h * k }
-            : null
+      const normalized = {
+        id: `scan-${Date.now()}`,
+        success: !!data?.success,
+        isKnownUser: !!data?.is_known_user,
+        isAlert: !!data?.alert,
+        status: data?.status || null,
+        fullName: data?.person?.full_name || 'Unknown Identity',
+        // Rendered verbatim when present; never synthesised (spec §7).
+        reason: data?.person?.reason || data?.reason || null,
+        matchDistance: distance,
+        matchConfidence: confidence,
+        error: data?.error || null,
+        message: data?.message || '',
+        timestamp: ts,
+        poseLabel,
+        personImageUrl: data?.person?.image_url || null,
+        sourceImageUrl: capture?.image_url || data?.person?.image_url || null,
+        sourceText: capture?.source || 'Registry Seed',
+        capturedAt: capture?.captured_at || null,
+        liveCrop: localCrop,
+        latencyMs: durationMs,
+        stageTiming: data?.timings_ms || null,
+      }
 
-        const distance = typeof face.match_distance === 'number' ? face.match_distance : null
-        const capture = Array.isArray(face.supporting_captures) ? face.supporting_captures[0] : null
+      // ---- every other face in the frame ----------------------------------
+      // The verdict card above stays on the primary face; this is what lets the
+      // overlay name the rest and the panel list them. Boxes come back in the
+      // coordinate space of the uploaded (downscaled) frame, so they are scaled
+      // to video pixels — the same space the landmarker boxes are in.
+      const serverW = data?.image_size?.width || 0
+      const videoScale = serverW ? (video.videoWidth || serverW) / serverW : 0
+
+      const resolved = (Array.isArray(data?.faces) ? data.faces : []).map((face, i) => {
         const person = face.person || null
-
-        // Keyed on the identity where there is one, so selecting a person keeps
-        // that person selected across scans even as the face order shifts. Two
-        // faces can legitimately resolve to the same identity — a person and a
-        // photo of them on a wall — so fall back to the slot to stay unique.
-        let key = person?.id ? `person-${person.id}` : `slot-${face.index ?? i}`
-        if (usedKeys.has(key)) key = `${key}-${face.index ?? i}`
-        usedKeys.add(key)
+        const area = face.bbox || {}
+        const hasBox = videoScale > 0 && typeof area.x === 'number' && area.w > 0 && area.h > 0
+        const faceDistance = typeof face.match_distance === 'number' ? face.match_distance : null
 
         return {
-          key,
-          id: `scan-${stamp}-${face.index ?? i}`,
+          key: person?.id ? `person-${person.id}-${face.index ?? i}` : `slot-${face.index ?? i}`,
           index: face.index ?? i,
           isPrimary: !!face.is_primary,
           isKnownUser: !!face.is_known_user,
           isAlert: !!face.alert,
           status: face.status || null,
+          confidence: face.confidence || null,
+          needsReview: !!face.needs_review,
           fullName: person?.full_name || 'Unknown Identity',
-          matchDistance: distance,
-          matchConfidence: toConfidencePct(distance),
-          message: face.message || '',
-          timestamp: ts,
-          poseLabel: parsePoseFromUrl(capture?.image_url || person?.image_url),
-          personImageUrl: person?.image_url || null,
-          sourceImageUrl: capture?.image_url || person?.image_url || null,
-          sourceText: capture?.source || 'Registry Seed',
-          faceConfidence: face.face_confidence ?? null,
-          qualityScore: face.capture_quality?.quality_score ?? null,
-          matchedAgainstPhotos: face.matched_against_photos ?? null,
-          agreeingCaptures: face.agreeing_captures ?? null,
-          marginToNext: face.margin_to_next_person ?? null,
-          box: scaleBox(videoScale),
-          crop: hasBox ? cropFromCanvas(snapshot.canvas, scaleBox(cropScale)) : null,
-          latencyMs: durationMs,
-          stageTiming: data?.timings_ms || null,
+          matchDistance: faceDistance,
+          matchConfidence: toConfidencePct(faceDistance),
+          state: face.is_known_user || face.status ? registryStateFor(face.status) : STATE.UNKNOWN,
+          box: hasBox
+            ? {
+                x: area.x * videoScale,
+                y: area.y * videoScale,
+                w: area.w * videoScale,
+                h: area.h * videoScale,
+              }
+            : null,
         }
       })
 
-      labelsRef.current = { at: stamp, faces: faces.filter((f) => f.box) }
-
-      // The panel shows every face every scan; the audit log records each one
-      // once per appearance, so it stays a log rather than a ticker.
-      const lastLogged = lastLoggedRef.current
-      const fresh = faces.filter((face) => {
-        const seenAt = lastLogged.get(face.key)
-        if (seenAt && stamp - seenAt < AUDIT_DEDUPE_MS) return false
-        lastLogged.set(face.key, stamp)
-        return true
-      })
-      for (const [key, seenAt] of lastLogged) {
-        if (stamp - seenAt >= AUDIT_DEDUPE_MS) lastLogged.delete(key)
-      }
+      labelsRef.current = { at: Date.now(), faces: resolved.filter((f) => f.box) }
+      setFrameFaces(resolved)
 
       setDbImageBroken(false)
-      setFrameFaces(faces)
-      setTruncatedFaces(data?.faces_truncated || 0)
-      addHistory(fresh)
+      setMatchResult(normalized)
+      // Prefer the frame the match was actually made against, but never blank
+      // the tile if this particular frame had no usable box.
+      if (localCrop) {
+        setLiveCrop(localCrop)
+        setLiveCropAt(ts)
+      }
+      setHistory((prev) => {
+        const next = [normalized, ...prev].slice(0, HISTORY_LIMIT)
+        return next
+      })
+      setSelectedHistoryId((prev) => prev || normalized.id)
       failureCountRef.current = 0
       nextScanAllowedAtRef.current = 0
-
-      // A 200 with success:false means the server's detector found nothing in a
-      // frame the browser detector did see — an angle RetinaFace won't take, or
-      // a face too small once the frame was scaled down for upload. Say so
-      // rather than leaving a stale panel that looks like a live reading.
-      if (data?.success === false) {
-        setScanError(data?.error || 'Server could not resolve any face in the frame.')
-      }
     } catch (err) {
       const nextFailureCount = failureCountRef.current + 1
       failureCountRef.current = nextFailureCount
@@ -541,153 +808,324 @@ export default function LiveScanDemo() {
       setScanError(err?.message || `Scan request failed. Retrying in ${Math.round(cooldownMs / 1000)}s.`)
     } finally {
       setIsAnalyzing(false)
+      scanBusyRef.current = false
     }
-  }
+  }, [webcamReady, backendReady])
 
-  const primaryFace = useMemo(
-    () => frameFaces.find((f) => f.isPrimary) || frameFaces[0] || null,
-    [frameFaces]
-  )
+  useEffect(() => {
+    if (!isModelLoaded || !webcamReady || !backendReady) return undefined
 
-  const selectedFace = useMemo(
-    () => frameFaces.find((f) => f.key === selectedFaceKey) || primaryFace,
-    [frameFaces, selectedFaceKey, primaryFace]
-  )
+    const id = setInterval(() => {
+      if (!isAnalyzing && !scanBusyRef.current && hasFaceInFrame) {
+        sendFrameToBackend()
+      }
+    }, SCAN_INTERVAL_MS)
 
-  const flaggedCount = frameFaces.filter((f) => f.isAlert).length
-  const knownCount = frameFaces.filter((f) => f.isKnownUser).length
-  const unknownCount = frameFaces.length - knownCount
+    return () => clearInterval(id)
+  }, [isModelLoaded, webcamReady, backendReady, isAnalyzing, hasFaceInFrame, sendFrameToBackend])
 
-  const toneClass = frameTone(frameFaces)
-  const toneLabel = frameFaces.length ? labelForFace(primaryFace) : faceCount ? 'SCANNING' : 'NO TARGET'
+  const sendPlateFrame = useCallback(async () => {
+    const video = webcamRef.current?.video
+    if (!video || scanBusyRef.current) return
+
+    scanBusyRef.current = true
+    try {
+      const blob = await captureFrameBlob(video, 0.72, 720)
+      if (!blob) return
+
+      const formData = new FormData()
+      formData.append('file', blob, 'live_plate.jpg')
+      formData.append('stream_id', plateStreamIdRef.current)
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/scan-plate-live`, {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`)
+
+      setPlateResult(data)
+      setPlateError('')
+
+      // Only the frame the vote lands on. A car parked in view would otherwise
+      // add a row every couple of seconds for as long as it sits there.
+      if (data?.stability?.newly_confirmed && data?.match_found) {
+        setPlateSightings((prev) => [
+          {
+            id: `plate-${Date.now()}`,
+            plateNumber: data.plate?.plate_number,
+            status: data.status,
+            ownerName: data.plate?.owner_name,
+            alert: !!data.alert,
+            at: new Date().toISOString(),
+          },
+          ...prev,
+        ].slice(0, 10))
+      }
+    } catch (err) {
+      setPlateError(err?.message || 'Plate scan failed.')
+    } finally {
+      scanBusyRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!webcamReady || !backendReady) return undefined
+
+    const id = setInterval(() => {
+      // Yields to the face scan: a face in frame is the higher-value read, and
+      // the plate is usually still there a beat later.
+      if (!isAnalyzing && !scanBusyRef.current) {
+        sendPlateFrame()
+      }
+    }, PLATE_SCAN_INTERVAL_MS)
+
+    return () => clearInterval(id)
+  }, [webcamReady, backendReady, isAnalyzing, sendPlateFrame])
+
+  // Keep the live comparison tile current off the local detector. Cheap: one
+  // 180x180 canvas draw, and only while a face is actually in frame.
+  useEffect(() => {
+    if (!webcamReady || !hasFaceInFrame) return undefined
+
+    const capture = () => {
+      const video = webcamRef.current?.video
+      if (!video || !faceBoxRef.current) return
+      const crop = captureCrop(video, faceBoxRef.current)
+      if (crop) {
+        setLiveCrop(crop)
+        setLiveCropAt(new Date().toISOString())
+      }
+    }
+
+    capture()
+    const id = setInterval(capture, LIVE_CROP_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [webcamReady, hasFaceInFrame])
+
+  // Esc closes the diagnostics slide-over and returns focus to its trigger.
+  useEffect(() => {
+    if (!systemPanelOpen) return undefined
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setSystemPanelOpen(false)
+        statusBtnRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [systemPanelOpen])
 
   const activeEntry = useMemo(() => {
     if (!history.length) return null
     return history.find((h) => h.id === selectedHistoryId) || history[0]
   }, [history, selectedHistoryId])
 
-  const dbImageUrl = selectedFace?.sourceImageUrl || selectedFace?.personImageUrl || null
+  const dbImageUrl =
+    activeEntry?.sourceImageUrl ||
+    activeEntry?.personImageUrl ||
+    matchResult?.sourceImageUrl ||
+    matchResult?.personImageUrl ||
+    null
 
-  const readiness = [
-    { label: 'Camera', ok: webcamReady },
-    { label: 'Detector', ok: isModelLoaded },
-    { label: 'Backend', ok: backendReady },
-  ]
+  const confidencePct = typeof matchResult?.matchConfidence === 'number' ? matchResult.matchConfidence : 0
 
-  const confidencePct = typeof selectedFace?.matchConfidence === 'number' ? selectedFace.matchConfidence : 0
-
-  const verdictHeadline = () => {
-    if (flaggedCount) return `${flaggedCount} flagged ${flaggedCount === 1 ? 'identity' : 'identities'} in frame`
-    if (knownCount) return `${knownCount} recognised ${knownCount === 1 ? 'identity' : 'identities'}`
-    if (frameFaces.length) return `${frameFaces.length} ${frameFaces.length === 1 ? 'face' : 'faces'}, none matched`
-    return 'Awaiting confident match'
-  }
+  const plateBoxes =
+    videoGeom && plateResult?.frame?.width > 0
+      ? (plateResult.regions || []).map((r, i) => {
+          // Region coords are in captured-frame pixels; the capture is a
+          // uniformly scaled copy of the video, so convert to video pixels
+          // first, then apply the same cover transform the video gets.
+          const toVideo = videoGeom.vw / plateResult.frame.width
+          const { scale, offX, offY } = coverTransform(
+            videoGeom.vw,
+            videoGeom.vh,
+            videoGeom.rw,
+            videoGeom.rh,
+          )
+          return {
+            key: i,
+            left: r.x * toVideo * scale + offX,
+            top: r.y * toVideo * scale + offY,
+            width: r.w * toVideo * scale,
+            height: r.h * toVideo * scale,
+          }
+        })
+      : []
 
   return (
     <div className="ls-wrap">
       <style>{`
-        :root {
-          --bg:#f6f7f9; --panel:#ffffff; --fg:#16181d; --muted:#666c78; --line:#e2e5ea;
-          --alert:#b3261e; --alert-bg:#fdeceb; --ok:#186b3c; --ok-bg:#e9f6ee;
-          --unknown:#7a5c00; --unknown-bg:#fdf5e0; --accent:#1c4fd8;
+        /* Tokens are scoped to .ls-wrap, not :root. The previous version
+           declared them globally, which collided with the app theme's
+           --accent and re-coloured the surrounding chrome. */
+        .ls-wrap {
+          --bg-canvas:#0B0F1A; --bg-panel:#151B2C; --bg-panel-elevated:#111624;
+          --bg-panel-inset:#0D111C; --border-hairline:#252C40;
+          --accent-brand-a:#2FD5C8; --accent-brand-b:#B14CE0; --accent-line:#E23B8C;
+          --text-primary:#F4F6FB; --text-secondary:#8B93A7;
+          --status-unknown:#7C8299; --status-caution:#E3A438;
+          --status-alert:#E14F4F; --status-clear:#3FBF7F;
+
+          background: var(--bg-canvas);
+          color: var(--text-primary);
+          min-height: 100%;
+          padding: 24px 16px 64px;
+          width: 100%;
+          overflow-x: clip;
+          font-synthesis-weight: none;
         }
-        @media (prefers-color-scheme: dark) {
-          :root {
-            --bg:#131519; --panel:#1b1e24; --fg:#e9eaee; --muted:#9aa1ad; --line:#2b3038;
-            --alert:#ff9a92; --alert-bg:#3a1c1a; --ok:#7fd4a0; --ok-bg:#14301f;
-            --unknown:#e8c86a; --unknown-bg:#312713; --accent:#8fb0ff;
-          }
+        .ls-shell { max-width: 1180px; margin: 0 auto; }
+
+        .ls-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+        .ls-title { font-size: 28px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+        .ls-sysbtn {
+          display: inline-flex; align-items: center; gap: 7px;
+          background: transparent; border: 1px solid var(--border-hairline);
+          color: var(--text-secondary); border-radius: 999px;
+          padding: 7px 13px; font-size: 13px; font-weight: 500; cursor: pointer;
         }
-        .ls-wrap { background: var(--bg); color: var(--fg); min-height: 100vh; padding: 24px 16px 64px; width: 100%; max-width: 100%; overflow-x: clip; }
-        .ls-shell { max-width: 1180px; margin: 0 auto; width: 100%; max-width: 100%; }
-        .ls-sub { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
-        .ls-grid { display: grid; grid-template-columns: minmax(420px, 2fr) minmax(320px, 1fr); gap: 14px; }
+        .ls-sysbtn:hover { color: var(--text-primary); border-color: var(--accent-brand-a); }
+
+        .ls-grid { display: grid; grid-template-columns: 62fr 38fr; gap: 14px; align-items: start; }
         .ls-grid > * { min-width: 0; }
-        .ls-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+        .ls-card { background: var(--bg-panel); border: 1px solid var(--border-hairline); border-radius: 14px; }
         .ls-pad { padding: 16px; }
-        .ls-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; font-size: 12px; color: var(--muted); }
-        .ls-camera { position: relative; width: 100%; aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #000; }
-        .ls-chip { display: inline-block; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: rgba(0,0,0,0.35); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .03em; }
-        .ls-overlay-top-left { position: absolute; top: 10px; left: 10px; z-index: 4; display: grid; gap: 6px; }
+        .ls-eyebrow {
+          font-size: 12px; font-weight: 600; text-transform: uppercase;
+          letter-spacing: .08em; color: var(--text-secondary); margin: 0 0 10px;
+        }
+
+        .ls-camera {
+          position: relative; width: 100%; aspect-ratio: 4/3;
+          border-radius: 12px; overflow: hidden;
+          border: 1px solid var(--border-hairline); background: var(--bg-panel-inset);
+        }
+        .ls-chip {
+          display: inline-block; padding: 4px 9px; border-radius: 999px;
+          border: 1px solid rgba(255,255,255,.14); background: rgba(11,15,26,.62);
+          color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .03em;
+          backdrop-filter: blur(3px);
+        }
+        .ls-overlay-top-left { position: absolute; top: 10px; left: 10px; z-index: 4; display: grid; gap: 6px; justify-items: start; }
         .ls-overlay-top-right { position: absolute; top: 10px; right: 10px; z-index: 4; }
-        .ls-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
-        .ls-row > * { min-width: 0; overflow-wrap: anywhere; }
-        .ls-verdict { border-radius: 12px; padding: 14px; border: 1px solid; margin-bottom: 12px; }
-        .ls-verdict.alert { background: var(--alert-bg); border-color: var(--alert); color: var(--alert); }
-        .ls-verdict.ok { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
-        .ls-verdict.unknown { background: var(--unknown-bg); border-color: var(--unknown); color: var(--unknown); }
-        .ls-kv { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+
+        /* --- the four-state pill: colour AND word, never colour alone --- */
+        .ls-pill {
+          display: inline-flex; align-items: center; gap: 7px;
+          font-size: 13px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: .06em; padding: 5px 11px; border-radius: 999px;
+          border: 1px solid currentColor;
+        }
+        .ls-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+        .ls-dot--pulse { animation: ls-pulse 1.4s ease-in-out infinite; }
+        @keyframes ls-pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+        @media (prefers-reduced-motion: reduce) { .ls-dot--pulse { animation: none } }
+
+        .ls-pill--scanning { color: var(--status-caution); background: rgba(227,164,56,.12); }
+        .ls-pill--unknown  { color: var(--status-unknown);  background: rgba(124,130,153,.14); }
+        .ls-pill--alert    { color: var(--status-alert);    background: rgba(225,79,79,.14); }
+        .ls-pill--clear    { color: var(--status-clear);    background: rgba(63,191,127,.13); }
+
+        .ls-verdict { display: grid; gap: 10px; }
+        .ls-others { display: grid; gap: 7px; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--line); }
+        .ls-other-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
+        .ls-other-name { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; min-width: 0; flex: 1; }
+        .ls-other-meta { font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .ls-identity { font-size: 22px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+        .ls-explain { font-size: 14px; font-weight: 400; color: var(--text-secondary); margin: 0; overflow-wrap: anywhere; }
+        .ls-confidence { font-size: 14px; margin: 2px 0 0; }
+        .ls-confidence b { font-size: 22px; font-weight: 600; }
+
+        .ls-plateno {
+          display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 22px; font-weight: 600; letter-spacing: .12em;
+          padding: 7px 14px; border-radius: 8px;
+          border: 1px solid var(--border-hairline); background: var(--bg-panel-inset);
+        }
+
+        .ls-compare { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; }
+        .ls-tile { border-radius: 10px; overflow: hidden; aspect-ratio: 1/1; background: var(--bg-panel-inset); border: 1px solid var(--border-hairline); }
+        .ls-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .ls-tile--empty {
+          border: 1px dashed var(--status-unknown); display: grid; place-items: center;
+          text-align: center; color: var(--status-unknown); font-size: 12px; padding: 10px; gap: 6px;
+        }
+        .ls-swap { color: var(--text-secondary); font-size: 20px; user-select: none; }
+        .ls-caption { color: var(--text-secondary); font-size: 12px; margin-top: 6px; }
+        .ls-similarity { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-hairline); font-size: 14px; }
+
+        .ls-audit { max-height: 240px; overflow-y: auto; display: grid; gap: 6px; align-content: start; }
+        .ls-audit button {
+          text-align: left; border-radius: 9px; border: 1px solid var(--border-hairline);
+          background: var(--bg-panel-elevated); color: var(--text-primary);
+          padding: 9px 10px; cursor: pointer; font-family: inherit; font-size: 12px;
+        }
+        .ls-audit button.active { border-color: var(--accent-brand-a); }
+        .ls-audit button.alert { border-left: 3px solid var(--status-alert); }
+        .ls-audit button.clear { border-left: 3px solid var(--status-clear); }
+        .ls-audit button.unknown { border-left: 3px solid var(--status-unknown); }
+        .ls-audit-time { color: var(--text-secondary); }
+
+        .ls-kv { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--border-hairline); }
         .ls-kv:last-child { border-bottom: 0; }
-        .ls-kv span:first-child { color: var(--muted); }
-        .ls-kv span:last-child { min-width: 0; max-width: 62%; text-align: right; overflow-wrap: anywhere; word-break: break-word; }
-        .ls-meter { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 8px 0 10px; }
-        .ls-meter > i { display: block; height: 100%; }
-        .ls-ready { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-        .ls-ready > span { font-size: 12px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); }
-        .ls-ready .ok { border-color: var(--ok); color: var(--ok); }
-        .ls-ready .bad { border-color: var(--unknown); color: var(--unknown); }
-        .ls-faces { display: grid; gap: 6px; margin-bottom: 12px; max-height: 250px; overflow-y: auto; }
-        .ls-faces button { display: flex; align-items: center; gap: 9px; text-align: left; width: 100%; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 7px 9px; cursor: pointer; font-size: 12px; }
-        .ls-faces button.alert { border-color: var(--alert); background: color-mix(in srgb, var(--alert) 12%, var(--panel)); }
-        .ls-faces button.ok { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--panel)); }
-        .ls-faces button.unknown { border-color: var(--unknown); background: color-mix(in srgb, var(--unknown) 10%, var(--panel)); }
-        .ls-faces button.active { box-shadow: inset 0 0 0 2px var(--accent); }
-        .ls-faces img { width: 34px; height: 34px; border-radius: 7px; object-fit: cover; flex: 0 0 auto; }
-        .ls-face-name { font-weight: 700; overflow-wrap: anywhere; }
-        .ls-face-sub { color: var(--muted); font-size: 11px; }
-        .ls-audit { max-height: 220px; overflow-y: auto; display: grid; gap: 6px; }
-        .ls-audit button { text-align: left; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 8px 9px; cursor: pointer; font-size: 12px; }
-        .ls-audit button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
-        .ls-audit button.alert { border-color: var(--alert); background: color-mix(in srgb, var(--alert) 14%, var(--panel)); color: var(--alert); }
-        .ls-audit button.ok { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, var(--panel)); color: var(--ok); }
-        .ls-audit button.unknown { border-color: var(--unknown); background: color-mix(in srgb, var(--unknown) 12%, var(--panel)); color: var(--unknown); }
-        .ls-audit button.alert.active,
-        .ls-audit button.ok.active,
-        .ls-audit button.unknown.active { box-shadow: inset 0 0 0 1px var(--accent); }
-        .ls-side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .ls-thumb-wrap { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--bg); aspect-ratio: 1/1; }
-        .ls-thumb-wrap img { width: 100%; height: 100%; object-fit: cover; }
-        .ls-caption { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-        .ls-warn { margin-top: 12px; font-size: 13px; color: var(--unknown); }
+        .ls-kv span:first-child { color: var(--text-secondary); }
+        .ls-kv span:last-child { max-width: 62%; text-align: right; overflow-wrap: anywhere; }
+
+        .ls-warn { margin-top: 12px; font-size: 13px; color: var(--status-caution); }
+
+        /* diagnostics slide-over */
+        .ls-scrim { position: fixed; inset: 0; background: rgba(4,6,12,.55); z-index: 40; }
+        .ls-slide {
+          position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 92vw);
+          background: var(--bg-panel); border-left: 1px solid var(--border-hairline);
+          z-index: 41; padding: 20px; overflow-y: auto;
+          --text-primary:#F4F6FB; --text-secondary:#8B93A7; --border-hairline:#252C40;
+          --bg-panel-inset:#0D111C; --accent-brand-a:#2FD5C8;
+          --status-caution:#E3A438; --status-clear:#3FBF7F; --status-alert:#E14F4F;
+          color: var(--text-primary);
+        }
+        .ls-slide h2 { font-size: 16px; margin: 0 0 4px; }
+        .ls-slide .ls-sub { color: var(--text-secondary); font-size: 13px; margin: 0 0 16px; }
+        .ls-close { position: absolute; top: 16px; right: 16px; background: transparent; border: 0; color: var(--text-secondary); font-size: 20px; cursor: pointer; line-height: 1; }
+        .ls-ready { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 16px; }
+        .ls-ready > span { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-hairline); color: var(--text-secondary); }
+        .ls-ready .on { color: var(--status-clear); border-color: var(--status-clear); }
+        .ls-ready .off { color: var(--status-caution); border-color: var(--status-caution); }
+
+        .ls-wrap :focus-visible, .ls-slide :focus-visible {
+          outline: 2px solid var(--accent-brand-a); outline-offset: 2px; border-radius: 6px;
+        }
+
         @media (max-width: 980px) {
           .ls-grid { grid-template-columns: 1fr; }
-          .ls-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .ls-side-by-side { grid-template-columns: 1fr 1fr; }
         }
         @media (max-width: 640px) {
-          .ls-wrap { padding: 14px 10px 42px; }
-          .ls-meta { grid-template-columns: 1fr; }
-          .ls-side-by-side { grid-template-columns: 1fr; }
-          .ls-kv { flex-direction: column; align-items: flex-start; gap: 4px; }
+          .ls-wrap { padding: 16px 12px 48px; }
+          .ls-title { font-size: 24px; }
+          .ls-kv { flex-direction: column; align-items: flex-start; gap: 3px; }
           .ls-kv span:last-child { max-width: 100%; text-align: left; }
-          .ls-audit-grid { grid-template-columns: 1fr !important; }
+          .ls-compare { grid-template-columns: 1fr; }
+          .ls-swap { justify-self: center; transform: rotate(90deg); }
         }
       `}</style>
 
       <div className="ls-shell">
-        <h1>Face Scan (Live)</h1>
-        <p className="ls-sub">
-          Live camera scan against registry — every face in frame is tracked and matched independently.{' '}
-          <Link to="/">Return home</Link>
-        </p>
-
-        <div className="ls-card ls-pad" style={{ marginBottom: 14 }}>
-          <div className="ls-meta">
-            <div>Match Latency: {roundtripMs ?? '--'} ms</div>
-            <div>Model: {MODEL_LABEL}</div>
-            <div>Indexed Identities: {memberCount ?? '--'}</div>
-            <div>Scan Interval: {SCAN_INTERVAL_MS} ms</div>
-          </div>
-          <div className="ls-ready">
-            {readiness.map((item) => (
-              <span key={item.label} className={item.ok ? 'ok' : 'bad'}>
-                {item.label}: {item.ok ? 'Ready' : 'Waiting'}
-              </span>
-            ))}
-          </div>
-        </div>
+        <header className="ls-head">
+          <h1 className="ls-title">Live scan</h1>
+          <button
+            type="button"
+            ref={statusBtnRef}
+            className="ls-sysbtn"
+            aria-expanded={systemPanelOpen}
+            onClick={() => setSystemPanelOpen((v) => !v)}
+          >
+            <span aria-hidden="true">◍</span> System status
+          </button>
+        </header>
 
         <div className="ls-grid">
+          {/* ---------------- video ---------------- */}
           <div className="ls-card ls-pad">
             <div className="ls-camera">
               <Webcam
@@ -710,7 +1148,7 @@ export default function LiveScanDemo() {
                   inset: 0,
                   width: '100%',
                   height: '100%',
-                  objectFit: 'fill',
+                  objectFit: 'cover',
                   zIndex: 1,
                 }}
               />
@@ -720,164 +1158,284 @@ export default function LiveScanDemo() {
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 2 }}
               />
 
+              {plateBoxes.map((b) => (
+                <div
+                  key={b.key}
+                  style={{
+                    position: 'absolute',
+                    left: b.left,
+                    top: b.top,
+                    width: b.width,
+                    height: b.height,
+                    border: `2px solid ${STATUS_HEX[plateVerdict.state]}`,
+                    borderRadius: 4,
+                    zIndex: 3,
+                    pointerEvents: 'none',
+                  }}
+                />
+              ))}
+
               <div className="ls-overlay-top-left">
-                <span className="ls-chip">REC / LIVE {fps || 30} FPS</span>
-                <span className="ls-chip">
-                  Faces: {faceCount} • {knownCount} known • {flaggedCount} flagged
-                </span>
-                <span className="ls-chip">{toneLabel}</span>
+                <span className="ls-chip">REC / LIVE{fps ? ` ${fps} FPS` : ''}</span>
+                {hasFaceInFrame ? (
+                  <span className="ls-chip">
+                    {liveness === LIVENESS.LIVE
+                      ? '✓ LIVE PERSON'
+                      : liveness === LIVENESS.UNAVAILABLE
+                      ? 'LIVENESS N/A'
+                      : 'BLINK TO VERIFY'}
+                  </span>
+                ) : null}
               </div>
 
               <div className="ls-overlay-top-right">
-                <span className="ls-chip">{formatTimestamp(primaryFace?.timestamp || new Date().toISOString())}</span>
+                <span className="ls-chip">{formatClock(matchResult?.timestamp) || formatClock(new Date().toISOString())}</span>
               </div>
             </div>
-
-            <div className="ls-warn">
-              {faceCount
-                ? `Tracking ${faceCount} ${faceCount === 1 ? 'face' : 'faces'}. Each is matched against the identity registry independently.`
-                : 'No face in frame. Move closer and improve front lighting.'}
-            </div>
-            {truncatedFaces > 0 ? (
-              <div className="ls-warn">
-                {truncatedFaces} further {truncatedFaces === 1 ? 'face was' : 'faces were'} detected but not
-                identified — the frame is over the per-scan cap. The smallest faces are dropped first.
-              </div>
-            ) : null}
           </div>
 
+          {/* ---------------- face verdict ---------------- */}
           <div className="ls-card ls-pad">
-            <div className={`ls-verdict ${toneClass}`}>
-              <h2 style={{ margin: 0, fontSize: 18 }}>{verdictHeadline()}</h2>
-              <p style={{ margin: '8px 0 0', color: 'var(--fg)', fontSize: 13 }}>
-                {frameFaces.length
-                  ? `${frameFaces.length} matched this frame — ${knownCount} known, ${unknownCount} unregistered.`
-                  : 'Live scan running.'}
-              </p>
-            </div>
+            <p className="ls-eyebrow">Face registry</p>
+            <div className="ls-verdict">
+              <StatusPill state={faceVerdict.state} label={faceVerdict.label} />
+              {faceVerdict.name ? <p className="ls-identity">{faceVerdict.name}</p> : null}
+              <p className="ls-explain">{faceVerdict.detail}</p>
+              {faceVerdict.state === STATE.ALERT || faceVerdict.state === STATE.CLEAR ? (
+                <p className="ls-confidence">
+                  Confidence: <b>{confidencePct}%</b>
+                </p>
+              ) : null}
 
-            <h3 style={{ margin: '0 0 8px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>
-              Faces in frame {frameFaces.length ? `(${frameFaces.length})` : ''}
-            </h3>
-            <div className="ls-faces">
-              {frameFaces.map((face) => (
-                <button
-                  key={face.key}
-                  className={`${toneForFace(face)}${selectedFace?.key === face.key ? ' active' : ''}`}
-                  onClick={() => {
-                    setSelectedFaceKey(face.key)
-                    setDbImageBroken(false)
-                  }}
-                >
-                  {face.crop ? <img src={face.crop} alt="" /> : null}
-                  <span>
-                    <span className="ls-face-name">{face.fullName}</span>
-                    <br />
-                    <span className="ls-face-sub">
-                      {labelForFace(face)} • {(face.status || 'unregistered').toUpperCase()} •{' '}
-                      {face.matchConfidence}%
-                    </span>
-                  </span>
-                </button>
-              ))}
-              {!frameFaces.length ? <div className="ls-sub">No identities resolved yet.</div> : null}
-            </div>
+              {/* Liveness is reported separately from the match, never folded
+                  into it — "we recognised this face" and "this was a live
+                  person" are two different claims (build guide §5). */}
+              {hasFaceInFrame ? (
+                <p className="ls-explain" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <i
+                    className="ls-dot"
+                    aria-hidden="true"
+                    style={{
+                      color:
+                        liveness === LIVENESS.LIVE
+                          ? 'var(--status-clear)'
+                          : liveness === LIVENESS.UNAVAILABLE
+                          ? 'var(--status-unknown)'
+                          : 'var(--status-caution)',
+                    }}
+                  />
+                  {liveness === LIVENESS.LIVE
+                    ? 'Liveness confirmed — blink detected'
+                    : liveness === LIVENESS.UNAVAILABLE
+                    ? 'Liveness check unavailable on this device'
+                    : 'Liveness unconfirmed — a photo does not blink'}
+                </p>
+              ) : null}
 
-            <h3 style={{ margin: '0 0 8px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>
-              How certain {selectedFace ? `— ${selectedFace.fullName}` : ''}
-            </h3>
-            <div className="ls-meter">
-              <i
-                style={{
-                  width: `${confidencePct}%`,
-                  background:
-                    toneForFace(selectedFace) === 'alert'
-                      ? 'var(--alert)'
-                      : toneForFace(selectedFace) === 'ok'
-                      ? 'var(--ok)'
-                      : 'var(--unknown)',
-                }}
-              />
+              {/* The verdict above is about ONE person. When the frame holds
+                  more, listing them is not decoration: a card reading "RESIDENT"
+                  over a frame containing a flagged stranger is actively
+                  misleading, and the overlay alone scrolls out of view. */}
+              {otherFaces.length ? (
+                <div className="ls-others">
+                  <p className="ls-explain" style={{ margin: 0 }}>
+                    {otherFaces.length} other {otherFaces.length === 1 ? 'face' : 'faces'} in frame
+                    {liveness === LIVENESS.LIVE ? ' — liveness covers the nearest face only' : ''}
+                  </p>
+                  {otherFaces.map((face) => (
+                    <div key={face.key} className="ls-other-row">
+                      <StatusPill
+                        state={face.state}
+                        label={
+                          face.isAlert
+                            ? 'SUSPECT'
+                            : face.isKnownUser
+                            ? 'RESIDENT'
+                            : face.confidence === 'no_decision'
+                            ? 'NO DECISION'
+                            : 'UNKNOWN'
+                        }
+                      />
+                      <span className="ls-other-name">{face.fullName}</span>
+                      <span className="ls-other-meta">
+                        {face.isKnownUser ? `${face.matchConfidence}%` : '—'}
+                        {face.needsReview ? ' · review' : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
-
-            <div className="ls-kv"><span>Confidence</span><span>{confidencePct}%</span></div>
-            <div className="ls-kv"><span>Cosine distance</span><span>{typeof selectedFace?.matchDistance === 'number' ? selectedFace.matchDistance.toFixed(4) : '--'}</span></div>
-            <div className="ls-kv"><span>Status</span><span>{(selectedFace?.status || 'unknown').toUpperCase()}</span></div>
-            <div className="ls-kv"><span>Margin to next person</span><span>{typeof selectedFace?.marginToNext === 'number' ? selectedFace.marginToNext.toFixed(4) : '--'}</span></div>
-            <div className="ls-kv"><span>Pose</span><span>{selectedFace?.poseLabel || '-'}</span></div>
-            <div className="ls-kv"><span>Round trip</span><span>{roundtripMs ?? '--'} ms</span></div>
-            <div className="ls-kv"><span>Server stages</span><span>{selectedFace?.stageTiming ? JSON.stringify(selectedFace.stageTiming) : '--'}</span></div>
           </div>
         </div>
 
+        {/* ---------------- plate registry ---------------- */}
         <div className="ls-card ls-pad" style={{ marginTop: 14 }}>
-          <h3 style={{ margin: '0 0 10px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>
-            Reference comparison {selectedFace ? `— ${selectedFace.fullName}` : ''}
-          </h3>
-          <div className="ls-side-by-side">
-            <div>
-              <div className="ls-caption">Live crop</div>
-              <div className="ls-thumb-wrap">{selectedFace?.crop ? <img src={selectedFace.crop} alt="Live crop" /> : null}</div>
+          <p className="ls-eyebrow">License plate</p>
+          <div className="ls-verdict">
+            <StatusPill state={plateVerdict.state} label={plateVerdict.label} />
+            {plateVerdict.plate ? <span className="ls-plateno">{plateVerdict.plate}</span> : null}
+            <p className="ls-explain">{plateVerdict.detail}</p>
+          </div>
+
+          {plateSightings.length > 0 && (
+            <div style={{ marginTop: 14, borderTop: '1px solid var(--border-hairline)', paddingTop: 10 }}>
+              <p className="ls-eyebrow" style={{ marginBottom: 6 }}>Plates seen this session</p>
+              {plateSightings.map((s) => (
+                <div key={s.id} className="ls-kv">
+                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>{s.plateNumber}</span>
+                  <span>{(s.status || 'unknown').toUpperCase()} · {new Date(s.at).toLocaleTimeString()}</span>
+                </div>
+              ))}
             </div>
+          )}
+
+          {plateError ? <div className="ls-warn">Plate reader: {plateError}</div> : null}
+        </div>
+
+        {/* ---------------- reference comparison ----------------
+            Always rendered, directly below the plate panel. Both halves have
+            an explicit labelled placeholder so an un-run comparison reads as
+            "waiting", never as a broken empty box. */}
+        <div className="ls-card ls-pad" style={{ marginTop: 14 }}>
+          <p className="ls-eyebrow">Reference comparison</p>
+          <div className="ls-compare">
             <div>
-              <div className="ls-caption">DB seed photo</div>
-              <div className="ls-thumb-wrap">
-                {dbImageUrl && !dbImageBroken ? (
+              {liveCrop ? (
+                <div className="ls-tile">
+                  <img src={liveCrop} alt="Face captured from the live camera" />
+                </div>
+              ) : (
+                <div className="ls-tile ls-tile--empty">
+                  <span aria-hidden="true" style={{ fontSize: 18 }}>◌</span>
+                  <span>Waiting for a face in frame</span>
+                </div>
+              )}
+              <div className="ls-caption">
+                {liveCropAt ? `Live camera · captured ${formatClock(liveCropAt)}` : 'Live camera'}
+              </div>
+            </div>
+
+            <div className="ls-swap" aria-hidden="true">⇄</div>
+
+            <div>
+              {dbImageUrl && !dbImageBroken ? (
+                <div className="ls-tile">
                   <img
                     src={dbImageUrl}
-                    alt="Database reference"
+                    alt="Reference photo held on the identity registry"
                     onError={() => setDbImageBroken(true)}
                   />
-                ) : null}
+                </div>
+              ) : (
+                <div className="ls-tile ls-tile--empty">
+                  <span aria-hidden="true" style={{ fontSize: 18 }}>◌</span>
+                  <span>{dbImageBroken ? 'Reference photo unavailable' : 'No reference on file'}</span>
+                </div>
+              )}
+              <div className="ls-caption">
+                {activeEntry?.sourceText ? `On file · ${activeEntry.sourceText}` : 'Identity registry'}
               </div>
             </div>
           </div>
-          <div className="ls-row" style={{ marginTop: 10, color: 'var(--muted)', fontSize: 12 }}>
-            <span>Source: {selectedFace?.sourceText || '-'}</span>
-            <span>Pose: {selectedFace?.poseLabel || '-'}</span>
+
+          <div className="ls-similarity">
+            {typeof matchResult?.matchDistance === 'number' ? (
+              <>Similarity: <b>{confidencePct}% match</b></>
+            ) : (
+              <span style={{ color: 'var(--text-secondary)' }}>
+                No comparison yet — waiting for a registry match.
+              </span>
+            )}
           </div>
-          {dbImageBroken ? (
-            <div className="ls-warn" style={{ marginTop: 8 }}>
-              Stored reference photo could not be loaded from blob storage.
-            </div>
-          ) : null}
         </div>
 
+        {/* ---------------- audit log ---------------- */}
         <div className="ls-card ls-pad" style={{ marginTop: 14 }}>
-          <h3 style={{ margin: '0 0 10px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>Audit log</h3>
-          <div className="ls-audit-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
-            <div className="ls-audit">
-              {history.map((entry) => (
+          <p className="ls-eyebrow">Audit log</p>
+          <div className="ls-audit">
+            {history.map((entry) => {
+              const state = registryStateFor(entry.status)
+              return (
                 <button
                   key={entry.id}
-                  className={`${auditTone(entry)}${selectedHistoryId === entry.id ? ' active' : ''}`}
+                  type="button"
+                  className={`${state}${selectedHistoryId === entry.id ? ' active' : ''}`}
                   onClick={() => {
                     setSelectedHistoryId(entry.id)
                     setDbImageBroken(false)
                   }}
                 >
-                  {formatTimestamp(entry.timestamp)} - {entry.fullName} ({(entry.status || 'unknown').toUpperCase()}) -{' '}
-                  {typeof entry.matchConfidence === 'number' ? `${entry.matchConfidence.toFixed(1)}%` : '--'}
+                  <span className="ls-audit-time">{formatClock(entry.timestamp)}</span>
+                  {'  '}
+                  {registryStateFor(entry.status) === STATE.UNKNOWN ? 'Unregistered face' : entry.fullName}
+                  {'  ·  '}
+                  {entry.matchConfidence}%
                 </button>
-              ))}
-              {!history.length ? <div className="ls-sub">No detection events yet.</div> : null}
-            </div>
-
-            <div className="ls-card ls-pad">
-              <div style={{ fontWeight: 700 }}>{activeEntry?.fullName || 'Select an event'}</div>
-              <div className="ls-kv"><span>Status</span><span>{(activeEntry?.status || 'unknown').toUpperCase()}</span></div>
-              <div className="ls-kv"><span>Distance</span><span>{typeof activeEntry?.matchDistance === 'number' ? activeEntry.matchDistance.toFixed(4) : '--'}</span></div>
-              <div className="ls-kv"><span>Latency</span><span>{activeEntry?.latencyMs ?? '--'} ms</span></div>
-              {activeEntry?.crop ? <img src={activeEntry.crop} alt="Event crop" style={{ width: '100%', borderRadius: 8, marginTop: 10 }} /> : null}
-            </div>
+              )
+            })}
+            {!history.length ? <p className="ls-explain">No scans yet.</p> : null}
           </div>
         </div>
 
         {webcamError ? <div className="ls-warn">Camera unavailable: {webcamError}</div> : null}
         {scanError ? <div className="ls-warn">{scanError}</div> : null}
-        {modelState === 'loading' ? <div className="ls-sub">Initializing detector assets...</div> : null}
-        {modelState === 'failed' ? <div className="ls-warn">Model Load Failed: {modelError || 'Unknown error.'}</div> : null}
+        {modelState === 'failed' ? <div className="ls-warn">Detector failed to load: {modelError || 'Unknown error.'}</div> : null}
       </div>
+
+      {/* ---------------- diagnostics slide-over ---------------- */}
+      {systemPanelOpen ? (
+        <>
+          <div className="ls-scrim" onClick={() => setSystemPanelOpen(false)} />
+          <aside className="ls-slide" role="dialog" aria-modal="true" aria-label="System status">
+            <button
+              type="button"
+              className="ls-close"
+              aria-label="Close system status"
+              onClick={() => {
+                setSystemPanelOpen(false)
+                statusBtnRef.current?.focus()
+              }}
+            >
+              ✕
+            </button>
+            <h2>System status</h2>
+            <p className="ls-sub">Diagnostics for QA — not part of the operator view.</p>
+
+            <div className="ls-ready">
+              <span className={webcamReady ? 'on' : 'off'}>Camera: {webcamReady ? 'ready' : 'waiting'}</span>
+              <span className={isModelLoaded ? 'on' : 'off'}>Detector: {isModelLoaded ? 'ready' : 'waiting'}</span>
+              <span className={backendReady ? 'on' : 'off'}>Backend: {backendReady ? 'ready' : 'waiting'}</span>
+            </div>
+
+            <div className="ls-kv"><span>Model</span><span>{MODEL_LABEL}</span></div>
+            <div className="ls-kv"><span>Indexed identities</span><span>{memberCount ?? '--'}</span></div>
+            <div className="ls-kv"><span>Scan interval</span><span>{SCAN_INTERVAL_MS} ms</span></div>
+            <div className="ls-kv"><span>Plate interval</span><span>{PLATE_SCAN_INTERVAL_MS} ms</span></div>
+            <div className="ls-kv"><span>Detector FPS</span><span>{fps ?? '--'}</span></div>
+            <div className="ls-kv"><span>Liveness</span><span>{liveness}</span></div>
+            <div className="ls-kv"><span>Blinks seen</span><span>{blinkCount}</span></div>
+            <div className="ls-kv"><span>Round trip</span><span>{roundtripMs ?? '--'} ms</span></div>
+            <div className="ls-kv"><span>Cosine distance</span><span>{typeof matchResult?.matchDistance === 'number' ? matchResult.matchDistance.toFixed(4) : '--'}</span></div>
+            <div className="ls-kv"><span>Registry status</span><span>{(matchResult?.status || 'none').toUpperCase()}</span></div>
+            <div className="ls-kv"><span>Pose</span><span>{matchResult?.poseLabel || '-'}</span></div>
+            <div className="ls-kv"><span>Server stages</span><span>{formatStageTiming(matchResult?.stageTiming)}</span></div>
+            <div className="ls-kv"><span>Last message</span><span>{matchResult?.message || '--'}</span></div>
+
+            {activeEntry ? (
+              <>
+                <p className="ls-eyebrow" style={{ marginTop: 18 }}>Selected audit event</p>
+                <div className="ls-kv"><span>Name</span><span>{activeEntry.fullName}</span></div>
+                <div className="ls-kv"><span>Distance</span><span>{typeof activeEntry.matchDistance === 'number' ? activeEntry.matchDistance.toFixed(4) : '--'}</span></div>
+                <div className="ls-kv"><span>Latency</span><span>{activeEntry.latencyMs ?? '--'} ms</span></div>
+                {activeEntry.liveCrop ? (
+                  <img src={activeEntry.liveCrop} alt="Crop from the selected audit event" style={{ width: '100%', borderRadius: 8, marginTop: 10 }} />
+                ) : null}
+              </>
+            ) : null}
+          </aside>
+        </>
+      ) : null}
     </div>
   )
 }

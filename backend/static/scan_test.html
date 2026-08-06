@@ -125,6 +125,19 @@
   </div>
 
   <div id="result"></div>
+
+  <div class="card pad" style="margin-top:22px">
+    <h3 style="display:flex;justify-content:space-between;align-items:center">
+      <span>Recent checks</span>
+      <a href="#" id="refresh-log" style="font-weight:400;text-transform:none;
+         letter-spacing:0;color:var(--accent);font-size:12px">refresh</a>
+    </h3>
+    <p class="imgnote" style="margin:0 0 10px">
+      Every scan is logged here, matched or not — separately from the identity
+      registry, which only holds people someone chose to enrol.
+    </p>
+    <div id="log"></div>
+  </div>
 </div>
 
 <script>
@@ -229,13 +242,14 @@
   // image held more, listing the rest is not a nicety: "faces found: 3" over a
   // single verdict reads as though the other two were checked and cleared.
   function otherFacesBlock(data) {
-    const others = (data.faces || []).filter(f => !f.is_primary);
+    const others = (data.faces || []).filter(f => f.index !== data.primary_face_index);
     if (!others.length) return "";
     const items = others.map(f => {
       const p = f.person || {};
-      const box = f.facial_area || {};
+      const box = f.bbox || {};
       const who = f.is_known_user
         ? `${esc(p.full_name)}<span class="badge ${esc(p.status)}">${esc(p.status)}</span>`
+        : f.confidence === "no_decision" ? "No decision — image not readable"
         : "Not in the registry";
       return `<div class="cap">
         <div class="top">
@@ -245,8 +259,8 @@
           <span class="dist">${esc(f.match_distance)}</span>
         </div>
         <div class="meta">box ${esc(box.w)}&times;${esc(box.h)} at
-          (${esc(box.x)}, ${esc(box.y)}) &nbsp;·&nbsp; quality:
-          ${esc((f.capture_quality || {}).quality_score)}</div>
+          (${esc(box.x)}, ${esc(box.y)}) &nbsp;·&nbsp; match:
+          ${esc(f.confidence)}${f.needs_review ? " (needs review)" : ""}</div>
       </div>`;
     }).join("");
     return `<div class="card pad">
@@ -347,14 +361,65 @@
       <div class="card pad">
         <h3>Scan details</h3>
         ${row("Faces found in image", data.faces_detected)}
-        ${row("Faces identified", data.faces_resolved)}
-        ${row("Faces not identified (over cap)", data.faces_truncated || 0)}
+        ${row("Faces resolved", (data.summary || {}).total)}
+        ${row("Recognised / unknown",
+              `${(data.summary || {}).known} / ${(data.summary || {}).unknown}`)}
+        ${row("Confirmed / probable", `${(data.summary || {}).confirmed} / ${(data.summary || {}).probable}`)}
+        ${row("Faces not resolved (over cap)", (data.summary || {}).truncated || 0)}
         ${row("Time taken", elapsed + " s")}
         ${row("HTTP status", httpStatus)}
       </div>
 
       <details><summary>Raw response</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre></details>`;
   }
+
+  const LABEL_COLOUR = {
+    offender: "var(--alert)", suspect: "var(--alert)",
+    verified: "var(--ok)", no_match: "var(--muted)", no_face: "var(--unknown)",
+  };
+
+  async function loadLog() {
+    const logEl = document.getElementById("log");
+    try {
+      const res = await fetch("/api/v1/detections?limit=12");
+      const data = await res.json();
+      const rows = data.detections || [];
+      if (!rows.length) {
+        logEl.innerHTML = `<p class="imgnote" style="margin:0">No checks recorded yet.</p>`;
+        return;
+      }
+      const s = data.summary || {};
+      const counts = (s.by_label || [])
+        .map(b => `${esc(b.match_label)}: ${b.count}`).join(" &nbsp;·&nbsp; ");
+      logEl.innerHTML =
+        `<div class="kv" style="border-bottom:1px solid var(--line);padding-bottom:8px">
+           <span>${esc(s.total)} check(s), ${esc(s.alerts)} alert(s)</span>
+           <span style="font-size:12px">${counts}</span>
+         </div>` +
+        rows.map(r => {
+          const when = fmtWhen(r.detected_at) || "";
+          const who = r.matched_name || (r.match_label === "no_face"
+            ? "no face found" : "no match");
+          const colour = LABEL_COLOUR[r.match_label] || "var(--muted)";
+          const score = r.match_score !== null && r.match_score !== undefined
+            ? r.match_score : "—";
+          return `<div class="kv">
+            <span>${r.alert_sent ? "&#9888; " : ""}<strong style="color:${colour}">${esc(who)}</strong>
+              <span style="color:var(--muted)">&nbsp;·&nbsp;${esc(r.camera_id)}</span></span>
+            <span>${esc(score)}<span style="color:var(--muted);font-size:12px">
+              &nbsp;·&nbsp;${esc(when)}</span></span>
+          </div>`;
+        }).join("");
+    } catch (err) {
+      logEl.innerHTML = `<p class="imgnote" style="margin:0">Could not load the log: ${esc(err)}</p>`;
+    }
+  }
+
+  document.getElementById("refresh-log").addEventListener("click", e => {
+    e.preventDefault();
+    loadLog();
+  });
+  loadLog();
 
   scanEl.addEventListener("click", async () => {
     if (!fileEl.files || !fileEl.files.length) return;
@@ -382,6 +447,7 @@
       const elapsed = ((Date.now() - started) / 1000).toFixed(1);
       render(data, res.status, elapsed);
       statusEl.textContent = "";
+      loadLog();
     } catch (err) {
       statusEl.textContent = "";
       resultEl.style.display = "block";

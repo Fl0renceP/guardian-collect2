@@ -62,43 +62,54 @@ one. People arrive in groups, and the person a camera most needs to identify is
 rarely the one who walked closest to it.
 
 The response carries a `faces` array, ordered largest-first, with one entry per
-face — its own `facial_area` box, identity, `match_distance`, `status`, `alert`
-and `capture_quality`:
+face — its own `bbox`, identity, `match_distance`, `status`, `alert`, and the
+`confidence` band (`confirmed` / `probable` / `no_decision`):
 
 ```jsonc
 {
   "success": true,
   "faces": [
-    { "index": 0, "facial_area": {"x": 65, "y": 82, "w": 119, "h": 169},
+    { "index": 0, "bbox": {"x": 63, "y": 86, "w": 119, "h": 157},
       "is_known_user": true, "status": "verified", "alert": false,
-      "match_distance": 0.0259, "is_primary": false, "person": { … } },
-    { "index": 1, "facial_area": {"x": 310, "y": 88, "w": 74, "h": 106},
+      "confidence": "confirmed", "needs_review": false,
+      "match_distance": 0.0259, "person": { … } },
+    { "index": 1, "bbox": {"x": 311, "y": 94, "w": 76, "h": 99},
       "is_known_user": true, "status": "offender", "alert": true,
-      "match_distance": 0.0222, "is_primary": true,  "person": { … } }
+      "confidence": "confirmed", "needs_review": false,
+      "match_distance": 0.1003, "person": { … } }
   ],
-  "faces_detected": 3, "faces_resolved": 3, "faces_known": 3,
-  "faces_flagged": 2, "faces_truncated": 0, "any_alert": true,
+  "summary": { "total": 3, "known": 3, "unknown": 0, "alerts": 2,
+               "confirmed": 3, "probable": 0, "no_decision": 0,
+               "needs_review": 0, "truncated": 0 },
+  "faces_detected": 3,
   "image_size": { "width": 664, "height": 420 },
+  "alert": true,                 // true if ANY face in the frame is flagged
+  "alerts": [ … ],               // one alert event per flagged face
   // …plus every field the old single-face response had, mirrored from the
   // primary face, so existing callers keep working unchanged.
-  "status": "offender", "alert": true, "primary_face_index": 1
+  "status": "offender", "primary_face_index": 1
 }
 ```
 
-Two things to know:
+Three things to know:
 
 - **Boxes are in the coordinate space of the image you uploaded**, which is why
-  `image_size` is returned — the client scales the frame down before posting, so
-  a box only maps back onto a video element via that ratio.
-- **The primary face is the most *significant* one, not the biggest.** Flagged
-  first, then known, then by size. A flagged person standing behind the subject
-  is the whole point of the feature, and the legacy top-level fields would
-  otherwise report "no match" while the alert sat in `faces[2]`.
+  `image_size` is returned — the live client scales the frame down before
+  posting, so a `bbox` only maps back onto a video element via that ratio.
+- **Every flagged face raises its own alert.** The top-level fields describe the
+  primary face only; alerting off those alone meant a frame holding a resident
+  and a flagged stranger raised an alert about the resident and none at all
+  about the stranger. Repeat sightings of the same person are suppressed for
+  `DETECTION_DEDUPE_SECONDS` (default 60) so a feed scanning every 1.5s does not
+  bury everything else.
+- **A `probable` match still alerts**, but says so — on a watchlist a likely
+  offender is worth a look, and the alert must not read like a certainty the
+  recogniser has already declined to make.
 
-`MAX_SCAN_FACES` (default 8) caps how many faces one scan resolves; anything
-over the cap is counted in `faces_truncated` rather than silently dropped. Cost
-scales gently — RetinaFace already detects every face, so the extra work per
-face is one embedding and two indexed queries, not another full detection pass.
+`MAX_FACES_PER_FRAME` (default 10) caps how many faces one scan resolves;
+anything over the cap is counted in `summary.truncated` rather than silently
+dropped. Cost scales gently — detection already finds every face in one pass, so
+each extra face is one embedding and a gallery query, not another full detect.
 
 ## Multi-angle face gallery import
 

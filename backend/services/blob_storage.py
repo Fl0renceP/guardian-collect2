@@ -137,3 +137,25 @@ class BlobStorageService:
         if not blob_name:
             return url
         return self.read_url(blob_name, minutes=minutes)
+
+    def delete_stored_url(self, url):
+        """Delete the blob a stored URL points at. Returns True if it went.
+
+        Used by the retention purge: dropping the person_faces row without
+        deleting the image would leave the face itself in storage, which is the
+        thing the retention window exists to remove.
+
+        A URL outside this container is ignored rather than followed — the
+        purge must not be able to delete arbitrary blobs because a bad row
+        pointed somewhere unexpected.
+        """
+        blob_name = _blob_name_from_url(url)
+        if not blob_name:
+            return False
+        try:
+            self.container_client.get_blob_client(blob_name).delete_blob()
+            return True
+        except Exception:
+            # Already gone, or never existed. Either way the desired end state
+            # holds, so the caller should not treat it as a failure.
+            return False

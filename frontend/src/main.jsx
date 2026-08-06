@@ -17,6 +17,7 @@ import MemberSafetyScore from './views/MemberSafetyScore'
 import SafeRoute from './views/SafeRoute'
 import SubmitClaim from './views/SubmitClaim'
 import LiveScanDemo from './components/LiveScanDemo' // Import your live scan demo component
+import LivePlateDemo from './components/LivePlateDemo'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -34,6 +35,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <Route path="alerts" element={<AlertsFeed />} />
             <Route path="patrol" element={<PatrolPlan />} />
             <Route path="live-scan" element={<LiveScanDemo />} /> {/* Added route */}
+            <Route path="live-plate" element={<LivePlateDemo />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
