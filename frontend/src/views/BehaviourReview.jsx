@@ -92,6 +92,114 @@ function ScoreBar({ label, value, tone, absentText }) {
   )
 }
 
+/* The camera as it is RIGHT NOW, with the module's own annotations.
+ *
+ * This is not evidence of the flag and must never be mistaken for it. The card
+ * describes something that happened at a fixed moment; this shows whoever is in
+ * front of the camera at the moment you are reading. Frequently a different
+ * person entirely. Hence the timestamp, the wording, and the deliberate visual
+ * distance from the clip below — a reviewer who confuses the two is making an
+ * identification about the wrong human being.
+ */
+function LiveFeed({ cameraId, occurredAt }) {
+  const [live, setLive] = useState(null)
+  const [nonce, setNonce] = useState(0)
+  const [broken, setBroken] = useState(false)
+
+  useEffect(() => {
+    if (!cameraId) return undefined
+    let alive = true
+
+    const check = () =>
+      api
+        .behaviourLiveStatus(cameraId)
+        .then((status) => {
+          if (!alive) return
+          setLive(status.live)
+          // A feed that went away and came back needs a new stream URL, not the
+          // dead one the browser is still holding.
+          if (status.live && broken) {
+            setBroken(false)
+            setNonce((n) => n + 1)
+          }
+        })
+        .catch(() => alive && setLive(false))
+
+    check()
+    const timer = setInterval(check, 5000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [cameraId, broken])
+
+  if (live === null) return null
+
+  if (!live || broken) {
+    return (
+      <div
+        className="tiny"
+        style={{
+          border: '1px dashed var(--hairline)',
+          borderRadius: 'var(--radius-sm)',
+          padding: '10px 12px',
+          marginBottom: 12,
+          opacity: 0.85,
+        }}
+      >
+        <strong>No live feed from {cameraId || 'this camera'}.</strong> Nothing is analysing
+        this camera at the moment. The recorded clip below is unaffected — it is what was
+        captured when the flag fired.
+      </div>
+    )
+  }
+
+  const flaggedAt = occurredAt ? formatTime(occurredAt) : null
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 6,
+          flexWrap: 'wrap',
+        }}
+      >
+        <span className="pill pill-denied">
+          <span className="dot" aria-hidden="true" />
+          LIVE — now
+        </span>
+        <strong className="tiny">{cameraId}</strong>
+      </div>
+
+      <img
+        key={nonce}
+        src={api.behaviourLiveUrl(cameraId, nonce)}
+        alt={`Live annotated feed from ${cameraId}, showing detection boxes, pose skeletons and zones`}
+        onError={() => setBroken(true)}
+        style={{
+          width: '100%',
+          aspectRatio: '4/3',
+          objectFit: 'contain',
+          borderRadius: 'var(--radius-sm)',
+          border: '2px solid var(--critical)',
+          background: '#000',
+          display: 'block',
+        }}
+      />
+
+      <p className="tiny" style={{ margin: '6px 0 0' }}>
+        <strong>This is the camera now, not the flagged moment.</strong> The flag was raised
+        {flaggedAt ? ` at ${flaggedAt}` : ' earlier'} — whoever is in shot here may have nothing
+        to do with it. Boxes, skeletons and zones are the module's own working, shown so you can
+        see what it is measuring.
+      </p>
+    </div>
+  )
+}
+
 function IdentityPanel({ identity }) {
   if (!identity?.attached) {
     return (
@@ -197,6 +305,11 @@ function ReviewDetail({ review, trail, busy, onConfirm, onDeny, onReopen, error 
       <h2 style={{ fontSize: 14, margin: '18px 0 8px' }}>2 · What they were doing</h2>
       <div className="behaviour-split">
         <div>
+          <LiveFeed cameraId={review.camera_id} occurredAt={review.occurred_at || review.opened_at} />
+
+          <h3 className="tiny" style={{ margin: '0 0 6px', textTransform: 'uppercase' }}>
+            Recorded — the flagged moment
+          </h3>
           {behaviour.clip_url ? (
             <>
               <video

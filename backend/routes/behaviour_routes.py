@@ -11,10 +11,13 @@ reaching a member is the failure mode that design exists to prevent.
 """
 
 import logging
+import time
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request, stream_with_context
 from psycopg2 import OperationalError
 
+from services import behaviour_live_service
+from services.behaviour_live_service import LiveFrameError
 from services.behaviour_events_service import (
     EventValidationError,
     get_review,
@@ -303,6 +306,99 @@ def upload_review_clip(review_id):
         return jsonify({"error": "Internal error storing the clip."}), 500
     finally:
         release_conn(conn)
+
+
+@behaviour_bp.route("/live-frame", methods=["POST"])
+def ingest_live_frame():
+    """One annotated frame from a running pipeline.
+
+    The same image the module draws in its debug window. Held in memory only and
+    overwritten by the next frame — see behaviour_live_service for why this one
+    is never persisted when clips are.
+    """
+    camera_id = request.args.get("camera_id") or request.form.get("camera_id")
+
+    if "file" in request.files:
+        jpeg = request.files["file"].read()
+    else:
+        # Raw body is what a pipeline pushing every frame wants — multipart
+        # framing on a per-frame POST is overhead for no benefit.
+        jpeg = request.get_data()
+
+    try:
+        return jsonify(behaviour_live_service.store_frame(camera_id, jpeg)), 202
+    except LiveFrameError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@behaviour_bp.route("/live/status", methods=["GET"])
+def live_status():
+    """Whether a camera is streaming right now.
+
+    The card asks this before rendering a feed. Without it the browser would
+    hold an <img> open against a camera that stopped hours ago and show a
+    spinner where the answer is "nothing is watching this".
+    """
+    return jsonify(behaviour_live_service.status(request.args.get("camera_id"))), 200
+
+
+@behaviour_bp.route("/live", methods=["GET"])
+def live_stream():
+    """The annotated feed as MJPEG.
+
+    MJPEG rather than anything cleverer because it is an <img src> on the other
+    end — no player, no codec negotiation, no websocket to keep alive. At the
+    frame rates this pipeline achieves on a CPU, the bandwidth argument for a
+    real codec does not arise.
+    """
+    camera_id = request.args.get("camera_id")
+    if not camera_id:
+        return jsonify({"error": "A camera_id is required."}), 400
+
+    if behaviour_live_service.latest(camera_id) is None:
+        # 503 rather than an empty stream: "no camera is streaming" is a real
+        # answer, and a hanging image element cannot express it.
+        return jsonify({
+            "error": f"No live feed for {camera_id}.",
+            "code": "not_streaming",
+        }), 503
+
+    boundary = "frame"
+
+    def frames():
+        last_seq = None
+        idle_since = time.monotonic()
+
+        while True:
+            current = behaviour_live_service.latest(camera_id)
+            if current is None:
+                # The pipeline stopped. Ending the response is what makes the
+                # browser's onerror fire, which is how the card learns to stop
+                # showing a LIVE badge over a feed that is no longer live.
+                return
+
+            jpeg, seq = current
+            if seq != last_seq:
+                last_seq = seq
+                idle_since = time.monotonic()
+                yield (
+                    f"--{boundary}\r\nContent-Type: image/jpeg\r\n"
+                    f"Content-Length: {len(jpeg)}\r\n\r\n".encode()
+                    + jpeg
+                    + b"\r\n"
+                )
+            elif time.monotonic() - idle_since > behaviour_live_service.LIVE_STALE_SECONDS:
+                return
+
+            # Poll faster than the pipeline produces, so a new frame goes out as
+            # soon as it exists rather than on a fixed cadence of our own.
+            time.sleep(0.08)
+
+    return Response(
+        stream_with_context(frames()),
+        mimetype=f"multipart/x-mixed-replace; boundary={boundary}",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"},
+    )
 
 
 @behaviour_bp.route("/review-queue/<review_id>/history", methods=["GET"])

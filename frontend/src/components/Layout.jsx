@@ -7,6 +7,12 @@ const NAV_BY_ROLE = {
   member: [
     { to: '/', label: 'Hot-spots', end: true },
     { to: '/live-scan', label: 'Live scan' },
+    // Members see this tab by explicit request. Worth knowing what it changes:
+    // every other member-facing surface shows only CONFIRMED offender matches,
+    // whereas a behavioural flag is unconfirmed by definition — that is what
+    // the review queue exists to resolve. A resident reading these cards is
+    // reading maybes about their neighbours.
+    { to: '/behaviour-review', label: 'Behaviour review' },
     { to: '/safety-score', label: 'Safety score' },
     { to: '/alerts', label: 'Alerts' },
     { to: '/route', label: 'Plan a route' },
@@ -16,17 +22,24 @@ const NAV_BY_ROLE = {
     { to: '/my-claims', label: 'My claims' },
     { to: '/profile', label: 'Profile' },
   ],
+  // Behaviour review sits directly after Live scan in both: the two are the
+  // same act seen twice — the face signal, then what the person was doing —
+  // and reading them in that order is how the fusion is meant to be understood.
+  // Members do not get this tab. BEHAVIOUR_REVIEW_API.md §6: a behavioural flag
+  // is unconfirmed by definition, and members see confirmed `offender` matches
+  // only. Putting maybes in front of residents is the alarm fatigue the routing
+  // rule exists to prevent.
   employee: [
     { to: '/', label: 'Hot-spots', end: true },
     { to: '/live-scan', label: 'Live scan' },
-    { to: '/review', label: 'Review queue', badge: 'pending' },
     { to: '/behaviour-review', label: 'Behaviour review' },
+    { to: '/review', label: 'Review queue', badge: 'pending' },
   ],
   cpu: [
     { to: '/', label: 'Hot-spots', end: true },
     { to: '/live-scan', label: 'Live scan' },
-    { to: '/alerts', label: 'Alerts', badge: 'alerts' },
     { to: '/behaviour-review', label: 'Behaviour review' },
+    { to: '/alerts', label: 'Alerts', badge: 'alerts' },
     { to: '/patrol', label: 'Patrol planning' },
   ],
 }

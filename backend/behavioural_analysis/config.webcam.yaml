@@ -188,8 +188,21 @@ output:
   location_zone_id: "webcam_demo"
   # Wired to the ingest endpoint (BEHAVIOUR_REVIEW_API.md §3). Still only POSTs
   # when --push is passed, so a plain run stays local.
-  flask_api_url: "http://localhost:5000/api/v1/behaviour/events"
+  # 127.0.0.1, NOT localhost. On Windows `localhost` resolves to ::1 first, the
+  # Flask dev server binds IPv4 only, and every POST pays roughly two seconds
+  # waiting for that to fail before retrying over IPv4. Measured here: 2057ms
+  # via localhost against 18ms via 127.0.0.1, for the identical request. It is
+  # invisible in a browser (which handles the fallback) and brutal for anything
+  # posting per frame. vite.config.js already proxies to 127.0.0.1 for the same
+  # reason.
+  flask_api_url: "http://127.0.0.1:5000/api/v1/behaviour/events"
   api_timeout_seconds: 5.0
+  # Frames per second sent to the app's live view. This is a VIDEO rate and has
+  # nothing to do with the analysis rate — detection manages about one frame a
+  # second on a CPU, and a live view running at that speed is a slideshow of a
+  # moment that has already gone. The relay sends current video with the last
+  # completed analysis drawn on it, and labels how far behind the boxes are.
+  live_fps: 12.0
 
 # Review clips. Same behaviour as config.yaml; shorter pre-roll because
 # these configs are for short clips and live demos.

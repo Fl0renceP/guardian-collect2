@@ -265,6 +265,66 @@ def push_tracks_to_flask_api(
         return {"pushed": False, "reason": str(exc), "snapshots": len(snapshots)}
 
 
+_LIVE_SESSION = None
+
+
+def _live_session():
+    """One keep-alive connection for the live relay.
+
+    Every other push here is occasional — an event, a batch of positions — and a
+    fresh connection costs nothing noticeable. The relay posts several times a
+    second forever, and a TCP handshake per frame is pure overhead against a
+    server on the same machine.
+    """
+    global _LIVE_SESSION
+    if _LIVE_SESSION is None:
+        import requests
+
+        _LIVE_SESSION = requests.Session()
+    return _LIVE_SESSION
+
+
+def push_live_frame(
+    jpeg: bytes,
+    *,
+    camera_id: str,
+    url: Optional[str] = None,
+    timeout: float = 2.0,
+) -> Dict[str, Any]:
+    """Relay one annotated frame to the backend for the live view.
+
+    This is the debug window's own image — boxes, skeletons, zones, scores —
+    sent so a reviewer can watch a camera from the app instead of standing over
+    the laptop running this module.
+
+    The timeout is deliberately short. A live view is worth nothing if keeping
+    it fed slows the analysis down; a frame that cannot be delivered promptly is
+    better dropped, because the next one is already more current than it is.
+
+    The backend holds this in memory and overwrites it with the next frame. It
+    is never stored — unlike a clip, which is footage of a moment a human has
+    been asked to review, this is footage of whoever is simply in shot.
+    """
+    if not url or not jpeg:
+        return {"pushed": False, "reason": "not configured"}
+
+    try:
+        response = _live_session().post(
+            url,
+            params={"camera_id": camera_id},
+            data=jpeg,
+            headers={"Content-Type": "image/jpeg"},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        return {"pushed": True, "bytes": len(jpeg)}
+    except Exception as exc:
+        # Debug, not warning: a dropped live frame is a cosmetic loss, and at
+        # several frames a second a warning per failure would bury the log.
+        logger.debug("push_live_frame failed: %s", exc)
+        return {"pushed": False, "reason": str(exc)}
+
+
 def track_snapshot(frame_result, timestamp: datetime | str) -> Optional[Dict[str, Any]]:
     """Build one body-position snapshot from a processed frame.
 

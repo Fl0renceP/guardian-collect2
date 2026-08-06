@@ -67,8 +67,6 @@ export const api = {
   suburbs: (q) => request(`/api/suburbs${qs({ q })}`),
 
   // --- behavioural analysis ---
-  // Read-only for now. Confirm/deny is step 4 of BEHAVIOUR_REVIEW_API.md and
-  // deliberately has no client here yet — there is nothing to call.
   behaviourQueue: (params) => request(`/api/v1/behaviour/review-queue${qs(params)}`),
   behaviourReview: (id) =>
     request(`/api/v1/behaviour/review-queue/${encodeURIComponent(id)}`),
@@ -83,6 +81,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
+  // Is a pipeline pushing frames for this camera right now?
+  behaviourLiveStatus: (cameraId) =>
+    request(`/api/v1/behaviour/live/status${qs({ camera_id: cameraId })}`),
+  // Not fetched — this is an MJPEG stream and the consumer is an <img src>.
+  // The cache-buster matters: without it a browser reuses the closed stream
+  // from a previous mount and the feed never restarts.
+  behaviourLiveUrl: (cameraId, nonce) =>
+    `${BASE_URL}/api/v1/behaviour/live${qs({ camera_id: cameraId, t: nonce })}`,
 
   // --- crime prevention units ---
   alerts: (params) => request(`/api/alerts${qs(params)}`),

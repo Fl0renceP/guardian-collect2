@@ -31,7 +31,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <Route path="my-claims" element={<MyClaims />} />
             <Route path="profile" element={<MemberProfile />} />
             <Route path="review" element={<ReviewQueue />} />
-            {/* Mock screen — see BEHAVIOUR_REVIEW_API.md. No API wired yet. */}
+            {/* Reads live from /api/v1/behaviour/*. See BEHAVIOUR_REVIEW_API.md. */}
             <Route path="behaviour-review" element={<BehaviourReview />} />
             <Route path="safety-score" element={<MemberSafetyScore />} />
             <Route path="alerts" element={<AlertsFeed />} />

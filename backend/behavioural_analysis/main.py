@@ -12,6 +12,8 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import threading
+import time
 from pathlib import Path
 
 # Allow both `python main.py` from here and `python -m behavioural_analysis.main`
@@ -21,6 +23,7 @@ if str(MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(MODULE_DIR))
 
 import api_output  # noqa: E402
+import frame_ingest  # noqa: E402
 from pipeline import BehaviouralPipeline, static_face_provider  # noqa: E402
 from settings import ConfigError, load_settings  # noqa: E402
 
@@ -73,6 +76,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--push", action="store_true",
         help="Call push_to_flask_api for each event. Without output.flask_api_url set "
              "in config.yaml this only logs what it WOULD post — the Flask side is a stub.",
+    )
+    parser.add_argument(
+        "--no-live", action="store_true",
+        help="With --push, do NOT relay the annotated frame to the app's live view. "
+             "The relay is on by default because a review card that can show the "
+             "camera is the point of pushing at all; this turns it off for a run "
+             "where the extra JPEG encode per frame is not wanted.",
     )
     parser.add_argument(
         "--face-confidence", type=float, default=None,
@@ -165,6 +175,11 @@ def main(argv=None) -> int:
     # would be a request every 300ms for data nobody reads in real time.
     events_url = settings.output.get("flask_api_url")
     tracks_url = events_url.replace("/events", "/tracks") if events_url else None
+    live_url = (
+        events_url.replace("/events", "/live-frame")
+        if events_url and args.push and not args.no_live
+        else None
+    )
     snapshot_buffer = []
     last_flush = [0.0]
     FLUSH_SECONDS = 2.0
@@ -228,6 +243,70 @@ def main(argv=None) -> int:
 
     pusher = ThreadPoolExecutor(max_workers=1, thread_name_prefix="track-push")
 
+    # THE LIVE RELAY RUNS AT ITS OWN RATE, NOT THE ANALYSIS RATE.
+    #
+    # Detection costs about three quarters of a second per frame on a CPU. If
+    # the relay only sent frames the detector had finished with, the live view
+    # could never be anything but a slideshow — and worse, a slideshow of a
+    # moment that has already passed.
+    #
+    # So this thread takes the newest camera frame, draws the most recent
+    # analysis over it, and sends that. The video is current; the boxes are as
+    # old as the last completed detection. The HUD says how old, because a box
+    # drawn over a person who has since moved is a claim about where they are,
+    # and an unlabelled lag is how that claim becomes wrong.
+    live_state = {"result": None, "at": 0.0, "zone_index": None, "event": None}
+    stop_relay = threading.Event()
+
+    def relay_loop():
+        import cv2
+        import debug_overlay
+
+        interval = 1.0 / max(1.0, float(settings.output.get("live_fps", 10.0)))
+        timeout = float(settings.output.get("api_timeout_seconds", 5.0))
+
+        while not stop_relay.wait(interval):
+            camera = frame_ingest.active_camera()
+            image = camera.peek() if camera else None
+            if image is None:
+                continue
+
+            result = live_state["result"]
+            if result is None:
+                canvas = image.copy()
+            else:
+                age = time.monotonic() - live_state["at"]
+                canvas = debug_overlay.render_frame(
+                    image,
+                    zone_index=live_state["zone_index"],
+                    detections=result.detections,
+                    poses=result.poses,
+                    scores=result.scores,
+                    triggered=result.triggered,
+                    timestamp=result.frame.timestamp,
+                    frame_index=result.frame.index,
+                    events_so_far=len(pipeline.events),
+                    review_threshold=float(settings.fusion.review_threshold),
+                    latest_event=live_state["event"],
+                    note=f"live video · boxes {age:.1f}s behind (detection rate)",
+                )
+
+            ok, buffer = cv2.imencode(".jpg", canvas, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+            if not ok:
+                continue
+
+            api_output.push_live_frame(
+                buffer.tobytes(),
+                camera_id=settings.output.location_zone_id,
+                url=live_url,
+                timeout=timeout,
+            )
+
+    relay = None
+    if live_url:
+        relay = threading.Thread(target=relay_loop, name="live-relay", daemon=True)
+        relay.start()
+
     def flush_snapshots(force=False):
         if not (args.push and tracks_url and snapshot_buffer):
             return
@@ -287,6 +366,16 @@ def main(argv=None) -> int:
                     review_ids[event["event_id"].replace("/", "-").replace(":", "-")] = review_id
             latest_event = event
 
+        if live_url:
+            # Hand the relay the analysis it should draw. It supplies its own,
+            # newer, frame to draw it on.
+            live_state["zone_index"] = pipeline._zones_for(
+                result.frame.width, result.frame.height
+            )
+            live_state["event"] = latest_event
+            live_state["result"] = result
+            live_state["at"] = time.monotonic()
+
         if show:
             import cv2
             import debug_overlay
@@ -332,6 +421,12 @@ def main(argv=None) -> int:
         logger.exception("Pipeline failed: %s", exc)
         return 1
     finally:
+        # Stop relaying before anything else: a few more frames of a camera
+        # nobody is analysing any more is exactly what should not be sent.
+        stop_relay.set()
+        if relay is not None:
+            relay.join(timeout=2.0)
+
         # Let queued position pushes finish before the process exits.
         pusher.shutdown(wait=True)
         if show:
