@@ -5,8 +5,24 @@ import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const SCAN_INTERVAL_MS = 1500
-const HISTORY_LIMIT = 30
+const HISTORY_LIMIT = 50
 const MODEL_LABEL = 'Facenet512 / Cosine'
+
+// One person standing in front of the camera is one sighting, not forty. The
+// feed scans every 1.5s and now resolves every face at once, so without this the
+// audit log would hold about five seconds of the same handful of people and an
+// operator would never scroll back to a real event. Matches the server-side
+// alert window in spirit; the log is deliberately the shorter of the two.
+const AUDIT_DEDUPE_MS = 30000
+
+// How long the identities from one scan keep annotating the live boxes. Long
+// enough to bridge the gap between scans (plus the round trip), short enough
+// that a name never lingers on a face after the person has walked out.
+const LABEL_TTL_MS = 4500
+// Overlap below which a returned identity is assumed to belong to a different
+// face than the one currently being drawn, and so is not attached to it.
+const MIN_LABEL_IOU = 0.25
+
 const MEDIAPIPE_WASM_ROOT =
   import.meta.env.VITE_MEDIAPIPE_WASM_ROOT || 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
 const MEDIAPIPE_MODEL_PATH =
@@ -21,21 +37,28 @@ const formatTimestamp = (iso) => {
   return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString()
 }
 
-const toneClassFromResult = ({ hasFace, isAnalyzing, matchResult }) => {
-  if (matchResult?.isAlert) return 'alert'
-  if (matchResult?.isKnownUser) return 'ok'
-  if (!hasFace) return 'unknown'
-  if (isAnalyzing) return 'unknown'
+const toneForFace = (face) => {
+  if (!face) return 'unknown'
+  if (face.isAlert) return 'alert'
+  if (face.isKnownUser) return 'ok'
   return 'unknown'
 }
 
-const toneLabelFromResult = ({ hasFace, isAnalyzing, matchResult }) => {
-  if (matchResult?.isAlert) return 'FLAGGED'
-  if (matchResult?.isKnownUser) return 'RECOGNISED'
-  if (!hasFace) return 'NO TARGET'
-  if (isAnalyzing) return 'SCANNING'
+const labelForFace = (face) => {
+  if (!face) return 'UNREGISTERED'
+  if (face.isAlert) return 'FLAGGED'
+  if (face.isKnownUser) return 'RECOGNISED'
   return 'UNREGISTERED'
 }
+
+// A frame's tone is its worst face: one flagged person among four verified ones
+// is still a flagged person, and the header must not average that away.
+const TONE_SEVERITY = { unknown: 0, ok: 1, alert: 2 }
+const frameTone = (faces) =>
+  faces.reduce((worst, face) => {
+    const tone = toneForFace(face)
+    return TONE_SEVERITY[tone] > TONE_SEVERITY[worst] ? tone : worst
+  }, 'unknown')
 
 const auditTone = (entry) => {
   const status = (entry?.status || '').toLowerCase()
@@ -57,27 +80,22 @@ const parsePoseFromUrl = (url) => {
   return parts.length < 2 ? '-' : parts.slice(1).join(' ')
 }
 
-const captureCrop = (video, bbox) => {
-  if (!video || !bbox || !video.videoWidth || !video.videoHeight) return null
-
-  const padX = bbox.w * 0.2
-  const padY = bbox.h * 0.25
-  const sx = clamp(Math.floor(bbox.x - padX), 0, video.videoWidth - 1)
-  const sy = clamp(Math.floor(bbox.y - padY), 0, video.videoHeight - 1)
-  const ex = clamp(Math.ceil(bbox.x + bbox.w + padX), 1, video.videoWidth)
-  const ey = clamp(Math.ceil(bbox.y + bbox.h + padY), 1, video.videoHeight)
-  const sw = Math.max(1, ex - sx)
-  const sh = Math.max(1, ey - sy)
-
-  const c = document.createElement('canvas')
-  c.width = 180
-  c.height = 180
-  const g = c.getContext('2d')
-  g.drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height)
-  return c.toDataURL('image/jpeg', 0.8)
+const boxIoU = (a, b) => {
+  if (!a || !b) return 0
+  const x1 = Math.max(a.x, b.x)
+  const y1 = Math.max(a.y, b.y)
+  const x2 = Math.min(a.x + a.w, b.x + b.w)
+  const y2 = Math.min(a.y + a.h, b.y + b.h)
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1)
+  if (!inter) return 0
+  return inter / (a.w * a.h + b.w * b.h - inter)
 }
 
-const captureFrameBlob = (video, quality = 0.72, maxWidth = 720) => {
+// One frozen frame, kept as a canvas as well as a blob. The crops have to come
+// from the exact image the server saw: cropping the live video instead would
+// use whatever the subjects are doing a round trip later, which in a group is
+// reliably the wrong faces in the wrong places.
+const captureFrameSnapshot = (video, quality = 0.72, maxWidth = 720) => {
   if (!video || !video.videoWidth || !video.videoHeight) return Promise.resolve(null)
 
   const ratio = Math.min(1, maxWidth / video.videoWidth)
@@ -87,15 +105,37 @@ const captureFrameBlob = (video, quality = 0.72, maxWidth = 720) => {
   const c = document.createElement('canvas')
   c.width = width
   c.height = height
-  const g = c.getContext('2d')
-  g.drawImage(video, 0, 0, width, height)
+  c.getContext('2d').drawImage(video, 0, 0, width, height)
 
   return new Promise((resolve) => {
-    c.toBlob((blob) => resolve(blob), 'image/jpeg', quality)
+    c.toBlob(
+      (blob) => resolve(blob ? { blob, canvas: c, width, height } : null),
+      'image/jpeg',
+      quality
+    )
   })
 }
 
-const drawReticle = (ctx, box, toneClass, scorePct) => {
+const cropFromCanvas = (source, bbox) => {
+  if (!source || !bbox || !bbox.w || !bbox.h) return null
+
+  const padX = bbox.w * 0.2
+  const padY = bbox.h * 0.25
+  const sx = clamp(Math.floor(bbox.x - padX), 0, source.width - 1)
+  const sy = clamp(Math.floor(bbox.y - padY), 0, source.height - 1)
+  const ex = clamp(Math.ceil(bbox.x + bbox.w + padX), 1, source.width)
+  const ey = clamp(Math.ceil(bbox.y + bbox.h + padY), 1, source.height)
+  const sw = Math.max(1, ex - sx)
+  const sh = Math.max(1, ey - sy)
+
+  const c = document.createElement('canvas')
+  c.width = 180
+  c.height = 180
+  c.getContext('2d').drawImage(source, sx, sy, sw, sh, 0, 0, c.width, c.height)
+  return c.toDataURL('image/jpeg', 0.8)
+}
+
+const drawReticle = (ctx, box, toneClass, caption) => {
   const color = toneClass === 'alert' ? '#b3261e' : toneClass === 'ok' ? '#186b3c' : '#7a5c00'
   const dashed = toneClass === 'unknown'
 
@@ -127,8 +167,25 @@ const drawReticle = (ctx, box, toneClass, scorePct) => {
   }
 
   ctx.setLineDash([])
-  ctx.font = '700 12px ui-monospace, SFMono-Regular, Menlo, monospace'
-  ctx.fillText(`${scorePct}%`, box.x, Math.max(14, box.y - 6))
+
+  // With several boxes on screen at once, a bare percentage is unreadable — each
+  // reticle has to say who it is. Chip behind the text so a name stays legible
+  // against a bright shirt or a window.
+  if (caption) {
+    ctx.font = '700 12px ui-monospace, SFMono-Regular, Menlo, monospace'
+    const padding = 5
+    const textWidth = ctx.measureText(caption).width
+    const chipH = 18
+    const above = box.y - chipH - 4 >= 0
+    const chipX = clamp(box.x, 0, Math.max(0, ctx.canvas.width - textWidth - padding * 2))
+    const chipY = above ? box.y - chipH - 4 : box.y + 4
+
+    ctx.fillStyle = color
+    ctx.fillRect(chipX, chipY, textWidth + padding * 2, chipH)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText(caption, chipX + padding, chipY + chipH - 5)
+  }
+
   ctx.restore()
 }
 
@@ -138,24 +195,28 @@ export default function LiveScanDemo() {
   const detectorRef = useRef(null)
   const lastVideoTimeRef = useRef(-1)
   const lastFrameAtRef = useRef(0)
-  const faceBoxRef = useRef(null)
   const failureCountRef = useRef(0)
   const nextScanAllowedAtRef = useRef(0)
+  // Identities from the most recent scan, in video-pixel coordinates, re-attached
+  // to whatever the detector is seeing right now on every animation frame.
+  const labelsRef = useRef(null)
+  // face key -> when it last earned an audit entry. See AUDIT_DEDUPE_MS.
+  const lastLoggedRef = useRef(new Map())
 
   const [modelState, setModelState] = useState('loading')
   const [modelError, setModelError] = useState('')
   const [backendReady, setBackendReady] = useState(false)
-  const [matchResult, setMatchResult] = useState(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [scanError, setScanError] = useState('')
   const [webcamReady, setWebcamReady] = useState(false)
   const [webcamError, setWebcamError] = useState('')
-  const [hasFaceInFrame, setHasFaceInFrame] = useState(false)
-  const [faceScore, setFaceScore] = useState(0)
+  const [faceCount, setFaceCount] = useState(0)
   const [fps, setFps] = useState(0)
   const [memberCount, setMemberCount] = useState(null)
-  const [liveCrop, setLiveCrop] = useState(null)
   const [roundtripMs, setRoundtripMs] = useState(null)
+  const [frameFaces, setFrameFaces] = useState([])
+  const [truncatedFaces, setTruncatedFaces] = useState(0)
+  const [selectedFaceKey, setSelectedFaceKey] = useState(null)
   const [history, setHistory] = useState([])
   const [selectedHistoryId, setSelectedHistoryId] = useState(null)
   const [dbImageBroken, setDbImageBroken] = useState(false)
@@ -215,6 +276,10 @@ export default function LiveScanDemo() {
           },
           runningMode: 'VIDEO',
           minDetectionConfidence: 0.52,
+          // BlazeFace returns every face it finds — there is no count to raise.
+          // What did limit us was suppression: adjacent people in a group get
+          // overlapping boxes, and the 0.3 default merges the pair into one.
+          minSuppressionThreshold: 0.45,
         })
 
         setModelState('ready')
@@ -231,25 +296,33 @@ export default function LiveScanDemo() {
     }
   }, [])
 
-  const toneClass = toneClassFromResult({ hasFace: hasFaceInFrame, isAnalyzing, matchResult })
-  const toneLabel = toneLabelFromResult({ hasFace: hasFaceInFrame, isAnalyzing, matchResult })
-
+  // The overlay loop reads identities out of a ref rather than state, so adding
+  // a face to the frame doesn't tear down and rebuild the animation loop.
   useEffect(() => {
     let frameId
+
+    const findLabel = (videoBox, now) => {
+      const labels = labelsRef.current
+      if (!labels || now - labels.at > LABEL_TTL_MS) return null
+
+      let best = null
+      let bestScore = MIN_LABEL_IOU
+      for (const face of labels.faces) {
+        const score = boxIoU(videoBox, face.box)
+        if (score > bestScore) {
+          bestScore = score
+          best = face
+        }
+      }
+      return best
+    }
 
     const run = async () => {
       const video = webcamRef.current?.video
       const canvas = canvasRef.current
       const detector = detectorRef.current
 
-      if (
-        video &&
-        canvas &&
-        detector &&
-        webcamReady &&
-        isModelLoaded &&
-        video.readyState === 4
-      ) {
+      if (video && canvas && detector && webcamReady && isModelLoaded && video.readyState === 4) {
         const now = performance.now()
         if (lastFrameAtRef.current > 0) {
           const elapsed = now - lastFrameAtRef.current
@@ -274,32 +347,25 @@ export default function LiveScanDemo() {
           const ctx = canvas.getContext('2d')
           ctx.clearRect(0, 0, rw, rh)
 
-          if (detections.length > 0) {
-            const best = [...detections].sort(
-              (a, b) => (b.categories?.[0]?.score || 0) - (a.categories?.[0]?.score || 0)
-            )[0]
+          const sx = rw / vw
+          const sy = rh / vh
+          const wallClock = Date.now()
 
-            const b = best.boundingBox
-            const sx = rw / vw
-            const sy = rh / vh
-            const box = {
-              x: b.originX * sx,
-              y: b.originY * sy,
-              w: b.width * sx,
-              h: b.height * sy,
-            }
-            const score = best.categories?.[0]?.score || 0
+          for (const detection of detections) {
+            const b = detection.boundingBox
+            const videoBox = { x: b.originX, y: b.originY, w: b.width, h: b.height }
+            const drawBox = { x: b.originX * sx, y: b.originY * sy, w: b.width * sx, h: b.height * sy }
+            const score = detection.categories?.[0]?.score || 0
 
-            faceBoxRef.current = { x: b.originX, y: b.originY, w: b.width, h: b.height }
-            setHasFaceInFrame(true)
-            setFaceScore(score)
+            const label = findLabel(videoBox, wallClock)
+            const caption = label
+              ? `${label.fullName} · ${label.matchConfidence}%`
+              : `${Math.round(score * 100)}%`
 
-            drawReticle(ctx, box, toneClass, Math.round(score * 100))
-          } else {
-            faceBoxRef.current = null
-            setHasFaceInFrame(false)
-            setFaceScore(0)
+            drawReticle(ctx, drawBox, toneForFace(label), caption)
           }
+
+          setFaceCount(detections.length)
         }
       }
 
@@ -308,24 +374,25 @@ export default function LiveScanDemo() {
 
     if (isModelLoaded) run()
     return () => cancelAnimationFrame(frameId)
-  }, [isModelLoaded, webcamReady, toneClass])
+  }, [isModelLoaded, webcamReady])
 
   useEffect(() => {
     if (!isModelLoaded || !webcamReady || !backendReady) return undefined
 
     const id = setInterval(() => {
-      if (!isAnalyzing && hasFaceInFrame) {
+      if (!isAnalyzing && faceCount > 0) {
         sendFrameToBackend()
       }
     }, SCAN_INTERVAL_MS)
 
     return () => clearInterval(id)
-  }, [isModelLoaded, webcamReady, backendReady, isAnalyzing, hasFaceInFrame])
+  }, [isModelLoaded, webcamReady, backendReady, isAnalyzing, faceCount])
 
-  const addHistory = (entry) => {
+  const addHistory = (entries) => {
+    if (!entries.length) return
     setHistory((prev) => {
-      const next = [entry, ...prev].slice(0, HISTORY_LIMIT)
-      if (!selectedHistoryId) setSelectedHistoryId(entry.id)
+      const next = [...entries, ...prev].slice(0, HISTORY_LIMIT)
+      if (!selectedHistoryId) setSelectedHistoryId(entries[0].id)
       return next
     })
   }
@@ -340,18 +407,16 @@ export default function LiveScanDemo() {
       return
     }
 
-    const localCrop = captureCrop(video, faceBoxRef.current)
-
     try {
       setIsAnalyzing(true)
       setScanError('')
 
       const started = performance.now()
-      const blob = await captureFrameBlob(video, 0.72, 720)
-      if (!blob) throw new Error('Camera frame unavailable.')
+      const snapshot = await captureFrameSnapshot(video, 0.72, 720)
+      if (!snapshot) throw new Error('Camera frame unavailable.')
 
       const formData = new FormData()
-      formData.append('file', blob, 'live_scan.jpg')
+      formData.append('file', snapshot.blob, 'live_scan.jpg')
 
       const response = await fetch(`${API_BASE_URL}/api/v1/scan-face`, {
         method: 'POST',
@@ -372,39 +437,102 @@ export default function LiveScanDemo() {
         throw new Error(data?.error || `Scan failed with HTTP ${response.status}`)
       }
 
-      const distance = typeof data?.match_distance === 'number' ? data.match_distance : null
-      const confidence = toConfidencePct(distance)
-      const capture = Array.isArray(data?.supporting_captures) ? data.supporting_captures[0] : null
-      const poseLabel = parsePoseFromUrl(capture?.image_url || data?.person?.image_url)
-      const ts = new Date().toISOString()
+      // `faces` is the multi-face response. Fall back to the flat single-face
+      // shape so this component still works against an older backend.
+      const rawFaces = Array.isArray(data?.faces)
+        ? data.faces
+        : data?.success
+        ? [{ ...data, index: 0, is_primary: true }]
+        : []
 
-      const normalized = {
-        id: `scan-${Date.now()}`,
-        success: !!data?.success,
-        isKnownUser: !!data?.is_known_user,
-        isAlert: !!data?.alert,
-        status: data?.status || null,
-        fullName: data?.person?.full_name || 'Unknown Identity',
-        matchDistance: distance,
-        matchConfidence: confidence,
-        error: data?.error || null,
-        message: data?.message || '',
-        timestamp: ts,
-        poseLabel,
-        personImageUrl: data?.person?.image_url || null,
-        sourceImageUrl: capture?.image_url || data?.person?.image_url || null,
-        sourceText: capture?.source || 'Registry Seed',
-        liveCrop: localCrop,
-        latencyMs: durationMs,
-        stageTiming: data?.timings_ms || null,
+      // Boxes come back in the coordinate space of the image that was uploaded,
+      // which is the snapshot, not the full-resolution video.
+      const serverWidth = data?.image_size?.width || snapshot.width
+      const cropScale = snapshot.width / serverWidth
+      const videoScale = (video.videoWidth || snapshot.width) / serverWidth
+
+      const ts = new Date().toISOString()
+      const stamp = Date.now()
+      const usedKeys = new Set()
+
+      const faces = rawFaces.map((face, i) => {
+        const area = face.facial_area || {}
+        const hasBox = typeof area.x === 'number' && area.w > 0 && area.h > 0
+        const scaleBox = (k) =>
+          hasBox
+            ? { x: area.x * k, y: area.y * k, w: area.w * k, h: area.h * k }
+            : null
+
+        const distance = typeof face.match_distance === 'number' ? face.match_distance : null
+        const capture = Array.isArray(face.supporting_captures) ? face.supporting_captures[0] : null
+        const person = face.person || null
+
+        // Keyed on the identity where there is one, so selecting a person keeps
+        // that person selected across scans even as the face order shifts. Two
+        // faces can legitimately resolve to the same identity — a person and a
+        // photo of them on a wall — so fall back to the slot to stay unique.
+        let key = person?.id ? `person-${person.id}` : `slot-${face.index ?? i}`
+        if (usedKeys.has(key)) key = `${key}-${face.index ?? i}`
+        usedKeys.add(key)
+
+        return {
+          key,
+          id: `scan-${stamp}-${face.index ?? i}`,
+          index: face.index ?? i,
+          isPrimary: !!face.is_primary,
+          isKnownUser: !!face.is_known_user,
+          isAlert: !!face.alert,
+          status: face.status || null,
+          fullName: person?.full_name || 'Unknown Identity',
+          matchDistance: distance,
+          matchConfidence: toConfidencePct(distance),
+          message: face.message || '',
+          timestamp: ts,
+          poseLabel: parsePoseFromUrl(capture?.image_url || person?.image_url),
+          personImageUrl: person?.image_url || null,
+          sourceImageUrl: capture?.image_url || person?.image_url || null,
+          sourceText: capture?.source || 'Registry Seed',
+          faceConfidence: face.face_confidence ?? null,
+          qualityScore: face.capture_quality?.quality_score ?? null,
+          matchedAgainstPhotos: face.matched_against_photos ?? null,
+          agreeingCaptures: face.agreeing_captures ?? null,
+          marginToNext: face.margin_to_next_person ?? null,
+          box: scaleBox(videoScale),
+          crop: hasBox ? cropFromCanvas(snapshot.canvas, scaleBox(cropScale)) : null,
+          latencyMs: durationMs,
+          stageTiming: data?.timings_ms || null,
+        }
+      })
+
+      labelsRef.current = { at: stamp, faces: faces.filter((f) => f.box) }
+
+      // The panel shows every face every scan; the audit log records each one
+      // once per appearance, so it stays a log rather than a ticker.
+      const lastLogged = lastLoggedRef.current
+      const fresh = faces.filter((face) => {
+        const seenAt = lastLogged.get(face.key)
+        if (seenAt && stamp - seenAt < AUDIT_DEDUPE_MS) return false
+        lastLogged.set(face.key, stamp)
+        return true
+      })
+      for (const [key, seenAt] of lastLogged) {
+        if (stamp - seenAt >= AUDIT_DEDUPE_MS) lastLogged.delete(key)
       }
 
       setDbImageBroken(false)
-      setMatchResult(normalized)
-      setLiveCrop(localCrop)
-      addHistory(normalized)
+      setFrameFaces(faces)
+      setTruncatedFaces(data?.faces_truncated || 0)
+      addHistory(fresh)
       failureCountRef.current = 0
       nextScanAllowedAtRef.current = 0
+
+      // A 200 with success:false means the server's detector found nothing in a
+      // frame the browser detector did see — an angle RetinaFace won't take, or
+      // a face too small once the frame was scaled down for upload. Say so
+      // rather than leaving a stale panel that looks like a live reading.
+      if (data?.success === false) {
+        setScanError(data?.error || 'Server could not resolve any face in the frame.')
+      }
     } catch (err) {
       const nextFailureCount = failureCountRef.current + 1
       failureCountRef.current = nextFailureCount
@@ -416,12 +544,29 @@ export default function LiveScanDemo() {
     }
   }
 
+  const primaryFace = useMemo(
+    () => frameFaces.find((f) => f.isPrimary) || frameFaces[0] || null,
+    [frameFaces]
+  )
+
+  const selectedFace = useMemo(
+    () => frameFaces.find((f) => f.key === selectedFaceKey) || primaryFace,
+    [frameFaces, selectedFaceKey, primaryFace]
+  )
+
+  const flaggedCount = frameFaces.filter((f) => f.isAlert).length
+  const knownCount = frameFaces.filter((f) => f.isKnownUser).length
+  const unknownCount = frameFaces.length - knownCount
+
+  const toneClass = frameTone(frameFaces)
+  const toneLabel = frameFaces.length ? labelForFace(primaryFace) : faceCount ? 'SCANNING' : 'NO TARGET'
+
   const activeEntry = useMemo(() => {
     if (!history.length) return null
     return history.find((h) => h.id === selectedHistoryId) || history[0]
   }, [history, selectedHistoryId])
 
-  const dbImageUrl = activeEntry?.sourceImageUrl || activeEntry?.personImageUrl || matchResult?.sourceImageUrl || matchResult?.personImageUrl || null
+  const dbImageUrl = selectedFace?.sourceImageUrl || selectedFace?.personImageUrl || null
 
   const readiness = [
     { label: 'Camera', ok: webcamReady },
@@ -429,7 +574,14 @@ export default function LiveScanDemo() {
     { label: 'Backend', ok: backendReady },
   ]
 
-  const confidencePct = typeof matchResult?.matchConfidence === 'number' ? matchResult.matchConfidence : 0
+  const confidencePct = typeof selectedFace?.matchConfidence === 'number' ? selectedFace.matchConfidence : 0
+
+  const verdictHeadline = () => {
+    if (flaggedCount) return `${flaggedCount} flagged ${flaggedCount === 1 ? 'identity' : 'identities'} in frame`
+    if (knownCount) return `${knownCount} recognised ${knownCount === 1 ? 'identity' : 'identities'}`
+    if (frameFaces.length) return `${frameFaces.length} ${frameFaces.length === 1 ? 'face' : 'faces'}, none matched`
+    return 'Awaiting confident match'
+  }
 
   return (
     <div className="ls-wrap">
@@ -474,10 +626,15 @@ export default function LiveScanDemo() {
         .ls-ready > span { font-size: 12px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); }
         .ls-ready .ok { border-color: var(--ok); color: var(--ok); }
         .ls-ready .bad { border-color: var(--unknown); color: var(--unknown); }
-        .ls-side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .ls-thumb-wrap { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--bg); aspect-ratio: 1/1; }
-        .ls-thumb-wrap img { width: 100%; height: 100%; object-fit: cover; }
-        .ls-caption { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+        .ls-faces { display: grid; gap: 6px; margin-bottom: 12px; max-height: 250px; overflow-y: auto; }
+        .ls-faces button { display: flex; align-items: center; gap: 9px; text-align: left; width: 100%; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 7px 9px; cursor: pointer; font-size: 12px; }
+        .ls-faces button.alert { border-color: var(--alert); background: color-mix(in srgb, var(--alert) 12%, var(--panel)); }
+        .ls-faces button.ok { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--panel)); }
+        .ls-faces button.unknown { border-color: var(--unknown); background: color-mix(in srgb, var(--unknown) 10%, var(--panel)); }
+        .ls-faces button.active { box-shadow: inset 0 0 0 2px var(--accent); }
+        .ls-faces img { width: 34px; height: 34px; border-radius: 7px; object-fit: cover; flex: 0 0 auto; }
+        .ls-face-name { font-weight: 700; overflow-wrap: anywhere; }
+        .ls-face-sub { color: var(--muted); font-size: 11px; }
         .ls-audit { max-height: 220px; overflow-y: auto; display: grid; gap: 6px; }
         .ls-audit button { text-align: left; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 8px 9px; cursor: pointer; font-size: 12px; }
         .ls-audit button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
@@ -487,6 +644,10 @@ export default function LiveScanDemo() {
         .ls-audit button.alert.active,
         .ls-audit button.ok.active,
         .ls-audit button.unknown.active { box-shadow: inset 0 0 0 1px var(--accent); }
+        .ls-side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .ls-thumb-wrap { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--bg); aspect-ratio: 1/1; }
+        .ls-thumb-wrap img { width: 100%; height: 100%; object-fit: cover; }
+        .ls-caption { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
         .ls-warn { margin-top: 12px; font-size: 13px; color: var(--unknown); }
         @media (max-width: 980px) {
           .ls-grid { grid-template-columns: 1fr; }
@@ -506,7 +667,7 @@ export default function LiveScanDemo() {
       <div className="ls-shell">
         <h1>Face Scan (Live)</h1>
         <p className="ls-sub">
-          Live camera scan against registry with real-time reticle tracking.{' '}
+          Live camera scan against registry — every face in frame is tracked and matched independently.{' '}
           <Link to="/">Return home</Link>
         </p>
 
@@ -561,62 +722,102 @@ export default function LiveScanDemo() {
 
               <div className="ls-overlay-top-left">
                 <span className="ls-chip">REC / LIVE {fps || 30} FPS</span>
-                <span className="ls-chip">Face: {(faceScore * 100).toFixed(1)}% • {toneLabel}</span>
+                <span className="ls-chip">
+                  Faces: {faceCount} • {knownCount} known • {flaggedCount} flagged
+                </span>
+                <span className="ls-chip">{toneLabel}</span>
               </div>
 
               <div className="ls-overlay-top-right">
-                <span className="ls-chip">{formatTimestamp(matchResult?.timestamp || new Date().toISOString())}</span>
+                <span className="ls-chip">{formatTimestamp(primaryFace?.timestamp || new Date().toISOString())}</span>
               </div>
             </div>
 
             <div className="ls-warn">
-              {hasFaceInFrame
-                ? 'Target lock acquired. Scanning against identity registry.'
+              {faceCount
+                ? `Tracking ${faceCount} ${faceCount === 1 ? 'face' : 'faces'}. Each is matched against the identity registry independently.`
                 : 'No face in frame. Move closer and improve front lighting.'}
             </div>
+            {truncatedFaces > 0 ? (
+              <div className="ls-warn">
+                {truncatedFaces} further {truncatedFaces === 1 ? 'face was' : 'faces were'} detected but not
+                identified — the frame is over the per-scan cap. The smallest faces are dropped first.
+              </div>
+            ) : null}
           </div>
 
           <div className="ls-card ls-pad">
             <div className={`ls-verdict ${toneClass}`}>
-              <h2 style={{ margin: 0 }}>
-                {matchResult?.isAlert
-                  ? 'Flagged identity detected'
-                  : matchResult?.isKnownUser
-                  ? 'Recognised identity'
-                  : 'Awaiting confident match'}
-              </h2>
-              <p style={{ margin: '8px 0 0', color: 'var(--fg)', fontWeight: 600 }}>{matchResult?.fullName || '-'}</p>
-              <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: 13 }}>{matchResult?.message || 'Live scan running.'}</p>
+              <h2 style={{ margin: 0, fontSize: 18 }}>{verdictHeadline()}</h2>
+              <p style={{ margin: '8px 0 0', color: 'var(--fg)', fontSize: 13 }}>
+                {frameFaces.length
+                  ? `${frameFaces.length} matched this frame — ${knownCount} known, ${unknownCount} unregistered.`
+                  : 'Live scan running.'}
+              </p>
             </div>
 
-            <h3 style={{ margin: '0 0 8px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>How certain</h3>
+            <h3 style={{ margin: '0 0 8px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>
+              Faces in frame {frameFaces.length ? `(${frameFaces.length})` : ''}
+            </h3>
+            <div className="ls-faces">
+              {frameFaces.map((face) => (
+                <button
+                  key={face.key}
+                  className={`${toneForFace(face)}${selectedFace?.key === face.key ? ' active' : ''}`}
+                  onClick={() => {
+                    setSelectedFaceKey(face.key)
+                    setDbImageBroken(false)
+                  }}
+                >
+                  {face.crop ? <img src={face.crop} alt="" /> : null}
+                  <span>
+                    <span className="ls-face-name">{face.fullName}</span>
+                    <br />
+                    <span className="ls-face-sub">
+                      {labelForFace(face)} • {(face.status || 'unregistered').toUpperCase()} •{' '}
+                      {face.matchConfidence}%
+                    </span>
+                  </span>
+                </button>
+              ))}
+              {!frameFaces.length ? <div className="ls-sub">No identities resolved yet.</div> : null}
+            </div>
+
+            <h3 style={{ margin: '0 0 8px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>
+              How certain {selectedFace ? `— ${selectedFace.fullName}` : ''}
+            </h3>
             <div className="ls-meter">
               <i
                 style={{
                   width: `${confidencePct}%`,
                   background:
-                    toneClass === 'alert' ? 'var(--alert)' : toneClass === 'ok' ? 'var(--ok)' : 'var(--unknown)',
+                    toneForFace(selectedFace) === 'alert'
+                      ? 'var(--alert)'
+                      : toneForFace(selectedFace) === 'ok'
+                      ? 'var(--ok)'
+                      : 'var(--unknown)',
                 }}
               />
             </div>
 
             <div className="ls-kv"><span>Confidence</span><span>{confidencePct}%</span></div>
-            <div className="ls-kv"><span>Cosine distance</span><span>{typeof matchResult?.matchDistance === 'number' ? matchResult.matchDistance.toFixed(4) : '--'}</span></div>
-            <div className="ls-kv"><span>Status</span><span>{(matchResult?.status || 'unknown').toUpperCase()}</span></div>
-            <div className="ls-kv"><span>Pose</span><span>{matchResult?.poseLabel || '-'}</span></div>
+            <div className="ls-kv"><span>Cosine distance</span><span>{typeof selectedFace?.matchDistance === 'number' ? selectedFace.matchDistance.toFixed(4) : '--'}</span></div>
+            <div className="ls-kv"><span>Status</span><span>{(selectedFace?.status || 'unknown').toUpperCase()}</span></div>
+            <div className="ls-kv"><span>Margin to next person</span><span>{typeof selectedFace?.marginToNext === 'number' ? selectedFace.marginToNext.toFixed(4) : '--'}</span></div>
+            <div className="ls-kv"><span>Pose</span><span>{selectedFace?.poseLabel || '-'}</span></div>
             <div className="ls-kv"><span>Round trip</span><span>{roundtripMs ?? '--'} ms</span></div>
-            <div className="ls-kv"><span>Server stages</span><span>{matchResult?.stageTiming ? JSON.stringify(matchResult.stageTiming) : '--'}</span></div>
+            <div className="ls-kv"><span>Server stages</span><span>{selectedFace?.stageTiming ? JSON.stringify(selectedFace.stageTiming) : '--'}</span></div>
           </div>
         </div>
 
         <div className="ls-card ls-pad" style={{ marginTop: 14 }}>
           <h3 style={{ margin: '0 0 10px', fontSize: 12, textTransform: 'uppercase', color: 'var(--muted)' }}>
-            Reference comparison
+            Reference comparison {selectedFace ? `— ${selectedFace.fullName}` : ''}
           </h3>
           <div className="ls-side-by-side">
             <div>
               <div className="ls-caption">Live crop</div>
-              <div className="ls-thumb-wrap">{liveCrop ? <img src={liveCrop} alt="Live crop" /> : null}</div>
+              <div className="ls-thumb-wrap">{selectedFace?.crop ? <img src={selectedFace.crop} alt="Live crop" /> : null}</div>
             </div>
             <div>
               <div className="ls-caption">DB seed photo</div>
@@ -632,8 +833,8 @@ export default function LiveScanDemo() {
             </div>
           </div>
           <div className="ls-row" style={{ marginTop: 10, color: 'var(--muted)', fontSize: 12 }}>
-            <span>Source: {matchResult?.sourceText || '-'}</span>
-            <span>Pose: {matchResult?.poseLabel || '-'}</span>
+            <span>Source: {selectedFace?.sourceText || '-'}</span>
+            <span>Pose: {selectedFace?.poseLabel || '-'}</span>
           </div>
           {dbImageBroken ? (
             <div className="ls-warn" style={{ marginTop: 8 }}>
@@ -667,7 +868,7 @@ export default function LiveScanDemo() {
               <div className="ls-kv"><span>Status</span><span>{(activeEntry?.status || 'unknown').toUpperCase()}</span></div>
               <div className="ls-kv"><span>Distance</span><span>{typeof activeEntry?.matchDistance === 'number' ? activeEntry.matchDistance.toFixed(4) : '--'}</span></div>
               <div className="ls-kv"><span>Latency</span><span>{activeEntry?.latencyMs ?? '--'} ms</span></div>
-              {activeEntry?.liveCrop ? <img src={activeEntry.liveCrop} alt="Event crop" style={{ width: '100%', borderRadius: 8, marginTop: 10 }} /> : null}
+              {activeEntry?.crop ? <img src={activeEntry.crop} alt="Event crop" style={{ width: '100%', borderRadius: 8, marginTop: 10 }} /> : null}
             </div>
           </div>
         </div>

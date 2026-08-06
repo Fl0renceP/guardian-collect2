@@ -55,6 +55,51 @@ Flask also serves a standalone copy of the hot-spot map at
 | Hot-spots, claims, routing, alerts, patrol, safety score | Cosmos + Blob credentials in `.env` — that's all |
 | `POST /api/v1/scan-face` | A local PostgreSQL with pgvector at `DATABASE_URL`, plus the DeepFace/TensorFlow install |
 
+## Scanning several faces at once
+
+`/api/v1/scan-face` resolves **every** face in the frame, not just the nearest
+one. People arrive in groups, and the person a camera most needs to identify is
+rarely the one who walked closest to it.
+
+The response carries a `faces` array, ordered largest-first, with one entry per
+face — its own `facial_area` box, identity, `match_distance`, `status`, `alert`
+and `capture_quality`:
+
+```jsonc
+{
+  "success": true,
+  "faces": [
+    { "index": 0, "facial_area": {"x": 65, "y": 82, "w": 119, "h": 169},
+      "is_known_user": true, "status": "verified", "alert": false,
+      "match_distance": 0.0259, "is_primary": false, "person": { … } },
+    { "index": 1, "facial_area": {"x": 310, "y": 88, "w": 74, "h": 106},
+      "is_known_user": true, "status": "offender", "alert": true,
+      "match_distance": 0.0222, "is_primary": true,  "person": { … } }
+  ],
+  "faces_detected": 3, "faces_resolved": 3, "faces_known": 3,
+  "faces_flagged": 2, "faces_truncated": 0, "any_alert": true,
+  "image_size": { "width": 664, "height": 420 },
+  // …plus every field the old single-face response had, mirrored from the
+  // primary face, so existing callers keep working unchanged.
+  "status": "offender", "alert": true, "primary_face_index": 1
+}
+```
+
+Two things to know:
+
+- **Boxes are in the coordinate space of the image you uploaded**, which is why
+  `image_size` is returned — the client scales the frame down before posting, so
+  a box only maps back onto a video element via that ratio.
+- **The primary face is the most *significant* one, not the biggest.** Flagged
+  first, then known, then by size. A flagged person standing behind the subject
+  is the whole point of the feature, and the legacy top-level fields would
+  otherwise report "no match" while the alert sat in `faces[2]`.
+
+`MAX_SCAN_FACES` (default 8) caps how many faces one scan resolves; anything
+over the cap is counted in `faces_truncated` rather than silently dropped. Cost
+scales gently — RetinaFace already detects every face, so the extra work per
+face is one embedding and two indexed queries, not another full detection pass.
+
 ## Multi-angle face gallery import
 
 Use this when you have additional seed images per person (different angles / lighting).

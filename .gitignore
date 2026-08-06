@@ -23,3 +23,23 @@ frontend/dist/
 # Geocache temp files
 /backend/data/*.json.tmp
 /backend/data/suburb_geocache.backup.json
+
+# Behavioural analysis clip recordings.
+# Runtime output, regenerated on every webcam run — 13 MB from a single session.
+# They are also footage of identifiable people, which is not something to put in
+# source control on the same reasoning as PROJECT_CONTEXT §5: this project does
+# not accumulate biometric records of whoever walked past a camera.
+/backend/behavioural_analysis/clips/
+
+# Behavioural analysis run output. Same reasoning as the clips: the audit store
+# holds per-person tracking records (track ids, dwell times, zones) produced from
+# real footage, and it is rebuilt by every run.
+/backend/behavioural_analysis/*.db
+/backend/behavioural_analysis/*.jsonl
+/backend/behavioural_analysis/webcam_events.json
+/backend/behavioural_analysis/demo_events.json
+
+# Model weights — download on first run rather than carrying ~12 MB of binaries
+# in history, where every future change to them is a fresh full copy.
+/backend/behavioural_analysis/models/
+/backend/behavioural_analysis/yolov8n.pt

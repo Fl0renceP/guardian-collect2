@@ -23,6 +23,7 @@ The shape is documented on `_alert`.
 """
 
 import logging
+import os
 from collections import deque
 from datetime import datetime, timedelta
 
@@ -33,6 +34,18 @@ from services.risk_service import haversine_km
 logger = logging.getLogger(__name__)
 
 _DETECTION_ALERTS = deque(maxlen=200)
+
+# One person standing in front of a live camera is one sighting, but the feed
+# scans every 1.5 seconds and now resolves every face in the frame — so without
+# a window a single offender emits dozens of identical alerts a minute and
+# pushes every other detection out of a 200-entry deque. A re-detection inside
+# the window returns the original event rather than nothing, so the caller still
+# has something to display; only the feed is spared the duplicate.
+DETECTION_DEDUPE_SECONDS = float(os.getenv("DETECTION_DEDUPE_SECONDS", "60"))
+
+# key -> (first seen, event). Bounded by pruning on write; the key space is the
+# set of identities recently in front of a camera, which is small.
+_RECENT_DETECTIONS = {}
 
 # Which detection labels each audience is allowed to see.
 AUDIENCE_LABELS = {
@@ -95,6 +108,32 @@ def _alert(
     }
 
 
+def _dedupe_key(entity_type, label, meta):
+    """Identify the *subject* of a detection, for suppressing repeats.
+
+    Returns None when the payload carries nothing that names an individual —
+    two anonymous detections are not known to be the same one, and collapsing
+    them would hide a real second sighting.
+    """
+    meta = meta or {}
+    identity = (
+        meta.get("person_id")
+        or meta.get("plate_id")
+        or meta.get("plate_number")
+        or meta.get("full_name")
+    )
+    return (entity_type, label, identity) if identity else None
+
+
+def _prune_recent_detections(now):
+    stale = [
+        key for key, (seen_at, _) in _RECENT_DETECTIONS.items()
+        if (now - seen_at).total_seconds() >= DETECTION_DEDUPE_SECONDS
+    ]
+    for key in stale:
+        del _RECENT_DETECTIONS[key]
+
+
 def record_detection(
     *,
     match_label,
@@ -117,6 +156,14 @@ def record_detection(
     if not audience:
         return None
 
+    now = datetime.utcnow()
+    key = _dedupe_key(entity_type, label, meta)
+    if key is not None:
+        _prune_recent_detections(now)
+        previous = _RECENT_DETECTIONS.get(key)
+        if previous and (now - previous[0]).total_seconds() < DETECTION_DEDUPE_SECONDS:
+            return previous[1]
+
     severity = "critical" if label == "offender" else "serious"
     event = _alert(
         alert_id=f"det-{entity_type}-{datetime.utcnow().timestamp():.6f}",
@@ -138,6 +185,8 @@ def record_detection(
         push_audience=list(audience),
     )
     _DETECTION_ALERTS.appendleft(event)
+    if key is not None:
+        _RECENT_DETECTIONS[key] = (now, event)
     return event
 
 

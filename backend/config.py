@@ -52,6 +52,12 @@ class Config:
     # nothing but a byte-identical image ever matched.
     MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.30"))
 
+    # How many faces one scan will resolve, largest first. Each face costs two
+    # more pgvector queries on top of its embedding, so this is the knob that
+    # bounds worst-case latency when a group walks into frame. Faces past the
+    # cap are counted and reported (faces_truncated), never silently dropped.
+    MAX_SCAN_FACES = int(os.getenv("MAX_SCAN_FACES", "8"))
+
     # 3b. Face capture quality gate.
     # CCTV frames are the problem case: a 30px face upscaled to the model's 160px
     # input still yields 512 numbers, they just carry no identity. That vector sits

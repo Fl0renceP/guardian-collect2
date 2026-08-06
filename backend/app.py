@@ -101,26 +101,62 @@ def _normalize_detection_status(raw_status):
     return status if status in {"suspect", "offender"} else None
 
 
-def _attach_face_alert(result):
-    status = _normalize_detection_status(result.get("status"))
-    if not status or not result.get("is_known_user"):
-        result["alert_event"] = None
-        result["alerts"] = []
-        return result
+def _face_detection_alert(face, *, faces_in_frame=1):
+    """Raise the alert feed event for one matched face, if it warrants one."""
+    status = _normalize_detection_status(face.get("status"))
+    if not status or not face.get("is_known_user"):
+        return None
 
-    person = result.get("person") or {}
-    event = alerts_service.record_detection(
+    person = face.get("person") or {}
+    detail = f"{person.get('full_name') or 'A person'} matched as {status}."
+    if faces_in_frame > 1:
+        # An operator triaging the feed needs to know this was a group, not a
+        # one-to-one scan — it changes what they're looking at on the footage.
+        detail += f" One of {faces_in_frame} faces in the frame."
+
+    return alerts_service.record_detection(
         match_label=status,
         entity_type="person",
         title=f"{status.title()} identified by facial recognition",
-        detail=f"{person.get('full_name') or 'A person'} matched as {status}.",
+        detail=detail,
         meta={
             "person_id": person.get("id"),
             "full_name": person.get("full_name"),
+            "faces_in_frame": faces_in_frame,
         },
     )
-    result["alert_event"] = event
-    result["alerts"] = [event] if event else []
+
+
+def _attach_face_alert(result):
+    """Emit an alert per flagged identity in the frame, not just for one.
+
+    A frame can hold several people, and each flagged one is its own sighting of
+    its own person — collapsing them into a single event would drop identities
+    out of the feed entirely. `alert_event` stays singular and points at the
+    primary face's event so existing readers of that key still work.
+    """
+    faces = result.get("faces")
+    if not isinstance(faces, list):
+        # Pre-multi-face shape (or an error payload): treat the top level as the
+        # one and only face.
+        faces = [result] if result.get("is_known_user") else []
+
+    faces_in_frame = result.get("faces_resolved") or len(faces) or 1
+
+    events = []
+    primary_event = None
+    for face in faces:
+        event = _face_detection_alert(face, faces_in_frame=faces_in_frame)
+        if not event:
+            continue
+        events.append(event)
+        # `faces` is ordered largest-first with is_primary marking the face the
+        # top-level fields describe; fall back to the first event raised.
+        if face.get("is_primary") or primary_event is None:
+            primary_event = event
+
+    result["alert_event"] = primary_event
+    result["alerts"] = events
     return result
 
 
@@ -261,6 +297,7 @@ def create_app(config_object=Config):
                 db_conn=conn,
                 model_name=Config.FACE_MODEL,
                 threshold=Config.MATCH_THRESHOLD,
+                max_faces=Config.MAX_SCAN_FACES,
             )
 
             if isinstance(result, tuple):
@@ -270,9 +307,12 @@ def create_app(config_object=Config):
             total_ms = round((time.perf_counter() - request_started) * 1000, 2)
             result["request_timing_ms"] = total_ms
             logger.info(
-                "scan-face result: success=%s known=%s status=%s distance=%s total_ms=%s stage_ms=%s",
+                "scan-face result: success=%s faces=%s known=%s flagged=%s "
+                "primary_status=%s primary_distance=%s total_ms=%s stage_ms=%s",
                 result.get("success"),
-                result.get("is_known_user"),
+                result.get("faces_resolved"),
+                result.get("faces_known"),
+                result.get("faces_flagged"),
                 result.get("status"),
                 result.get("match_distance"),
                 total_ms,
